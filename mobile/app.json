@@ -12,7 +12,8 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Site Survey needs your location to record GPS coordinates for each survey.",
         "NSCameraUsageDescription": "Site Survey needs camera access to capture site photos.",
-        "NSPhotoLibraryUsageDescription": "Site Survey needs photo library access to attach photos to surveys."
+        "NSPhotoLibraryUsageDescription": "Site Survey needs photo library access to attach photos to surveys.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
