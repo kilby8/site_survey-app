@@ -15,8 +15,9 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { RootStackParamList, Survey } from '../types';
 import { getSurveyById } from '../database/surveyDb';
-import { syncPending }   from '../services/SyncManager';
-import { isOnline }      from '../services/SyncManager';
+import { syncPending, isOnline } from '../services/SyncManager';
+import { fetchReport, downloadReportMarkdown } from '../api/client';
+import type { EngineeringReport } from '../api/client';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList, 'ViewSurvey'>;
 type RoutT   = RouteProp<RootStackParamList, 'ViewSurvey'>;
@@ -38,6 +39,12 @@ export default function ViewSurveyScreen({ navigation, route }: Props) {
   const [survey,   setSurvey]   = useState<Survey | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [syncing,  setSyncing]  = useState(false);
+
+  // Engineering report state
+  const [report,          setReport]          = useState<EngineeringReport | null>(null);
+  const [reportLoading,   setReportLoading]   = useState(false);
+  const [reportExpanded,  setReportExpanded]  = useState(false);
+  const [markdownLoading, setMarkdownLoading] = useState(false);
 
   const loadSurvey = useCallback(async () => {
     try {
@@ -65,6 +72,49 @@ export default function ViewSurveyScreen({ navigation, route }: Props) {
       Alert.alert('Sync Error', err instanceof Error ? err.message : String(err));
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function handleGenerateReport() {
+    if (!isOnline()) {
+      Alert.alert('Offline', 'An internet connection is required to generate the report.');
+      return;
+    }
+    setReportLoading(true);
+    try {
+      const r = await fetchReport(surveyId);
+      setReport(r);
+      setReportExpanded(true);
+    } catch (err) {
+      Alert.alert('Report Error', err instanceof Error ? err.message : String(err));
+    } finally {
+      setReportLoading(false);
+    }
+  }
+
+  async function handleDownloadMarkdown() {
+    if (!isOnline()) {
+      Alert.alert('Offline', 'An internet connection is required to download the report.');
+      return;
+    }
+    setMarkdownLoading(true);
+    try {
+      const md = await downloadReportMarkdown(surveyId);
+      // Share the Markdown text via the system share sheet
+      try {
+        const { Share } = await import('react-native');
+        await Share.share({
+          title:   `Engineering Report — ${survey?.project_name ?? surveyId}`,
+          message: md,
+        });
+      } catch {
+        // Fallback: show in alert (truncated) so the user can at least read it
+        Alert.alert('Report Downloaded', md.substring(0, 500) + '…');
+      }
+    } catch (err) {
+      Alert.alert('Download Error', err instanceof Error ? err.message : String(err));
+    } finally {
+      setMarkdownLoading(false);
     }
   }
 
@@ -214,8 +264,134 @@ export default function ViewSurveyScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         )}
 
+        {/* ── Engineering Report ──────────────────────────── */}
+        <TouchableOpacity
+          style={[styles.reportBtn, reportLoading && styles.reportBtnDisabled]}
+          onPress={handleGenerateReport}
+          disabled={reportLoading}
+        >
+          {reportLoading
+            ? <ActivityIndicator color="#ffffff" size="small" />
+            : <Text style={styles.reportBtnText}>📊 Generate Design Report</Text>
+          }
+        </TouchableOpacity>
+
+        {report && reportExpanded && (
+          <ReportCard
+            report={report}
+            markdownLoading={markdownLoading}
+            onDownload={handleDownloadMarkdown}
+            onDismiss={() => setReportExpanded(false)}
+          />
+        )}
+
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+// ── Report Card ────────────────────────────────────────────────
+
+const RISK_COLOR: Record<string, string> = {
+  High:   '#dc2626',
+  Medium: '#f59e0b',
+  Low:    '#16a34a',
+  None:   '#6b7280',
+};
+
+const PRIORITY_COLOR: Record<string, string> = {
+  High:   '#dc2626',
+  Medium: '#f59e0b',
+  Low:    '#16a34a',
+};
+
+function ReportCard({
+  report,
+  markdownLoading,
+  onDownload,
+  onDismiss,
+}: {
+  report:          EngineeringReport;
+  markdownLoading: boolean;
+  onDownload:      () => void;
+  onDismiss:       () => void;
+}) {
+  const riskColor = RISK_COLOR[report.overall_risk] ?? '#6b7280';
+  const cs = report.checklist_summary;
+
+  return (
+    <View style={reportStyles.card}>
+      {/* Header */}
+      <View style={reportStyles.header}>
+        <Text style={reportStyles.title}>📊 Engineering Assessment</Text>
+        <TouchableOpacity onPress={onDismiss}>
+          <Text style={reportStyles.dismiss}>✕</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Overall risk badge */}
+      <View style={[reportStyles.riskBadge, { backgroundColor: riskColor + '20', borderColor: riskColor }]}>
+        <Text style={[reportStyles.riskText, { color: riskColor }]}>
+          Overall Risk: {report.overall_risk}
+        </Text>
+      </View>
+
+      {/* Flags */}
+      {report.flags.length > 0 ? (
+        <View style={reportStyles.section}>
+          <Text style={reportStyles.sectionTitle}>⚠ Design Flags</Text>
+          {report.flags.map((flag, i) => (
+            <View key={i} style={[reportStyles.flagRow, { borderLeftColor: PRIORITY_COLOR[flag.priority] ?? '#6b7280' }]}>
+              <Text style={[reportStyles.flagPriority, { color: PRIORITY_COLOR[flag.priority] ?? '#6b7280' }]}>
+                {flag.priority} — {flag.category}
+              </Text>
+              <Text style={reportStyles.flagMessage}>{flag.message}</Text>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={reportStyles.noFlags}>✅ No critical design flags identified.</Text>
+      )}
+
+      {/* Recommendations */}
+      <View style={reportStyles.section}>
+        <Text style={reportStyles.sectionTitle}>📋 Recommendations</Text>
+        {report.recommendations.map((rec, i) => (
+          <Text key={i} style={reportStyles.rec}>• {rec}</Text>
+        ))}
+      </View>
+
+      {/* Checklist summary */}
+      {cs.total > 0 && (
+        <View style={reportStyles.summaryRow}>
+          <SummaryCell label="Pass"    count={cs.pass}    color="#16a34a" />
+          <SummaryCell label="Fail"    count={cs.fail}    color="#dc2626" />
+          <SummaryCell label="Pending" count={cs.pending} color="#f59e0b" />
+          <SummaryCell label="N/A"     count={cs.na}      color="#6b7280" />
+        </View>
+      )}
+
+      {/* Download Markdown */}
+      <TouchableOpacity
+        style={[reportStyles.downloadBtn, markdownLoading && reportStyles.downloadBtnDisabled]}
+        onPress={onDownload}
+        disabled={markdownLoading}
+      >
+        {markdownLoading
+          ? <ActivityIndicator color="#1a56db" size="small" />
+          : <Text style={reportStyles.downloadBtnText}>⬇ Share Markdown Report</Text>
+        }
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function SummaryCell({ label, count, color }: { label: string; count: number; color: string }) {
+  return (
+    <View style={reportStyles.summaryCell}>
+      <Text style={[reportStyles.summaryCount, { color }]}>{count}</Text>
+      <Text style={reportStyles.summaryLabel}>{label}</Text>
+    </View>
   );
 }
 

@@ -360,3 +360,224 @@ describe('GET /api/surveys/export/csv', () => {
     expect(res.text).toContain('ground_mount');
   });
 });
+
+// ----------------------------------------------------------------
+// Engineering Assessment Report
+// ----------------------------------------------------------------
+describe('GET /api/surveys/:id/report', () => {
+  it('returns 404 for unknown survey id', async () => {
+    const res = await request(app).get('/api/surveys/00000000-0000-0000-0000-000000000099/report');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns a valid EngineeringReport JSON with no flags for a clean survey', async () => {
+    const create = await request(app)
+      .post('/api/surveys')
+      .send({
+        project_name:   'Report Test Clean',
+        inspector_name: 'Jane',
+        site_name:      'Clean Site',
+        status:         'submitted',
+        checklist: [
+          { label: 'Site Access',     status: 'pass',  notes: '' },
+          { label: 'Safety Check',    status: 'pass',  notes: '' },
+        ],
+      });
+    createdIds.push(create.body.id);
+
+    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    expect(res.status).toBe(200);
+    expect(res.body.survey_id).toBe(create.body.id);
+    expect(res.body.overall_risk).toBe('None');
+    expect(Array.isArray(res.body.flags)).toBe(true);
+    expect(res.body.flags).toHaveLength(0);
+    expect(res.body.checklist_summary.pass).toBe(2);
+    expect(Array.isArray(res.body.recommendations)).toBe(true);
+    expect(res.body.generated_at).toBeDefined();
+  });
+
+  it('flags High priority for old Roof Mount (age > 15)', async () => {
+    const create = await request(app)
+      .post('/api/surveys')
+      .send({
+        project_name:   'Old Roof Report Test',
+        inspector_name: 'Alice',
+        site_name:      'Old House',
+        category_name:  'Roof Mount',
+        status:         'submitted',
+        metadata: {
+          type: 'roof_mount', roof_material: 'Asphalt Shingle',
+          rafter_size: '2x6', rafter_spacing: '16in',
+          roof_age_years: 20, azimuth: 180,
+        },
+      });
+    createdIds.push(create.body.id);
+
+    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    expect(res.status).toBe(200);
+    expect(res.body.overall_risk).toBe('High');
+    const flag = res.body.flags.find((f: { field: string }) => f.field === 'roof_age_years');
+    expect(flag).toBeDefined();
+    expect(flag.priority).toBe('High');
+  });
+
+  it('flags High priority for Membrane roof material', async () => {
+    const create = await request(app)
+      .post('/api/surveys')
+      .send({
+        project_name:   'Membrane Roof Test',
+        inspector_name: 'Bob',
+        site_name:      'Commercial Unit 5',
+        category_name:  'Roof Mount',
+        status:         'submitted',
+        metadata: {
+          type: 'roof_mount', roof_material: 'Membrane',
+          rafter_size: '2x8', rafter_spacing: '24in',
+          roof_age_years: 5, azimuth: 200,
+        },
+      });
+    createdIds.push(create.body.id);
+
+    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    expect(res.status).toBe(200);
+    expect(res.body.overall_risk).toBe('High');
+    const flag = res.body.flags.find((f: { field: string }) => f.field === 'roof_material');
+    expect(flag).toBeDefined();
+    expect(flag.priority).toBe('High');
+  });
+
+  it('flags High priority for Rocky soil (Ground Mount)', async () => {
+    const create = await request(app)
+      .post('/api/surveys')
+      .send({
+        project_name:   'Rocky Ground Test',
+        inspector_name: 'Carlos',
+        site_name:      'Hill Farm',
+        category_name:  'Ground Mount',
+        status:         'submitted',
+        metadata: {
+          type: 'ground_mount', soil_type: 'Rocky',
+          slope_degrees: 5.0, trenching_path: 'Avoid east berm',
+          vegetation_clearing: true,
+        },
+      });
+    createdIds.push(create.body.id);
+
+    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    expect(res.status).toBe(200);
+    expect(res.body.overall_risk).toBe('High');
+    const flag = res.body.flags.find((f: { field: string }) => f.field === 'soil_type');
+    expect(flag).toBeDefined();
+    expect(flag.priority).toBe('High');
+  });
+
+  it('flags High priority when lower_shade_risk is true (Solar Fencing)', async () => {
+    const create = await request(app)
+      .post('/api/surveys')
+      .send({
+        project_name:   'Fencing Shade Test',
+        inspector_name: 'Diana',
+        site_name:      'Agri Plot 3',
+        category_name:  'Solar Fencing',
+        status:         'submitted',
+        metadata: {
+          type: 'solar_fencing', perimeter_length_ft: 800,
+          lower_shade_risk: true,
+          foundation_type: 'Driven Piles', bifacial_surface: 'Grass',
+        },
+      });
+    createdIds.push(create.body.id);
+
+    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    expect(res.status).toBe(200);
+    expect(res.body.overall_risk).toBe('High');
+    const flag = res.body.flags.find((f: { field: string }) => f.field === 'lower_shade_risk');
+    expect(flag).toBeDefined();
+    expect(flag.priority).toBe('High');
+  });
+
+  it('flags High priority when Main Service Panel checklist item fails', async () => {
+    const create = await request(app)
+      .post('/api/surveys')
+      .send({
+        project_name:   'Electrical Panel Test',
+        inspector_name: 'Eve',
+        site_name:      'Residential Site 7',
+        category_name:  'Electrical',
+        status:         'submitted',
+        checklist: [
+          { label: 'Main Service Panel', status: 'fail',  notes: 'Overloaded' },
+          { label: 'Earthing',           status: 'pass',  notes: '' },
+        ],
+      });
+    createdIds.push(create.body.id);
+
+    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    expect(res.status).toBe(200);
+    expect(res.body.overall_risk).toBe('High');
+    const flag = res.body.flags.find((f: { field: string }) =>
+      f.field === 'checklist:Main Service Panel'
+    );
+    expect(flag).toBeDefined();
+    expect(flag.priority).toBe('High');
+    expect(res.body.checklist_summary.fail).toBe(1);
+    expect(res.body.checklist_summary.pass).toBe(1);
+  });
+
+  it('returns Markdown download when ?format=markdown', async () => {
+    const create = await request(app)
+      .post('/api/surveys')
+      .send({
+        project_name:   'Markdown Report Test',
+        inspector_name: 'Frank',
+        site_name:      'Site MD',
+        category_name:  'Roof Mount',
+        status:         'submitted',
+        metadata: {
+          type: 'roof_mount', roof_material: 'Membrane',
+          rafter_size: '2x4', rafter_spacing: '16in',
+          roof_age_years: 18, azimuth: 175,
+        },
+      });
+    createdIds.push(create.body.id);
+
+    const res = await request(app)
+      .get(`/api/surveys/${create.body.id as string}/report?format=markdown`);
+
+    expect(res.status).toBe(200);
+    expect(res.header['content-type']).toMatch(/text\/markdown/);
+    expect(res.header['content-disposition']).toMatch(/attachment/);
+    expect(res.header['content-disposition']).toMatch(/\.md/);
+    // Markdown should contain core headings
+    expect(res.text).toContain('# Engineering Assessment Report');
+    expect(res.text).toContain('## Overall Risk');
+    expect(res.text).toContain('High');
+    expect(res.text).toContain('Membrane');
+    expect(res.text).toContain('Markdown Report Test');
+  });
+
+  it('accumulates multiple flags on a single survey (old Membrane roof)', async () => {
+    const create = await request(app)
+      .post('/api/surveys')
+      .send({
+        project_name:   'Double Flag Test',
+        inspector_name: 'Grace',
+        site_name:      'Warehouse Roof',
+        category_name:  'Roof Mount',
+        status:         'submitted',
+        metadata: {
+          type: 'roof_mount', roof_material: 'Membrane',
+          rafter_size: '2x6', rafter_spacing: '24in',
+          roof_age_years: 22, azimuth: 190,
+        },
+      });
+    createdIds.push(create.body.id);
+
+    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    expect(res.status).toBe(200);
+    expect(res.body.flags.length).toBeGreaterThanOrEqual(2);
+    const fields = res.body.flags.map((f: { field: string }) => f.field);
+    expect(fields).toContain('roof_age_years');
+    expect(fields).toContain('roof_material');
+  });
+});

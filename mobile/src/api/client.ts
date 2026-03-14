@@ -7,6 +7,46 @@
  */
 import type { Survey, SurveyFormData, ApiSyncResponse, ApiPhotoUploadResponse } from '../types';
 
+// ----------------------------------------------------------------
+// Engineering Report types (mirrors backend/src/utils/reportGenerator.ts)
+// ----------------------------------------------------------------
+
+export type FlagPriority = 'High' | 'Medium' | 'Low';
+export type OverallRisk  = 'High' | 'Medium' | 'Low' | 'None';
+
+export interface ReportFlag {
+  priority: FlagPriority;
+  category: string;
+  field?:   string;
+  message:  string;
+}
+
+export interface ChecklistSummary {
+  total:   number;
+  pass:    number;
+  fail:    number;
+  na:      number;
+  pending: number;
+}
+
+export interface EngineeringReport {
+  survey_id:         string;
+  project_name:      string;
+  site_name:         string;
+  site_address:      string | null;
+  inspector_name:    string;
+  category:          string | null;
+  latitude:          number | null;
+  longitude:         number | null;
+  survey_date:       string;
+  generated_at:      string;
+  overall_risk:      OverallRisk;
+  flags:             ReportFlag[];
+  checklist_summary: ChecklistSummary;
+  recommendations:   string[];
+  metadata:          Record<string, unknown> | null;
+}
+
 export const API_URL =
   process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'http://localhost:3001';
 
@@ -131,4 +171,34 @@ export async function batchSync(payload: {
     body:    JSON.stringify(payload),
   });
   return handleResponse<ApiSyncResponse>(res);
+}
+
+// ----------------------------------------------------------------
+// Engineering Report
+// ----------------------------------------------------------------
+
+/**
+ * GET /api/surveys/:id/report
+ * Returns the EngineeringReport JSON for a survey.
+ */
+export async function fetchReport(surveyId: string): Promise<EngineeringReport> {
+  const res = await fetch(`${API_URL}/api/surveys/${surveyId}/report`);
+  return handleResponse<EngineeringReport>(res);
+}
+
+/**
+ * GET /api/surveys/:id/report?format=markdown
+ * Downloads the Markdown report text.
+ */
+export async function downloadReportMarkdown(surveyId: string): Promise<string> {
+  const res = await fetch(`${API_URL}/api/surveys/${surveyId}/report?format=markdown`);
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = await res.json() as { error?: string };
+      if (body.error) message = body.error;
+    } catch { /* ignore */ }
+    throw new Error(message);
+  }
+  return res.text();
 }

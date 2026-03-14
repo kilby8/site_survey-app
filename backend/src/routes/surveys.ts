@@ -11,6 +11,7 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { pool } from '../database';
 import { stringify as csvStringify } from 'csv-stringify/sync';
+import { generateReport, toMarkdown } from '../utils/reportGenerator';
 
 const router = Router();
 
@@ -695,6 +696,56 @@ router.get('/', async (req: Request, res: Response) => {
 // ================================================================
 // SINGLE SURVEY
 // ================================================================
+
+// ================================================================
+// ENGINEERING ASSESSMENT REPORT
+// Must be declared BEFORE /:id so Express doesn't shadow it.
+// ================================================================
+
+/**
+ * GET /api/surveys/:id/report
+ *
+ * Generates an Engineering Assessment report by analysing the survey's
+ * metadata and checklist results.
+ *
+ * Query params:
+ *   ?format=markdown  → returns a Markdown file download
+ *   (default)         → returns the EngineeringReport JSON object
+ *
+ * Automated High-Priority flags:
+ *   - Roof Mount  : roof_age_years > 15 or material === 'Membrane'
+ *   - Ground Mount: soil_type === 'Rocky'
+ *   - Solar Fencing: lower_shade_risk === true
+ *   - Electrical  : checklist "Main Service Panel" status === 'fail'
+ */
+router.get('/:id/report', async (req: Request, res: Response) => {
+  try {
+    const survey = await fetchSurveyFull(req.params.id);
+    if (!survey) {
+      res.status(404).json({ error: 'Survey not found' });
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const report = generateReport(survey as any);
+
+    const format = (req.query['format'] as string | undefined)?.toLowerCase();
+
+    if (format === 'markdown') {
+      const md       = toMarkdown(report);
+      const filename = `engineering-report-${req.params.id}-${Date.now()}.md`;
+      res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(md);
+      return;
+    }
+
+    res.json(report);
+  } catch (err) {
+    console.error('GET /api/surveys/:id/report error:', err);
+    res.status(500).json({ error: 'Failed to generate report' });
+  }
+});
 
 /** GET /api/surveys/:id */
 router.get('/:id', async (req: Request, res: Response) => {
