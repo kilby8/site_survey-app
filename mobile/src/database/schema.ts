@@ -23,6 +23,8 @@ export const CREATE_SURVEYS_TABLE = `
     sync_status    TEXT    NOT NULL DEFAULT 'pending',
     sync_error     TEXT,
     device_id      TEXT,
+    -- Category-specific fields stored as a JSON string (mirrors server JSONB column)
+    metadata       TEXT,
     created_at     TEXT    NOT NULL,
     updated_at     TEXT    NOT NULL
   );

@@ -22,12 +22,16 @@ CREATE TABLE IF NOT EXISTS categories (
 
 -- Seed default categories
 INSERT INTO categories (name, description, color) VALUES
-  ('Electrical',          'Electrical systems and infrastructure',   '#f59e0b'),
-  ('Structural',          'Structural integrity and civil works',    '#ef4444'),
-  ('Network/Comms',       'Network, fibre and communications',       '#8b5cf6'),
-  ('Environmental',       'Environmental and compliance checks',     '#10b981'),
-  ('Safety',              'Health & safety site inspections',        '#f97316'),
-  ('General Inspection',  'General site survey and walkthrough',     '#1a56db')
+  ('Electrical',          'Electrical systems and infrastructure',        '#f59e0b'),
+  ('Structural',          'Structural integrity and civil works',         '#ef4444'),
+  ('Network/Comms',       'Network, fibre and communications',            '#8b5cf6'),
+  ('Environmental',       'Environmental and compliance checks',          '#10b981'),
+  ('Safety',              'Health & safety site inspections',             '#f97316'),
+  ('General Inspection',  'General site survey and walkthrough',          '#1a56db'),
+  -- Solar installation categories
+  ('Ground Mount',        'Solar panel ground mount installations',       '#16a34a'),
+  ('Roof Mount',          'Rooftop solar panel mount installations',      '#7c3aed'),
+  ('Solar Fencing',       'Solar fence / agrivoltaic installations',      '#0891b2')
 ON CONFLICT (name) DO NOTHING;
 
 -- ----------------------------------------------------------------
@@ -68,6 +72,9 @@ CREATE TABLE IF NOT EXISTS surveys (
   -- offline support: track which device originated the record
   device_id       VARCHAR(255),
   synced_at       TIMESTAMPTZ,
+  -- Category-specific survey fields (Ground Mount / Roof Mount / Solar Fencing)
+  -- Stored as JSONB so the design team can query individual fields via ->>'field'
+  metadata        JSONB,
   created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );

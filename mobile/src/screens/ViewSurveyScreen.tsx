@@ -139,6 +139,25 @@ export default function ViewSurveyScreen({ navigation, route }: Props) {
           </Section>
         )}
 
+        {/* Solar metadata */}
+        {survey.metadata && (
+          <Section title="📐 Installation Specifications">
+            {Object.entries(survey.metadata)
+              .filter(([k]) => k !== 'type')
+              .map(([k, v]) => (
+                <View key={k} style={styles.row}>
+                  <Text style={styles.rowLabel}>
+                    {k.replace(/_/g, ' ')}
+                  </Text>
+                  <Text style={styles.rowValue}>
+                    {typeof v === 'boolean' ? (v ? 'Yes' : 'No') : String(v ?? '—')}
+                  </Text>
+                </View>
+              ))
+            }
+          </Section>
+        )}
+
         {/* Checklist */}
         {survey.checklist.length > 0 && (
           <Section title={`Checklist (${survey.checklist.length})`}>

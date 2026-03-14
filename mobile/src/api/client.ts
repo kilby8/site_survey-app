@@ -77,6 +77,8 @@ export async function postSurvey(survey: SurveyFormData & { id: string }): Promi
       notes:          survey.notes,
       status:         'submitted',
       device_id:      survey.device_id,
+      /** Category-specific metadata (Ground Mount / Roof Mount / Solar Fencing) */
+      metadata:       survey.metadata ?? null,
       // Checklist items are sent with the survey for atomic creation
       checklist: (survey.checklist ?? []).map(c => ({
         label:  c.label,

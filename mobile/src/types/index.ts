@@ -7,6 +7,42 @@ export type SyncStatus       = 'pending' | 'syncing' | 'synced' | 'error';
 export type ChecklistStatus  = 'pass' | 'fail' | 'n/a' | 'pending';
 
 // ------------------------------------------------------------------
+// Solar installation metadata types
+// Stored as JSONB on the server and as JSON text in local SQLite.
+// The `type` discriminator matches the category_id slug.
+// ------------------------------------------------------------------
+
+export interface GroundMountMetadata {
+  type:                'ground_mount';
+  soil_type:           'Rocky' | 'Sandy' | 'Clay' | 'Organic/Loam' | null;
+  slope_degrees:       number | null;
+  trenching_path:      string;
+  vegetation_clearing: boolean;
+}
+
+export interface RoofMountMetadata {
+  type:            'roof_mount';
+  roof_material:   'Asphalt Shingle' | 'Metal' | 'Tile' | 'Membrane' | null;
+  rafter_size:     '2x4' | '2x6' | '2x8' | null;
+  rafter_spacing:  '16in' | '24in' | null;
+  roof_age_years:  number | null;
+  azimuth:         number | null;
+}
+
+export interface SolarFencingMetadata {
+  type:                'solar_fencing';
+  perimeter_length_ft: number | null;
+  lower_shade_risk:    boolean;
+  foundation_type:     'Driven Piles' | 'Concrete Footer' | null;
+  bifacial_surface:    'Concrete' | 'Gravel' | 'Grass' | 'Dirt' | null;
+}
+
+export type SurveyMetadata =
+  | GroundMountMetadata
+  | RoofMountMetadata
+  | SolarFencingMetadata;
+
+// ------------------------------------------------------------------
 // Core domain models
 // ------------------------------------------------------------------
 
@@ -56,6 +92,8 @@ export interface Survey {
   sync_status:    SyncStatus;
   sync_error:     string | null;
   device_id:      string | null;
+  /** Category-specific fields — Ground Mount / Roof Mount / Solar Fencing */
+  metadata:       SurveyMetadata | null;
   created_at:     string;
   updated_at:     string;
   /** Hydrated relations — populated when loading a full survey */
@@ -120,4 +158,8 @@ export const SURVEY_CATEGORIES = [
   { id: 'environmental',name: 'Environmental' },
   { id: 'safety',       name: 'Safety' },
   { id: 'general',      name: 'General Inspection' },
+  // Solar installation categories — trigger category-specific metadata sections
+  { id: 'ground_mount',  name: 'Ground Mount' },
+  { id: 'roof_mount',    name: 'Roof Mount' },
+  { id: 'solar_fencing', name: 'Solar Fencing' },
 ];

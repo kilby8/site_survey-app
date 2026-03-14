@@ -20,11 +20,13 @@ import {
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { DEFAULT_CHECKLIST, SURVEY_CATEGORIES } from '../types';
+import type { SurveyMetadata } from '../types';
 import { createSurvey } from '../database/surveyDb';
 import { useLocation }   from '../hooks/useLocation';
 import GPSCapture        from '../components/GPSCapture';
 import ChecklistEditor, { type ChecklistItemDraft } from '../components/ChecklistEditor';
 import PhotoCapture,     { type PhotoDraft }        from '../components/PhotoCapture';
+import SolarMetadataForm from '../components/SolarMetadataForm';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList, 'NewSurvey'>;
 
@@ -48,6 +50,8 @@ export default function NewSurveyScreen({ navigation, deviceId }: Props) {
     DEFAULT_CHECKLIST.map(d => ({ label: d.label, status: d.status, notes: d.notes }))
   );
   const [photos,    setPhotos]    = useState<PhotoDraft[]>([]);
+  // Solar installation metadata — populated conditionally by SolarMetadataForm
+  const [metadata,  setMetadata]  = useState<SurveyMetadata | null>(null);
   const [saving,    setSaving]    = useState(false);
 
   // ── GPS ───────────────────────────────────────────────────────
@@ -84,6 +88,7 @@ export default function NewSurveyScreen({ navigation, deviceId }: Props) {
           notes:          notes.trim(),
           status:         'draft',
           device_id:      deviceId,
+          metadata:       metadata,
           checklist:      checklist.map((c, i) => ({ ...c, sort_order: i })),
           photos:         photos.map((p, i) => ({
             file_path:   p.uri,
@@ -134,7 +139,12 @@ export default function NewSurveyScreen({ navigation, deviceId }: Props) {
                   styles.catBtn,
                   categoryIdx === idx + 1 && styles.catBtnActive,
                 ]}
-                onPress={() => setCategoryIdx(idx + 1)}
+                onPress={() => {
+                  setCategoryIdx(idx + 1);
+                  // Clear metadata when switching away from a solar category
+                  const isSolar = ['ground_mount', 'roof_mount', 'solar_fencing'].includes(cat.id);
+                  if (!isSolar) setMetadata(null);
+                }}
               >
                 <Text
                   style={[
@@ -212,6 +222,22 @@ export default function NewSurveyScreen({ navigation, deviceId }: Props) {
             multiline
             numberOfLines={4}
           />
+
+          {/* ── Solar Metadata (conditional) ────────── */}
+          {['ground_mount', 'roof_mount', 'solar_fencing'].includes(
+            SURVEY_CATEGORIES[categoryIdx]?.id ?? ''
+          ) && (
+            <>
+              <Text style={styles.sectionTitle}>
+                {SURVEY_CATEGORIES[categoryIdx].name} Specifications
+              </Text>
+              <SolarMetadataForm
+                categoryId={SURVEY_CATEGORIES[categoryIdx].id}
+                metadata={metadata}
+                onChange={setMetadata}
+              />
+            </>
+          )}
 
           {/* ── Checklist ───────────────────────────── */}
           <ChecklistEditor items={checklist} onChange={setChecklist} />

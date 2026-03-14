@@ -70,6 +70,35 @@ interface GeoJsonPoint {
   coordinates: [number, number]; // [longitude, latitude]
 }
 
+/**
+ * Category-specific metadata stored as JSONB.
+ * The `type` discriminator matches the category_id slug so the API
+ * and the design team can identify which schema is in use.
+ */
+interface GroundMountMetadata {
+  type:                'ground_mount';
+  soil_type:           'Rocky' | 'Sandy' | 'Clay' | 'Organic/Loam' | null;
+  slope_degrees:       number | null;
+  trenching_path:      string;
+  vegetation_clearing: boolean;
+}
+interface RoofMountMetadata {
+  type:            'roof_mount';
+  roof_material:   'Asphalt Shingle' | 'Metal' | 'Tile' | 'Membrane' | null;
+  rafter_size:     '2x4' | '2x6' | '2x8' | null;
+  rafter_spacing:  '16in' | '24in' | null;
+  roof_age_years:  number | null;
+  azimuth:         number | null;
+}
+interface SolarFencingMetadata {
+  type:                'solar_fencing';
+  perimeter_length_ft: number | null;
+  lower_shade_risk:    boolean;
+  foundation_type:     'Driven Piles' | 'Concrete Footer' | null;
+  bifacial_surface:    'Concrete' | 'Gravel' | 'Grass' | 'Dirt' | null;
+}
+type SurveyMetadata = GroundMountMetadata | RoofMountMetadata | SolarFencingMetadata;
+
 interface SurveyInput {
   project_name:   string;
   project_id?:    string;
@@ -87,6 +116,8 @@ interface SurveyInput {
   notes?:         string;
   status?:        string;
   device_id?:     string;
+  /** Category-specific fields (Ground Mount / Roof Mount / Solar Fencing) */
+  metadata?:      SurveyMetadata | null;
   checklist?:     ChecklistItemInput[];
   photos?:        PhotoInput[];
 }
@@ -137,7 +168,7 @@ async function fetchSurveyFull(id: string) {
        s.inspector_name, s.site_name, s.site_address,
        s.latitude, s.longitude, s.gps_accuracy,
        ST_AsGeoJSON(s.location::geometry)::jsonb AS location_geojson,
-       s.survey_date, s.notes, s.status, s.device_id,
+       s.survey_date, s.notes, s.status, s.device_id, s.metadata,
        s.synced_at, s.created_at, s.updated_at
      FROM surveys s
      WHERE s.id = $1`,
@@ -243,6 +274,7 @@ router.get('/export/geojson', async (req: Request, res: Response) => {
          s.survey_date,
          s.notes,
          s.status,
+         s.metadata,
          s.created_at,
          s.updated_at,
          -- ST_AsGeoJSON converts the GEOGRAPHY column to a GeoJSON geometry object
@@ -280,6 +312,8 @@ router.get('/export/geojson', async (req: Request, res: Response) => {
         survey_date:    row.survey_date,
         status:         row.status,
         notes:          row.notes,
+        /** Category-specific metadata — Ground Mount, Roof Mount, or Solar Fencing fields */
+        metadata:       row.metadata ?? null,
         checklist:      row.checklist ?? [],
         created_at:     row.created_at,
         updated_at:     row.updated_at,
@@ -342,6 +376,7 @@ router.get('/export/csv', async (req: Request, res: Response) => {
          s.survey_date,
          s.notes,
          s.status,
+         s.metadata,
          s.created_at,
          s.updated_at
        FROM surveys s
@@ -357,28 +392,59 @@ router.get('/export/csv', async (req: Request, res: Response) => {
     if (rows.length === 0) {
       res.send(
         'id,project_name,category,inspector_name,site_name,site_address,' +
-        'latitude,longitude,gps_accuracy_m,survey_date,status,notes,created_at,updated_at\n'
+        'latitude,longitude,gps_accuracy_m,survey_date,status,notes,' +
+        // Ground Mount columns
+        'soil_type,slope_degrees,trenching_path,vegetation_clearing,' +
+        // Roof Mount columns
+        'roof_material,rafter_size,rafter_spacing,roof_age_years,azimuth,' +
+        // Solar Fencing columns
+        'perimeter_length_ft,lower_shade_risk,foundation_type,bifacial_surface,' +
+        'metadata_json,created_at,updated_at\n'
       );
       return;
     }
 
     const csv = csvStringify(
-      rows.map((r) => ({
-        id:             r.id,
-        project_name:   r.project_name,
-        category:       r.category_name ?? '',
-        inspector_name: r.inspector_name,
-        site_name:      r.site_name,
-        site_address:   r.site_address ?? '',
-        latitude:       r.latitude     ?? '',
-        longitude:      r.longitude    ?? '',
-        gps_accuracy_m: r.gps_accuracy ?? '',
-        survey_date:    r.survey_date  ? new Date(r.survey_date as string).toISOString() : '',
-        status:         r.status,
-        notes:          r.notes        ?? '',
-        created_at:     new Date(r.created_at as string).toISOString(),
-        updated_at:     new Date(r.updated_at as string).toISOString(),
-      })),
+      rows.map((r) => {
+        // Parse the JSONB metadata into typed fields for clean CSV columns
+        const meta = r.metadata as Record<string, unknown> | null;
+        const metaType = meta?.type as string | undefined;
+
+        return {
+          id:             r.id,
+          project_name:   r.project_name,
+          category:       r.category_name ?? '',
+          inspector_name: r.inspector_name,
+          site_name:      r.site_name,
+          site_address:   r.site_address ?? '',
+          latitude:       r.latitude     ?? '',
+          longitude:      r.longitude    ?? '',
+          gps_accuracy_m: r.gps_accuracy ?? '',
+          survey_date:    r.survey_date  ? new Date(r.survey_date as string).toISOString() : '',
+          status:         r.status,
+          notes:          r.notes        ?? '',
+          // --- Ground Mount ---
+          soil_type:           metaType === 'ground_mount' ? (meta?.soil_type ?? '') : '',
+          slope_degrees:       metaType === 'ground_mount' ? (meta?.slope_degrees ?? '') : '',
+          trenching_path:      metaType === 'ground_mount' ? (meta?.trenching_path ?? '') : '',
+          vegetation_clearing: metaType === 'ground_mount' ? String(meta?.vegetation_clearing ?? '') : '',
+          // --- Roof Mount ---
+          roof_material:  metaType === 'roof_mount' ? (meta?.roof_material  ?? '') : '',
+          rafter_size:    metaType === 'roof_mount' ? (meta?.rafter_size    ?? '') : '',
+          rafter_spacing: metaType === 'roof_mount' ? (meta?.rafter_spacing ?? '') : '',
+          roof_age_years: metaType === 'roof_mount' ? (meta?.roof_age_years ?? '') : '',
+          azimuth:        metaType === 'roof_mount' ? (meta?.azimuth        ?? '') : '',
+          // --- Solar Fencing ---
+          perimeter_length_ft: metaType === 'solar_fencing' ? (meta?.perimeter_length_ft ?? '') : '',
+          lower_shade_risk:    metaType === 'solar_fencing' ? String(meta?.lower_shade_risk ?? '') : '',
+          foundation_type:     metaType === 'solar_fencing' ? (meta?.foundation_type     ?? '') : '',
+          bifacial_surface:    metaType === 'solar_fencing' ? (meta?.bifacial_surface     ?? '') : '',
+          // Raw JSON for any tooling that prefers it
+          metadata_json:  meta ? JSON.stringify(meta) : '',
+          created_at:     new Date(r.created_at as string).toISOString(),
+          updated_at:     new Date(r.updated_at as string).toISOString(),
+        };
+      }),
       { header: true }
     );
 
@@ -448,6 +514,7 @@ router.post('/sync', async (req: Request, res: Response) => {
             survey.notes   ?? null,
             survey.status  ?? 'submitted',
             device_id      ?? survey.device_id ?? null,
+            survey.metadata != null ? JSON.stringify(survey.metadata) : null,
           );
 
           await client.query(
@@ -455,10 +522,11 @@ router.post('/sync', async (req: Request, res: Response) => {
                (id, project_name, project_id, category_id, category_name,
                 inspector_name, site_name, site_address,
                 latitude, longitude, gps_accuracy, location,
-                survey_date, notes, status, device_id, synced_at)
+                survey_date, notes, status, device_id, metadata, synced_at)
              VALUES
                ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
                 ${locationSql},
+                $${insertParams.length - 4},
                 $${insertParams.length - 3},
                 $${insertParams.length - 2},
                 $${insertParams.length - 1},
@@ -494,7 +562,11 @@ router.post('/sync', async (req: Request, res: Response) => {
             ? geoExpr(updateParams, coords.lon, coords.lat)
             : 'location'; // keep existing value
 
-          updateParams.push(survey.notes ?? null, survey.status ?? null);
+          updateParams.push(
+            survey.notes    ?? null,
+            survey.status   ?? null,
+            survey.metadata != null ? JSON.stringify(survey.metadata) : null,
+          );
 
           await client.query(
             `UPDATE surveys SET
@@ -509,8 +581,9 @@ router.post('/sync', async (req: Request, res: Response) => {
                longitude      = COALESCE($10, longitude),
                gps_accuracy   = COALESCE($11, gps_accuracy),
                location       = ${locationSql},
-               notes          = COALESCE($${updateParams.length - 1}, notes),
-               status         = COALESCE($${updateParams.length},     status),
+               notes          = COALESCE($${updateParams.length - 2}, notes),
+               status         = COALESCE($${updateParams.length - 1}, status),
+               metadata       = COALESCE($${updateParams.length}::jsonb, metadata),
                synced_at      = NOW(),
                updated_at     = NOW()
              WHERE id = $1`,
@@ -695,9 +768,10 @@ router.post('/', async (req: Request, res: Response) => {
 
     insertParams.push(
       body.survey_date ? new Date(body.survey_date) : new Date(), // survey_date
-      body.notes  ?? null,                                         // notes
-      body.status ?? 'draft',                                      // status
-      body.device_id ?? null,                                      // device_id
+      body.notes    ?? null,                                        // notes
+      body.status   ?? 'draft',                                     // status
+      body.device_id ?? null,                                       // device_id
+      body.metadata != null ? JSON.stringify(body.metadata) : null, // metadata
     );
 
     const { rows } = await client.query(
@@ -705,10 +779,11 @@ router.post('/', async (req: Request, res: Response) => {
          (id, project_name, project_id, category_id, category_name,
           inspector_name, site_name, site_address,
           latitude, longitude, gps_accuracy, location,
-          survey_date, notes, status, device_id)
+          survey_date, notes, status, device_id, metadata)
        VALUES
          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
           ${locationSql},
+          $${insertParams.length - 4},
           $${insertParams.length - 3},
           $${insertParams.length - 2},
           $${insertParams.length - 1},
@@ -778,7 +853,11 @@ router.put('/:id', async (req: Request, res: Response) => {
       ? geoExpr(updateParams, coords.lon, coords.lat)
       : 'location';
 
-    updateParams.push(body.notes ?? null, body.status ?? null);
+    updateParams.push(
+      body.notes    ?? null,
+      body.status   ?? null,
+      body.metadata != null ? JSON.stringify(body.metadata) : null,
+    );
 
     await client.query(
       `UPDATE surveys SET
@@ -793,8 +872,9 @@ router.put('/:id', async (req: Request, res: Response) => {
          longitude      = COALESCE($10, longitude),
          gps_accuracy   = COALESCE($11, gps_accuracy),
          location       = ${locationSql},
-         notes          = COALESCE($${updateParams.length - 1}, notes),
-         status         = COALESCE($${updateParams.length},     status),
+         notes          = COALESCE($${updateParams.length - 2}, notes),
+         status         = COALESCE($${updateParams.length - 1}, status),
+         metadata       = COALESCE($${updateParams.length}::jsonb, metadata),
          updated_at     = NOW()
        WHERE id = $1`,
       updateParams

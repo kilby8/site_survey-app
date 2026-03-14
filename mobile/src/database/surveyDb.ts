@@ -35,7 +35,10 @@ interface SurveyRow {
   latitude: number | null; longitude: number | null; gps_accuracy: number | null;
   survey_date: string; notes: string;
   status: string; sync_status: string; sync_error: string | null;
-  device_id: string | null; created_at: string; updated_at: string;
+  device_id: string | null;
+  /** JSON string or null */
+  metadata: string | null;
+  created_at: string; updated_at: string;
 }
 
 interface ChecklistRow {
@@ -69,6 +72,7 @@ function rowToSurvey(r: SurveyRow): Omit<Survey, 'checklist' | 'photos'> {
     sync_status:    r.sync_status as SyncStatus,
     sync_error:     r.sync_error,
     device_id:      r.device_id,
+    metadata:       r.metadata ? (JSON.parse(r.metadata) as Survey['metadata']) : null,
     created_at:     r.created_at,
     updated_at:     r.updated_at,
   };
@@ -97,9 +101,9 @@ export async function createSurvey(data: SurveyFormData, deviceId: string): Prom
       `INSERT INTO surveys
          (id, project_name, category_id, category_name, inspector_name,
           site_name, site_address, latitude, longitude, gps_accuracy,
-          survey_date, notes, status, sync_status, device_id,
+          survey_date, notes, status, sync_status, device_id, metadata,
           created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id,
         data.project_name,
@@ -116,6 +120,7 @@ export async function createSurvey(data: SurveyFormData, deviceId: string): Prom
         data.status        ?? 'draft',
         'pending',
         deviceId,
+        data.metadata != null ? JSON.stringify(data.metadata) : null,
         now,
         now,
       ]
@@ -174,6 +179,7 @@ export async function updateSurvey(
          survey_date    = COALESCE(?, survey_date),
          notes          = COALESCE(?, notes),
          status         = COALESCE(?, status),
+         metadata       = COALESCE(?, metadata),
          sync_status    = 'pending',
          sync_error     = NULL,
          updated_at     = ?
@@ -191,6 +197,7 @@ export async function updateSurvey(
         patch.survey_date    ?? null,
         patch.notes          ?? null,
         patch.status         ?? null,
+        patch.metadata != null ? JSON.stringify(patch.metadata) : null,
         now,
         id,
       ]

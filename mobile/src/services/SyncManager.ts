@@ -40,7 +40,7 @@ let _isSyncing        = false;
 let _isOnline         = false;
 let _subscription:     EventSubscription | null = null;
 let _statusCallbacks: SyncStatusCallback[] = [];
-let _deviceId         = 'unknown';
+let _deviceId         = '';
 
 // ----------------------------------------------------------------
 // Public API
@@ -48,6 +48,10 @@ let _deviceId         = 'unknown';
 
 /** Call once at app startup, passing the device's unique identifier. */
 export async function initSyncManager(deviceId: string): Promise<void> {
+  if (!deviceId) {
+    console.warn('[SyncManager] initSyncManager called without a deviceId — sync disabled');
+    return;
+  }
   _deviceId = deviceId;
 
   // Check initial network state
@@ -144,6 +148,7 @@ async function _syncOneSurvey(survey: Survey): Promise<void> {
       notes:          survey.notes,
       status:         'submitted',
       device_id:      _deviceId,
+      metadata:       survey.metadata ?? null,
       checklist: (survey.checklist ?? []).map(c => ({
         label:      c.label,
         status:     c.status,
