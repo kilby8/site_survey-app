@@ -1,23 +1,33 @@
+import { createHash, randomBytes } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { pool } from '../database';
 import { signAuthToken } from '../utils/authToken';
 import { requireAuth } from '../middleware/auth';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { authAudit } from '../utils/authAudit';
+import { sendPasswordResetEmail } from '../utils/passwordResetMailer';
 
 const router = Router();
 let usersTableReady = false;
 
 interface AuthBody {
+  identifier?: string;
   email?: string;
   password?: string;
   full_name?: string;
+  token?: string;
+  new_password?: string;
 }
 
 interface SignInAttemptState {
   failures: number;
   firstFailureAt: number;
   lockedUntil?: number;
+}
+
+interface PasswordResetState {
+  tokenHash: string;
+  expiresAt: number;
 }
 
 function getIntEnv(name: string, fallback: number): number {
@@ -34,7 +44,19 @@ const REGISTER_MAX_REQUESTS = getIntEnv('USERS_REGISTER_MAX_REQUESTS', 8);
 const REGISTER_WINDOW_MS = getIntEnv('USERS_REGISTER_WINDOW_MINUTES', 15) * 60 * 1000;
 const ME_MAX_REQUESTS = getIntEnv('USERS_ME_MAX_REQUESTS', 120);
 const ME_WINDOW_MS = getIntEnv('USERS_ME_WINDOW_MINUTES', 1) * 60 * 1000;
+const PASSWORD_RESET_TTL_MS = getIntEnv('PASSWORD_RESET_TTL_MINUTES', 30) * 60 * 1000;
 const signInAttemptMap = new Map<string, SignInAttemptState>();
+const passwordResetMap = new Map<string, PasswordResetState>();
+const SUPPORTED_SOCIAL_PROVIDERS = new Set(['google', 'microsoft', 'apple']);
+
+const ADMIN_USER = {
+  id: 'admin-local-user',
+  username: 'admin',
+  email: 'admin@site-survey.local',
+  fullName: 'Administrator',
+  password: 'admin123!',
+  role: 'admin' as const,
+};
 
 function getClientIp(req: Request): string {
   return req.ip || req.socket.remoteAddress || 'unknown';
@@ -99,6 +121,48 @@ function cleanEmail(email?: string): string {
   return (email || '').trim().toLowerCase();
 }
 
+function cleanIdentifier(identifier?: string): string {
+  return (identifier || '').trim().toLowerCase();
+}
+
+function isAdminIdentifier(identifier: string): boolean {
+  return identifier === ADMIN_USER.username || identifier === ADMIN_USER.email;
+}
+
+function buildAdminUser() {
+  return {
+    id: ADMIN_USER.id,
+    username: ADMIN_USER.username,
+    email: ADMIN_USER.email,
+    fullName: ADMIN_USER.fullName,
+    role: ADMIN_USER.role,
+    createdAt: new Date(0).toISOString(),
+  };
+}
+
+function hashResetToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function createPasswordResetToken(email: string): string {
+  const token = randomBytes(24).toString('hex');
+  passwordResetMap.set(email, {
+    tokenHash: hashResetToken(token),
+    expiresAt: Date.now() + PASSWORD_RESET_TTL_MS,
+  });
+  return token;
+}
+
+function isValidResetToken(email: string, token: string): boolean {
+  const resetState = passwordResetMap.get(email);
+  if (!resetState) return false;
+  if (resetState.expiresAt <= Date.now()) {
+    passwordResetMap.delete(email);
+    return false;
+  }
+  return resetState.tokenHash === hashResetToken(token);
+}
+
 async function ensureUsersTable(): Promise<void> {
   if (usersTableReady) return;
 
@@ -120,6 +184,12 @@ async function ensureUsersTable(): Promise<void> {
 // GET /api/users/me
 router.get('/me', requireAuth, meRateLimit, async (req: Request, res: Response) => {
   try {
+    if (req.authUser?.role === 'admin' || req.authUser?.userId === ADMIN_USER.id) {
+      authAudit('users.me.success', req, ADMIN_USER.email, { status: 200, userId: ADMIN_USER.id });
+      res.json({ user: buildAdminUser() });
+      return;
+    }
+
     await ensureUsersTable();
 
     const userId = req.authUser?.userId;
@@ -150,6 +220,7 @@ router.get('/me', requireAuth, meRateLimit, async (req: Request, res: Response) 
         id: user.id,
         email: user.email,
         fullName: user.full_name,
+        role: 'user',
         createdAt: user.created_at,
       },
     });
@@ -207,6 +278,7 @@ router.post('/register', registerRateLimit, async (req: Request, res: Response) 
         id: user.id,
         email: user.email,
         fullName: user.full_name,
+        role: 'user',
         createdAt: user.created_at,
       },
     });
@@ -219,46 +291,60 @@ router.post('/register', registerRateLimit, async (req: Request, res: Response) 
 
 // POST /api/users/signin
 router.post('/signin', async (req: Request, res: Response) => {
-  const { email, password } = req.body as AuthBody;
-  const normalizedEmail = cleanEmail(email);
+  const { identifier, email, password } = req.body as AuthBody;
+  const normalizedIdentifier = cleanIdentifier(identifier || email);
 
-  authAudit('users.signin.attempt', req, normalizedEmail);
+  authAudit('users.signin.attempt', req, normalizedIdentifier);
 
-  if (!normalizedEmail || !password) {
-    authAudit('users.signin.reject', req, normalizedEmail, { status: 400, reason: 'missing-fields' });
-    res.status(400).json({ error: 'Email and password are required' });
+  if (!normalizedIdentifier || !password) {
+    authAudit('users.signin.reject', req, normalizedIdentifier, { status: 400, reason: 'missing-fields' });
+    res.status(400).json({ error: 'Email or username and password are required' });
     return;
   }
 
   try {
-    await ensureUsersTable();
-
-    const key = attemptKey(req, normalizedEmail);
+    const key = attemptKey(req, normalizedIdentifier);
     const state = getSignInState(key);
 
     if (isSignInLocked(state)) {
-      authAudit('users.signin.locked', req, normalizedEmail, { status: 429, reason: 'active-lockout' });
+      authAudit('users.signin.locked', req, normalizedIdentifier, { status: 429, reason: 'active-lockout' });
       res.status(429).json({ error: 'Too many sign-in attempts. Please try again later.' });
       return;
     }
+
+    if (isAdminIdentifier(normalizedIdentifier) && password === ADMIN_USER.password) {
+      clearSignInFailures(key);
+      const token = signAuthToken({
+        userId: ADMIN_USER.id,
+        username: ADMIN_USER.username,
+        email: ADMIN_USER.email,
+        role: ADMIN_USER.role,
+      });
+
+      authAudit('users.signin.success', req, ADMIN_USER.email, { status: 200, userId: ADMIN_USER.id });
+      res.json({ token, user: buildAdminUser() });
+      return;
+    }
+
+    await ensureUsersTable();
 
     const { rows } = await pool.query(
       `SELECT id, email, full_name, created_at
        FROM users
        WHERE email = $1 AND password_hash = crypt($2, password_hash)
        LIMIT 1`,
-      [normalizedEmail, password]
+      [normalizedIdentifier, password]
     );
 
     if (!rows[0]) {
       recordSignInFailure(state);
       if (isSignInLocked(state)) {
-        authAudit('users.signin.locked', req, normalizedEmail, { status: 429, reason: 'lockout-threshold-reached' });
+        authAudit('users.signin.locked', req, normalizedIdentifier, { status: 429, reason: 'lockout-threshold-reached' });
         res.status(429).json({ error: 'Too many sign-in attempts. Please try again later.' });
         return;
       }
-      authAudit('users.signin.failure', req, normalizedEmail, { status: 401, reason: 'invalid-credentials' });
-      res.status(401).json({ error: 'Invalid email or password' });
+      authAudit('users.signin.failure', req, normalizedIdentifier, { status: 401, reason: 'invalid-credentials' });
+      res.status(401).json({ error: 'Invalid email, username, or password' });
       return;
     }
 
@@ -273,14 +359,128 @@ router.post('/signin', async (req: Request, res: Response) => {
         id: user.id,
         email: user.email,
         fullName: user.full_name,
+        role: 'user',
         createdAt: user.created_at,
       },
     });
   } catch (err) {
     console.error('POST /api/users/signin error:', err);
-    authAudit('users.signin.error', req, normalizedEmail, { status: 500 });
+    authAudit('users.signin.error', req, normalizedIdentifier, { status: 500 });
     res.status(500).json({ error: 'Failed to sign in' });
   }
+});
+
+// POST /api/users/forgot-password
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  const { email } = req.body as AuthBody;
+  const normalizedEmail = cleanEmail(email);
+
+  if (!normalizedEmail) {
+    res.status(400).json({ error: 'Email is required' });
+    return;
+  }
+
+  authAudit('users.forgot-password.attempt', req, normalizedEmail);
+
+  try {
+    const genericMessage = 'If that email exists, password reset instructions have been sent.';
+    await ensureUsersTable();
+
+    const { rows } = await pool.query('SELECT id FROM users WHERE email = $1 LIMIT 1', [normalizedEmail]);
+    if (rows[0]) {
+      const resetToken = createPasswordResetToken(normalizedEmail);
+      let delivery = 'sent';
+
+      try {
+        await sendPasswordResetEmail(normalizedEmail, resetToken);
+      } catch (mailErr) {
+        delivery = 'failed';
+        console.error('Password reset email delivery error:', mailErr);
+      }
+
+      authAudit('users.forgot-password.success', req, normalizedEmail, { status: 200, userId: rows[0].id });
+      res.json({
+        message: genericMessage,
+        delivery,
+        resetToken: process.env.NODE_ENV === 'production' ? undefined : resetToken,
+        expiresInMinutes: Math.floor(PASSWORD_RESET_TTL_MS / 60000),
+      });
+      return;
+    }
+
+    authAudit('users.forgot-password.success', req, normalizedEmail, { status: 200, reason: 'generic-response' });
+    res.json({ message: genericMessage });
+  } catch (err) {
+    console.error('POST /api/users/forgot-password error:', err);
+    authAudit('users.forgot-password.error', req, normalizedEmail, { status: 500 });
+    res.status(500).json({ error: 'Failed to create password reset token' });
+  }
+});
+
+// POST /api/users/reset-password
+router.post('/reset-password', async (req: Request, res: Response) => {
+  const { email, token, new_password } = req.body as AuthBody;
+  const normalizedEmail = cleanEmail(email);
+  const nextPassword = (new_password || '').trim();
+
+  if (!normalizedEmail || !token || !nextPassword) {
+    res.status(400).json({ error: 'Email, token, and new password are required' });
+    return;
+  }
+
+  if (nextPassword.length < 8) {
+    res.status(400).json({ error: 'Password must be at least 8 characters' });
+    return;
+  }
+
+  authAudit('users.reset-password.attempt', req, normalizedEmail);
+
+  try {
+    await ensureUsersTable();
+
+    if (!isValidResetToken(normalizedEmail, token)) {
+      authAudit('users.reset-password.reject', req, normalizedEmail, { status: 400, reason: 'invalid-token' });
+      res.status(400).json({ error: 'Invalid or expired reset token' });
+      return;
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE users
+       SET password_hash = crypt($2, gen_salt('bf')),
+           updated_at = NOW()
+       WHERE email = $1
+       RETURNING id`,
+      [normalizedEmail, nextPassword]
+    );
+
+    passwordResetMap.delete(normalizedEmail);
+
+    if (!rows[0]) {
+      authAudit('users.reset-password.reject', req, normalizedEmail, { status: 404, reason: 'user-not-found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    authAudit('users.reset-password.success', req, normalizedEmail, { status: 200, userId: rows[0].id });
+    res.json({ message: 'Password reset successful. You can now sign in with your new password.' });
+  } catch (err) {
+    console.error('POST /api/users/reset-password error:', err);
+    authAudit('users.reset-password.error', req, normalizedEmail, { status: 500 });
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// POST /api/users/oauth/:provider
+router.post('/oauth/:provider', (req: Request, res: Response) => {
+  const provider = String(req.params.provider || '').toLowerCase();
+
+  if (!SUPPORTED_SOCIAL_PROVIDERS.has(provider)) {
+    res.status(400).json({ error: 'Unsupported social provider' });
+    return;
+  }
+
+  authAudit('users.oauth.placeholder', req, provider, { status: 501, reason: `${provider}-not-configured` });
+  res.status(501).json({ error: `${provider[0].toUpperCase()}${provider.slice(1)} sign-in is not configured yet.` });
 });
 
 export default router;

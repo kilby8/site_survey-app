@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 export interface AuthTokenPayload {
   userId: string;
   email: string;
+  username?: string;
+  role?: 'user' | 'admin';
 }
 
 function getSecret(): string {
@@ -27,7 +29,12 @@ export function verifyAuthToken(token: string): AuthTokenPayload | null {
       return null;
     }
 
-    return { userId: maybePayload.userId, email: maybePayload.email };
+    return {
+      userId: maybePayload.userId,
+      email: maybePayload.email,
+      username: typeof maybePayload.username === 'string' ? maybePayload.username : undefined,
+      role: maybePayload.role === 'admin' ? 'admin' : 'user',
+    };
   } catch {
     return null;
   }

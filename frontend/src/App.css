@@ -43,13 +43,126 @@
     linear-gradient(145deg, #f8fafc 0%, #eff6ff 55%, #ecfeff 100%);
 }
 
+.auth-layout {
+  width: min(1080px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 460px);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.auth-panel {
+  border-radius: 24px;
+}
+
+.auth-panel--brand {
+  position: relative;
+  overflow: hidden;
+  padding: 32px;
+  background:
+    linear-gradient(160deg, rgba(15, 23, 42, 0.94), rgba(30, 64, 175, 0.94)),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.04), transparent 60%);
+  color: #fff;
+  box-shadow: var(--shadow-md);
+}
+
+.auth-panel--brand::after {
+  content: '';
+  position: absolute;
+  inset: auto -40px -60px auto;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.2), transparent 65%);
+}
+
+.auth-kicker {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.auth-hero-title {
+  margin: 20px 0 12px;
+  font-size: clamp(2rem, 3.6vw, 3.35rem);
+  line-height: 1.02;
+  max-width: 11ch;
+}
+
+.auth-hero-copy {
+  max-width: 52ch;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.auth-feature-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.auth-feature-item {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(6px);
+}
+
+.auth-feature-item strong {
+  font-size: 0.95rem;
+}
+
+.auth-feature-item span {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 .auth-card {
-  width: min(480px, 100%);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.auth-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 6px;
+  margin-bottom: 18px;
+  border-radius: 16px;
+  background: #eef2ff;
+}
+
+.auth-mode-button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-weight: 700;
+}
+
+.auth-mode-button.is-active {
+  background: #fff;
+  color: var(--color-text);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
 }
 
 .auth-title {
@@ -77,6 +190,23 @@
   color: var(--color-text-secondary);
 }
 
+.auth-label-text {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.auth-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auth-helper-text {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
 .auth-input {
   width: 100%;
   min-height: 44px;
@@ -92,8 +222,67 @@
   box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.15);
 }
 
+.auth-password-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.auth-input--password {
+  min-width: 0;
+}
+
+.auth-password-toggle {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text-secondary);
+  font-weight: 700;
+}
+
 .auth-submit {
   margin-top: 6px;
+}
+
+.auth-footer-copy {
+  margin-top: 14px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.auth-admin-callout {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  background: #f8fafc;
+  display: grid;
+  gap: 10px;
+}
+
+.auth-admin-callout p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.auth-admin-callout code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.auth-social-row {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
 }
 
 .auth-toggle {
@@ -105,6 +294,28 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 10px;
+  }
+
+  .auth-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-panel--brand {
+    padding: 24px;
+  }
+
+  .auth-hero-title {
+    max-width: none;
+  }
+
+  .auth-label-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .auth-password-row {
+    grid-template-columns: 1fr;
   }
 }
 

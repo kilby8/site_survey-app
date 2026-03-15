@@ -114,6 +114,82 @@ describe('POST /api/users/signin rate limiting', () => {
   });
 });
 
+describe('POST /api/users/signin admin login', () => {
+  it('signs in using the seeded admin credentials', async () => {
+    const res = await request(app)
+      .post('/api/users/signin')
+      .send({ identifier: 'admin', password: 'admin123!' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBeDefined();
+    expect(res.body.user).toBeDefined();
+    expect(res.body.user.username).toBe('admin');
+    expect(res.body.user.role).toBe('admin');
+  });
+});
+
+describe('POST /api/users/forgot-password and /reset-password', () => {
+  it('returns a reset token in non-production mode and accepts password reset', async () => {
+    const email = `reset-${Date.now()}-${Math.floor(Math.random() * 10000)}@example.com`;
+    const initialPassword = 'OriginalPass123!';
+    const nextPassword = 'NewSecurePass456!';
+
+    const register = await request(app)
+      .post('/api/users/register')
+      .send({
+        full_name: 'Reset Flow User',
+        email,
+        password: initialPassword,
+      });
+
+    expect(register.status).toBe(201);
+
+    const forgot = await request(app)
+      .post('/api/users/forgot-password')
+      .send({ email });
+
+    expect(forgot.status).toBe(200);
+    expect(typeof forgot.body.message).toBe('string');
+    expect(typeof forgot.body.resetToken).toBe('string');
+
+    const reset = await request(app)
+      .post('/api/users/reset-password')
+      .send({
+        email,
+        token: forgot.body.resetToken,
+        new_password: nextPassword,
+      });
+
+    expect(reset.status).toBe(200);
+
+    const signin = await request(app)
+      .post('/api/users/signin')
+      .send({ identifier: email, password: nextPassword });
+
+    expect(signin.status).toBe(200);
+    await pool.query('DELETE FROM users WHERE email = $1', [email]);
+  });
+});
+
+describe('POST /api/users/oauth/:provider', () => {
+  it('returns 501 for unconfigured supported provider', async () => {
+    const res = await request(app)
+      .post('/api/users/oauth/google')
+      .send({});
+
+    expect(res.status).toBe(501);
+    expect(String(res.body.error || '')).toContain('not configured');
+  });
+
+  it('returns 400 for unsupported provider', async () => {
+    const res = await request(app)
+      .post('/api/users/oauth/unknown')
+      .send({});
+
+    expect(res.status).toBe(400);
+  });
+});
+
 // ----------------------------------------------------------------
 // Categories
 // ----------------------------------------------------------------
