@@ -2,7 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { fetchCurrentUser, forgotPassword, register, resetPassword, signIn, type AuthUser } from '../api/client';
 
-const AUTH_TOKEN_KEY = 'site-survey.auth.token';
+// Bump key version to invalidate stale sessions after auth flow rollout.
+const AUTH_TOKEN_KEY = 'site-survey.auth.token.v2';
 
 interface AuthContextValue {
   user: AuthUser | null;
