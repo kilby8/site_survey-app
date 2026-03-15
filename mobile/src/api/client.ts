@@ -101,12 +101,20 @@ const API_CANDIDATES = Array.from(
 const API_NETWORK_ERROR =
   `Cannot reach API. Tried: ${API_CANDIDATES.join(', ')}. Ensure backend is running and your phone is on the same Wi-Fi as this machine.`;
 
-async function fetchWithFallback(path: string, init: RequestInit): Promise<Response> {
-  const requestInit: RequestInit = init.signal ? init : { ...init, signal: AbortSignal.timeout(5_000) };
+function withTimeoutSignal(init: RequestInit, timeoutMs = 5_000): RequestInit {
+  if (init.signal || typeof AbortController === 'undefined') {
+    return init;
+  }
 
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), timeoutMs);
+  return { ...init, signal: controller.signal };
+}
+
+async function fetchWithFallback(path: string, init: RequestInit): Promise<Response> {
   for (const baseUrl of API_CANDIDATES) {
     try {
-      return await fetch(`${baseUrl}${path}`, requestInit);
+      return await fetch(`${baseUrl}${path}`, withTimeoutSignal(init));
     } catch {
       // Try next candidate URL.
     }
@@ -137,7 +145,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/api/health`, { signal: AbortSignal.timeout(5_000) });
+    const res = await fetch(`${API_URL}/api/health`, withTimeoutSignal({}));
     return res.ok;
   } catch {
     return false;
