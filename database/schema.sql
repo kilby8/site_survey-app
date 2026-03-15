@@ -48,6 +48,21 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 -- ----------------------------------------------------------------
+-- 2b. USERS
+--     Authentication accounts for dashboard access
+-- ----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS users (
+  id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  email         VARCHAR(255) NOT NULL UNIQUE,
+  password_hash TEXT         NOT NULL,
+  full_name     VARCHAR(255) NOT NULL,
+  created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS users_email_idx ON users (email);
+
+-- ----------------------------------------------------------------
 -- 3. SURVEYS
 --    Core survey record — one row per site visit
 -- ----------------------------------------------------------------
@@ -169,6 +184,14 @@ BEGIN
   ) THEN
     CREATE TRIGGER projects_set_updated_at
       BEFORE UPDATE ON projects
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'users_set_updated_at'
+  ) THEN
+    CREATE TRIGGER users_set_updated_at
+      BEFORE UPDATE ON users
       FOR EACH ROW EXECUTE FUNCTION set_updated_at();
   END IF;
 END;

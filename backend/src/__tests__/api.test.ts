@@ -4,10 +4,34 @@ import { pool } from '../database';
 
 // Clean up test surveys after each test
 const createdIds: string[] = [];
+let authHeader = '';
+let testUserEmail = '';
+
+const getAuth = (path: string) => request(app).get(path).set('Authorization', authHeader);
+
+beforeAll(async () => {
+  testUserEmail = `apitest-${Date.now()}-${Math.floor(Math.random() * 10000)}@example.com`;
+
+  const register = await request(app)
+    .post('/api/users/register')
+    .send({
+      full_name: 'API Test User',
+      email: testUserEmail,
+      password: 'TestPass123!',
+    });
+
+  expect(register.status).toBe(201);
+  expect(register.body.token).toBeDefined();
+
+  authHeader = `Bearer ${register.body.token as string}`;
+});
 
 afterAll(async () => {
   if (createdIds.length > 0) {
     await pool.query('DELETE FROM surveys WHERE id = ANY($1)', [createdIds]);
+  }
+  if (testUserEmail) {
+    await pool.query('DELETE FROM users WHERE email = $1', [testUserEmail]);
   }
   await pool.end();
 });
@@ -26,11 +50,76 @@ describe('GET /api/health', () => {
 });
 
 // ----------------------------------------------------------------
+// Users
+// ----------------------------------------------------------------
+describe('GET /api/users/me', () => {
+  it('returns authenticated user profile', async () => {
+    const res = await request(app)
+      .get('/api/users/me')
+      .set('Authorization', authHeader);
+
+    expect(res.status).toBe(200);
+    expect(res.body.user).toBeDefined();
+    expect(res.body.user.email).toBe(testUserEmail);
+  });
+
+  it('returns 401 without bearer token', async () => {
+    const res = await request(app).get('/api/users/me');
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('Auth guard behavior', () => {
+  it('blocks protected surveys route without token', async () => {
+    const res = await request(app).get('/api/surveys');
+    expect(res.status).toBe(401);
+  });
+
+  it('blocks protected categories route without token', async () => {
+    const res = await request(app).get('/api/categories');
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('POST /api/users/signin rate limiting', () => {
+  it('returns 429 after repeated invalid password attempts', async () => {
+    const email = `ratelimit-${Date.now()}-${Math.floor(Math.random() * 10000)}@example.com`;
+
+    const register = await request(app)
+      .post('/api/users/register')
+      .send({
+        full_name: 'Rate Limit User',
+        email,
+        password: 'ValidPass123!',
+      });
+
+    expect(register.status).toBe(201);
+
+    for (let i = 0; i < 4; i += 1) {
+      const fail = await request(app)
+        .post('/api/users/signin')
+        .send({ email, password: 'WrongPass999!' });
+
+      expect(fail.status).toBe(401);
+    }
+
+    const locked = await request(app)
+      .post('/api/users/signin')
+      .send({ email, password: 'WrongPass999!' });
+
+    expect(locked.status).toBe(429);
+    expect(locked.body.error).toContain('Too many sign-in attempts');
+
+    await pool.query('DELETE FROM users WHERE email = $1', [email]);
+  });
+});
+
+// ----------------------------------------------------------------
 // Categories
 // ----------------------------------------------------------------
 describe('GET /api/categories', () => {
   it('returns seeded categories', async () => {
-    const res = await request(app).get('/api/categories');
+    const res = await getAuth('/api/categories');
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.categories)).toBe(true);
     expect(res.body.categories.length).toBeGreaterThanOrEqual(6);
@@ -64,6 +153,7 @@ describe('POST /api/surveys', () => {
 
     const res = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send(payload)
       .set('Content-Type', 'application/json');
 
@@ -101,6 +191,7 @@ describe('POST /api/surveys', () => {
 
     const res = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send(payload)
       .set('Content-Type', 'application/json');
 
@@ -134,6 +225,7 @@ describe('POST /api/surveys', () => {
 
     const res = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send(payload)
       .set('Content-Type', 'application/json');
 
@@ -164,6 +256,7 @@ describe('POST /api/surveys', () => {
 
     const res = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send(payload)
       .set('Content-Type', 'application/json');
 
@@ -177,6 +270,7 @@ describe('POST /api/surveys', () => {
   it('returns 400 when required fields are missing', async () => {
     const res = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send({ notes: 'missing required fields' })
       .set('Content-Type', 'application/json');
 
@@ -187,14 +281,14 @@ describe('POST /api/surveys', () => {
 
 describe('GET /api/surveys', () => {
   it('returns surveys array with total count', async () => {
-    const res = await request(app).get('/api/surveys');
+    const res = await getAuth('/api/surveys');
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.surveys)).toBe(true);
     expect(typeof res.body.total).toBe('number');
   });
 
   it('filters by status', async () => {
-    const res = await request(app).get('/api/surveys?status=draft');
+    const res = await getAuth('/api/surveys?status=draft');
     expect(res.status).toBe(200);
     res.body.surveys.forEach((s: { status: string }) => {
       expect(s.status).toBe('draft');
@@ -204,7 +298,7 @@ describe('GET /api/surveys', () => {
 
 describe('GET /api/surveys/:id', () => {
   it('returns 404 for unknown id', async () => {
-    const res = await request(app).get('/api/surveys/00000000-0000-0000-0000-000000000000');
+    const res = await getAuth('/api/surveys/00000000-0000-0000-0000-000000000000');
     expect(res.status).toBe(404);
   });
 
@@ -212,10 +306,11 @@ describe('GET /api/surveys/:id', () => {
     // Create one first
     const create = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send({ project_name: 'Fetch Test', inspector_name: 'Bob', site_name: 'Site X' });
     createdIds.push(create.body.id);
 
-    const res = await request(app).get(`/api/surveys/${create.body.id}`);
+    const res = await getAuth(`/api/surveys/${create.body.id as string}`);
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(create.body.id);
     expect(Array.isArray(res.body.checklist)).toBe(true);
@@ -227,11 +322,13 @@ describe('PUT /api/surveys/:id', () => {
   it('updates a survey status', async () => {
     const create = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send({ project_name: 'Update Test', inspector_name: 'Alice', site_name: 'Site Y', status: 'draft' });
     createdIds.push(create.body.id);
 
     const res = await request(app)
-      .put(`/api/surveys/${create.body.id}`)
+      .put(`/api/surveys/${create.body.id as string}`)
+      .set('Authorization', authHeader)
       .send({ status: 'submitted' });
 
     expect(res.status).toBe(200);
@@ -241,6 +338,7 @@ describe('PUT /api/surveys/:id', () => {
   it('returns 404 for unknown id', async () => {
     const res = await request(app)
       .put('/api/surveys/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', authHeader)
       .send({ status: 'submitted' });
     expect(res.status).toBe(404);
   });
@@ -256,6 +354,7 @@ describe('POST /api/surveys/sync', () => {
 
     const res = await request(app)
       .post('/api/surveys/sync')
+      .set('Authorization', authHeader)
       .send({
         device_id: 'test-device-001',
         surveys: [
@@ -286,6 +385,7 @@ describe('POST /api/surveys/sync', () => {
   it('returns 400 when surveys array is missing', async () => {
     const res = await request(app)
       .post('/api/surveys/sync')
+      .set('Authorization', authHeader)
       .send({ device_id: 'x' });
     expect(res.status).toBe(400);
   });
@@ -296,7 +396,7 @@ describe('POST /api/surveys/sync', () => {
 // ----------------------------------------------------------------
 describe('GET /api/surveys/export/geojson', () => {
   it('returns valid GeoJSON FeatureCollection', async () => {
-    const res = await request(app).get('/api/surveys/export/geojson');
+    const res = await getAuth('/api/surveys/export/geojson');
     expect(res.status).toBe(200);
     expect(res.body.type).toBe('FeatureCollection');
     expect(Array.isArray(res.body.features)).toBe(true);
@@ -324,7 +424,7 @@ describe('GET /api/surveys/export/geojson', () => {
 
 describe('GET /api/surveys/export/csv', () => {
   it('returns CSV with header row including metadata columns', async () => {
-    const res = await request(app).get('/api/surveys/export/csv');
+    const res = await getAuth('/api/surveys/export/csv');
     expect(res.status).toBe(200);
     expect(res.header['content-type']).toMatch(/text\/csv/);
     const lines = (res.text as string).split('\n').filter(Boolean);
@@ -345,6 +445,7 @@ describe('GET /api/surveys/export/csv', () => {
     // Create a ground-mount survey
     const create = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send({
         project_name: 'CSV Meta Test', inspector_name: 'Tester', site_name: 'Field C',
         latitude: 51.0, longitude: -1.0,
@@ -353,7 +454,7 @@ describe('GET /api/surveys/export/csv', () => {
       });
     createdIds.push(create.body.id);
 
-    const res = await request(app).get('/api/surveys/export/csv');
+    const res = await getAuth('/api/surveys/export/csv');
     expect(res.status).toBe(200);
     expect(res.text).toContain('Rocky');
     expect(res.text).toContain('4.2');
@@ -366,13 +467,14 @@ describe('GET /api/surveys/export/csv', () => {
 // ----------------------------------------------------------------
 describe('GET /api/surveys/:id/report', () => {
   it('returns 404 for unknown survey id', async () => {
-    const res = await request(app).get('/api/surveys/00000000-0000-0000-0000-000000000099/report');
+    const res = await getAuth('/api/surveys/00000000-0000-0000-0000-000000000099/report');
     expect(res.status).toBe(404);
   });
 
   it('returns a valid EngineeringReport JSON with no flags for a clean survey', async () => {
     const create = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send({
         project_name:   'Report Test Clean',
         inspector_name: 'Jane',
@@ -385,7 +487,7 @@ describe('GET /api/surveys/:id/report', () => {
       });
     createdIds.push(create.body.id);
 
-    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    const res = await getAuth(`/api/surveys/${create.body.id as string}/report`);
     expect(res.status).toBe(200);
     expect(res.body.survey_id).toBe(create.body.id);
     expect(res.body.overall_risk).toBe('None');
@@ -399,6 +501,7 @@ describe('GET /api/surveys/:id/report', () => {
   it('flags High priority for old Roof Mount (age > 15)', async () => {
     const create = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send({
         project_name:   'Old Roof Report Test',
         inspector_name: 'Alice',
@@ -413,7 +516,7 @@ describe('GET /api/surveys/:id/report', () => {
       });
     createdIds.push(create.body.id);
 
-    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    const res = await getAuth(`/api/surveys/${create.body.id as string}/report`);
     expect(res.status).toBe(200);
     expect(res.body.overall_risk).toBe('High');
     const flag = res.body.flags.find((f: { field: string }) => f.field === 'roof_age_years');
@@ -424,6 +527,7 @@ describe('GET /api/surveys/:id/report', () => {
   it('flags High priority for Membrane roof material', async () => {
     const create = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send({
         project_name:   'Membrane Roof Test',
         inspector_name: 'Bob',
@@ -438,7 +542,7 @@ describe('GET /api/surveys/:id/report', () => {
       });
     createdIds.push(create.body.id);
 
-    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    const res = await getAuth(`/api/surveys/${create.body.id as string}/report`);
     expect(res.status).toBe(200);
     expect(res.body.overall_risk).toBe('High');
     const flag = res.body.flags.find((f: { field: string }) => f.field === 'roof_material');
@@ -449,6 +553,7 @@ describe('GET /api/surveys/:id/report', () => {
   it('flags High priority for Rocky soil (Ground Mount)', async () => {
     const create = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send({
         project_name:   'Rocky Ground Test',
         inspector_name: 'Carlos',
@@ -463,7 +568,7 @@ describe('GET /api/surveys/:id/report', () => {
       });
     createdIds.push(create.body.id);
 
-    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    const res = await getAuth(`/api/surveys/${create.body.id as string}/report`);
     expect(res.status).toBe(200);
     expect(res.body.overall_risk).toBe('High');
     const flag = res.body.flags.find((f: { field: string }) => f.field === 'soil_type');
@@ -474,6 +579,7 @@ describe('GET /api/surveys/:id/report', () => {
   it('flags High priority when lower_shade_risk is true (Solar Fencing)', async () => {
     const create = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send({
         project_name:   'Fencing Shade Test',
         inspector_name: 'Diana',
@@ -488,7 +594,7 @@ describe('GET /api/surveys/:id/report', () => {
       });
     createdIds.push(create.body.id);
 
-    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    const res = await getAuth(`/api/surveys/${create.body.id as string}/report`);
     expect(res.status).toBe(200);
     expect(res.body.overall_risk).toBe('High');
     const flag = res.body.flags.find((f: { field: string }) => f.field === 'lower_shade_risk');
@@ -499,6 +605,7 @@ describe('GET /api/surveys/:id/report', () => {
   it('flags High priority when Main Service Panel checklist item fails', async () => {
     const create = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send({
         project_name:   'Electrical Panel Test',
         inspector_name: 'Eve',
@@ -512,7 +619,7 @@ describe('GET /api/surveys/:id/report', () => {
       });
     createdIds.push(create.body.id);
 
-    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    const res = await getAuth(`/api/surveys/${create.body.id as string}/report`);
     expect(res.status).toBe(200);
     expect(res.body.overall_risk).toBe('High');
     const flag = res.body.flags.find((f: { field: string }) =>
@@ -527,6 +634,7 @@ describe('GET /api/surveys/:id/report', () => {
   it('returns Markdown download when ?format=markdown', async () => {
     const create = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send({
         project_name:   'Markdown Report Test',
         inspector_name: 'Frank',
@@ -541,8 +649,7 @@ describe('GET /api/surveys/:id/report', () => {
       });
     createdIds.push(create.body.id);
 
-    const res = await request(app)
-      .get(`/api/surveys/${create.body.id as string}/report?format=markdown`);
+    const res = await getAuth(`/api/surveys/${create.body.id as string}/report?format=markdown`);
 
     expect(res.status).toBe(200);
     expect(res.header['content-type']).toMatch(/text\/markdown/);
@@ -559,6 +666,7 @@ describe('GET /api/surveys/:id/report', () => {
   it('accumulates multiple flags on a single survey (old Membrane roof)', async () => {
     const create = await request(app)
       .post('/api/surveys')
+      .set('Authorization', authHeader)
       .send({
         project_name:   'Double Flag Test',
         inspector_name: 'Grace',
@@ -573,7 +681,7 @@ describe('GET /api/surveys/:id/report', () => {
       });
     createdIds.push(create.body.id);
 
-    const res = await request(app).get(`/api/surveys/${create.body.id as string}/report`);
+    const res = await getAuth(`/api/surveys/${create.body.id as string}/report`);
     expect(res.status).toBe(200);
     expect(res.body.flags.length).toBeGreaterThanOrEqual(2);
     const fields = res.body.flags.map((f: { field: string }) => f.field);

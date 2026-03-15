@@ -13,6 +13,8 @@ import express from 'express';
 import cors    from 'cors';
 import surveysRouter    from './routes/surveys';
 import categoriesRouter from './routes/categories';
+import usersRouter      from './routes/users';
+import { requireAuth }  from './middleware/auth';
 import { pool }         from './database';
 
 const app         = express();
@@ -63,8 +65,9 @@ app.get('/api/health', async (_req, res) => {
 // ----------------------------------------------------------------
 // API routes
 // ----------------------------------------------------------------
-app.use('/api/surveys',    surveysRouter);
-app.use('/api/categories', categoriesRouter);
+app.use('/api/surveys',    requireAuth, surveysRouter);
+app.use('/api/categories', requireAuth, categoriesRouter);
+app.use('/api/users',      usersRouter);
 
 // ----------------------------------------------------------------
 // 404
