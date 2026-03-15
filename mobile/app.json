@@ -26,6 +26,14 @@
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -56,6 +64,12 @@
         "projectId": "aed7aae8-7d55-47e1-8850-c6b0040c99b5"
       }
     },
-    "owner": "kilby"
+    "owner": "kilby",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/aed7aae8-7d55-47e1-8850-c6b0040c99b5"
+    }
   }
 }
