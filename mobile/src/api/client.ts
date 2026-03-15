@@ -5,6 +5,7 @@
  * In development the server runs on localhost:3001.
  * In production set EXPO_PUBLIC_API_URL in your Expo environment.
  */
+import Constants from 'expo-constants';
 import type { Survey, SurveyFormData, ApiSyncResponse, ApiPhotoUploadResponse } from '../types';
 
 export interface AuthUser {
@@ -74,11 +75,45 @@ export interface EngineeringReport {
   metadata:          Record<string, unknown> | null;
 }
 
-export const API_URL =
-  process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'http://localhost:3001';
+function inferLanApiUrlFromExpoHost(): string | null {
+  const config = Constants as unknown as {
+    expoConfig?: { hostUri?: string };
+    expoGoConfig?: { debuggerHost?: string };
+  };
+
+  const hostUri = config.expoConfig?.hostUri ?? config.expoGoConfig?.debuggerHost;
+  if (!hostUri) return null;
+
+  const host = hostUri.split(':')[0]?.trim();
+  if (!host) return null;
+  return `http://${host}:3001`;
+}
+
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') || null;
+const inferredLanApiUrl = inferLanApiUrlFromExpoHost();
+
+export const API_URL = configuredApiUrl ?? inferredLanApiUrl ?? 'http://localhost:3001';
+
+const API_CANDIDATES = Array.from(
+  new Set([configuredApiUrl, inferredLanApiUrl, 'http://localhost:3001'].filter(Boolean) as string[])
+);
 
 const API_NETWORK_ERROR =
-  `Cannot reach API at ${API_URL}. Ensure backend is running and your phone is on the same Wi-Fi as this machine.`;
+  `Cannot reach API. Tried: ${API_CANDIDATES.join(', ')}. Ensure backend is running and your phone is on the same Wi-Fi as this machine.`;
+
+async function fetchWithFallback(path: string, init: RequestInit): Promise<Response> {
+  let lastError: unknown;
+
+  for (const baseUrl of API_CANDIDATES) {
+    try {
+      return await fetch(`${baseUrl}${path}`, init);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(API_NETWORK_ERROR);
+}
 
 // ----------------------------------------------------------------
 // Helpers
@@ -115,7 +150,7 @@ export async function checkHealth(): Promise<boolean> {
 
 export async function signIn(identifier: string, password: string): Promise<AuthResponse> {
   try {
-    const res = await fetch(`${API_URL}/api/users/signin`, {
+    const res = await fetchWithFallback('/api/users/signin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier, password }),
@@ -131,7 +166,7 @@ export async function signIn(identifier: string, password: string): Promise<Auth
 
 export async function register(input: RegisterInput): Promise<AuthResponse> {
   try {
-    const res = await fetch(`${API_URL}/api/users/register`, {
+    const res = await fetchWithFallback('/api/users/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -168,11 +203,18 @@ export async function resetPassword(email: string, token: string, newPassword: s
 }
 
 export async function fetchCurrentUser(token: string): Promise<AuthUser> {
-  const res = await fetch(`${API_URL}/api/users/me`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const data = await handleResponse<{ user: AuthUser }>(res);
-  return data.user;
+  try {
+    const res = await fetchWithFallback('/api/users/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await handleResponse<{ user: AuthUser }>(res);
+    return data.user;
+  } catch (err) {
+    if (err instanceof Error && /^HTTP\s\d+$/.test(err.message)) {
+      throw err;
+    }
+    throw new Error(API_NETWORK_ERROR);
+  }
 }
 
 // ----------------------------------------------------------------
