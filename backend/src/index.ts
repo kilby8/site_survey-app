@@ -23,6 +23,9 @@ import { pool } from "./database";
 const app = express();
 const PORT = parseInt(process.env.PORT || "3001", 10);
 const UPLOADS_DIR = path.join(__dirname, "..", "uploads");
+const PUBLIC_DIR = path.join(__dirname, "..", "public");
+const IOS_BUNDLE_ID = process.env.IOS_BUNDLE_ID || "com.sitesurvey.mobile";
+const APPLE_TEAM_ID = (process.env.APPLE_TEAM_ID || "").trim();
 
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -72,6 +75,33 @@ app.use(
 // ----------------------------------------------------------------
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// ----------------------------------------------------------------
+// Public landing page
+// ----------------------------------------------------------------
+app.get("/.well-known/apple-app-site-association", (_req, res) => {
+  const appID = APPLE_TEAM_ID
+    ? `${APPLE_TEAM_ID}.${IOS_BUNDLE_ID}`
+    : IOS_BUNDLE_ID;
+
+  res.type("application/json").send({
+    applinks: {
+      apps: [],
+      details: [
+        {
+          appID,
+          paths: ["/view/*"],
+        },
+      ],
+    },
+  });
+});
+
+app.use(express.static(PUBLIC_DIR));
+
+app.get("/view/:surveyId", (_req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, "index.html"));
+});
 
 // ----------------------------------------------------------------
 // Serve uploaded photos statically
