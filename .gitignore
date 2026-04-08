@@ -47,3 +47,5 @@ yarn-error.log*
 
 # Test coverage
 coverage/
+mobile/android/local.properties
+mobile/gradle-build.log
