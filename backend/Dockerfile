@@ -9,11 +9,22 @@
 # ============================================================
 
 # ── Stage 1: build ────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache bash git
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  bash \
+  git \
+  ca-certificates \
+  wget \
+  unzip \
+  openjdk-17-jre-headless \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV ANDROID_HOME=/home/node/android-sdk
+ENV ANDROID_SDK_ROOT=/home/node/android-sdk
+ENV PATH=$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
 
 # Copy dependency manifests first for layer-caching
 COPY package.json package-lock.json ./
@@ -28,11 +39,16 @@ COPY src/ ./src/
 RUN npm run build
 
 # ── Stage 2: runtime ─────────────────────────────────────────
-FROM node:20-alpine AS runtime
+FROM node:20-bookworm-slim AS runtime
 
 WORKDIR /app
 
-RUN apk add --no-cache bash git
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  bash \
+  git \
+  ca-certificates \
+  wget \
+  && rm -rf /var/lib/apt/lists/*
 
 # Only copy production-relevant manifests
 COPY package.json package-lock.json ./

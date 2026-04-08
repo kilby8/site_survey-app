@@ -1,6 +1,16 @@
 import request from "supertest";
 import app from "../index";
 import { pool } from "../database";
+import {
+  inferRoboflowFromBuffer,
+  inferRoboflowFromFile,
+} from "../utils/roboflowClient";
+
+jest.mock("../utils/roboflowClient", () => ({
+  inferRoboflowFromBuffer: jest.fn(),
+  inferRoboflowFromFile: jest.fn(),
+  dataUrlToBuffer: jest.fn(() => Buffer.from("test-image")),
+}));
 
 // Clean up test surveys after each test
 const createdIds: string[] = [];
@@ -880,5 +890,176 @@ describe("GET /api/surveys/:id/report", () => {
     const fields = res.body.flags.map((f: { field: string }) => f.field);
     expect(fields).toContain("roof_age_years");
     expect(fields).toContain("roof_material");
+  });
+});
+
+describe("POST /api/surveys/:id/photos/:photoId/infer", () => {
+  it("returns Roboflow inference for a survey photo using data_url", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Infer Route Test",
+        inspector_name: "Ivy",
+        site_name: "Inference Site",
+      });
+    createdIds.push(create.body.id);
+
+    const surveyId = create.body.id as string;
+    const { rows } = await pool.query(
+      `INSERT INTO survey_photos (survey_id, filename, label, data_url, mime_type)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [
+        surveyId,
+        "panel.jpg",
+        "Main Service Panel",
+        "data:image/jpeg;base64,aGVsbG8=",
+        "image/jpeg",
+      ],
+    );
+    const photoId = rows[0].id as string;
+
+    (inferRoboflowFromBuffer as jest.Mock).mockResolvedValueOnce({
+      predictions: [{ class: "panel", confidence: 0.97 }],
+    });
+
+    const res = await request(app)
+      .post(`/api/surveys/${surveyId}/photos/${photoId}/infer`)
+      .set("Authorization", authHeader)
+      .send({
+        model_id: "electrical-inspection/1",
+        confidence: 40,
+        overlap: 30,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.survey_id).toBe(surveyId);
+    expect(res.body.photo_id).toBe(photoId);
+    expect(res.body.model_id).toBe("electrical-inspection/1");
+    expect(res.body.inference.predictions[0].class).toBe("panel");
+    expect(inferRoboflowFromBuffer).toHaveBeenCalledTimes(1);
+    expect(inferRoboflowFromFile).not.toHaveBeenCalled();
+
+    const { rows: logRows } = await pool.query(
+      `SELECT survey_id, photo_id, model_id, prediction_count
+         FROM photo_inference_logs
+        WHERE survey_id = $1 AND photo_id = $2
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [surveyId, photoId],
+    );
+
+    expect(logRows.length).toBe(1);
+    expect(logRows[0].survey_id).toBe(surveyId);
+    expect(logRows[0].photo_id).toBe(photoId);
+    expect(logRows[0].model_id).toBe("electrical-inspection/1");
+    expect(Number(logRows[0].prediction_count)).toBe(1);
+  });
+
+  it("returns 502 when Roboflow inference fails", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Infer Error Test",
+        inspector_name: "Noah",
+        site_name: "Inference Error Site",
+      });
+    createdIds.push(create.body.id);
+
+    const surveyId = create.body.id as string;
+    const { rows } = await pool.query(
+      `INSERT INTO survey_photos (survey_id, filename, label, data_url, mime_type)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [
+        surveyId,
+        "meter.jpg",
+        "Meter",
+        "data:image/jpeg;base64,aGVsbG8=",
+        "image/jpeg",
+      ],
+    );
+    const photoId = rows[0].id as string;
+
+    (inferRoboflowFromBuffer as jest.Mock).mockRejectedValueOnce(
+      new Error("Roboflow unavailable"),
+    );
+
+    const res = await request(app)
+      .post(`/api/surveys/${surveyId}/photos/${photoId}/infer`)
+      .set("Authorization", authHeader)
+      .send({ model_id: "electrical-inspection/1" });
+
+    expect(res.status).toBe(502);
+    expect(String(res.body.error || "")).toContain("Roboflow unavailable");
+  });
+});
+
+describe("GET /api/surveys/inference-logs/recent", () => {
+  it("returns 403 for non-admin users", async () => {
+    const res = await request(app)
+      .get("/api/surveys/inference-logs/recent")
+      .set("Authorization", authHeader);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("Admin access required");
+  });
+
+  it("returns recent inference telemetry for admin users", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Telemetry Query Test",
+        inspector_name: "Uma",
+        site_name: "Telemetry Site",
+      });
+    createdIds.push(create.body.id);
+
+    const surveyId = create.body.id as string;
+    const { rows } = await pool.query(
+      `INSERT INTO survey_photos (survey_id, filename, label, data_url, mime_type)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [
+        surveyId,
+        "disconnect.jpg",
+        "Disconnect",
+        "data:image/jpeg;base64,aGVsbG8=",
+        "image/jpeg",
+      ],
+    );
+    const photoId = rows[0].id as string;
+
+    (inferRoboflowFromBuffer as jest.Mock).mockResolvedValueOnce({
+      predictions: [{ class: "disconnect", confidence: 0.91 }],
+    });
+
+    const inferRes = await request(app)
+      .post(`/api/surveys/${surveyId}/photos/${photoId}/infer`)
+      .set("Authorization", authHeader)
+      .send({ model_id: "electrical-inspection/1" });
+
+    expect(inferRes.status).toBe(200);
+
+    const adminSignin = await request(app)
+      .post("/api/users/signin")
+      .send({ identifier: "admin", password: "admin123!" });
+
+    expect(adminSignin.status).toBe(200);
+
+    const telemetryRes = await request(app)
+      .get(`/api/surveys/inference-logs/recent?survey_id=${surveyId}`)
+      .set("Authorization", `Bearer ${adminSignin.body.token as string}`);
+
+    expect(telemetryRes.status).toBe(200);
+    expect(telemetryRes.body.total).toBeGreaterThanOrEqual(1);
+    expect(Array.isArray(telemetryRes.body.logs)).toBe(true);
+    expect(telemetryRes.body.logs[0].survey_id).toBe(surveyId);
+    expect(telemetryRes.body.logs[0].photo_id).toBe(photoId);
+    expect(telemetryRes.body.logs[0].model_id).toBe("electrical-inspection/1");
+    expect(telemetryRes.body.logs[0].prediction_count).toBe(1);
   });
 });

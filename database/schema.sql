@@ -159,7 +159,61 @@ CREATE INDEX IF NOT EXISTS sync_queue_status_idx    ON sync_queue (status);
 CREATE INDEX IF NOT EXISTS sync_queue_device_id_idx ON sync_queue (device_id);
 
 -- ----------------------------------------------------------------
--- 7. Automatic updated_at trigger
+-- 7. AR_DETECTIONS
+--    Stores structured object-detection payloads submitted by the
+--    mobile app after an AR inspection session.
+--    The `electrical` column is a JSONB array of detected items,
+--    each carrying a ByteTracker-assigned `track_id` that remains
+--    stable across frames so the AR tag stays anchored to the same
+--    physical object (MSP, meter, etc.).
+-- ----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ar_detections (
+  id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  survey_id    UUID         NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+  project_id   VARCHAR(255),
+  -- Array of { class, confidence, track_id, depth_m?, ar_label? }
+  electrical   JSONB        NOT NULL DEFAULT '[]',
+  -- Structural/exterior detections: roof, conduit, weatherhead, etc.
+  exterior     JSONB        NOT NULL DEFAULT '[]',
+  -- Depth-anchored spatial distances from the AR Depth Estimation model
+  distances    JSONB        NOT NULL DEFAULT '{}',
+  -- Free-form key/value measurements: e.g. { "meter_to_panel_distance": "1.5m" }
+  measurements JSONB        NOT NULL DEFAULT '{}',
+  -- Flat integer array of all active ByteTracker IDs in the session
+  -- (union of electrical + exterior track_ids for fast lookup)
+  track_ids    JSONB        NOT NULL DEFAULT '[]',
+  roof_type    VARCHAR(100),
+  detected_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ar_detections_survey_id_idx ON ar_detections (survey_id);
+CREATE INDEX IF NOT EXISTS ar_detections_detected_at_idx ON ar_detections (detected_at DESC);
+
+-- ----------------------------------------------------------------
+-- 8. PHOTO_INFERENCE_LOGS
+--    Stores raw/normalized model outputs for monitoring and retraining.
+-- ----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS photo_inference_logs (
+  id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  survey_id       UUID         NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+  photo_id        UUID         NOT NULL REFERENCES survey_photos(id) ON DELETE CASCADE,
+  model_id        VARCHAR(255),
+  request_options JSONB        NOT NULL DEFAULT '{}',
+  inference       JSONB        NOT NULL,
+  prediction_count INT         NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS photo_inference_logs_survey_id_idx
+  ON photo_inference_logs (survey_id);
+CREATE INDEX IF NOT EXISTS photo_inference_logs_photo_id_idx
+  ON photo_inference_logs (photo_id);
+CREATE INDEX IF NOT EXISTS photo_inference_logs_created_at_idx
+  ON photo_inference_logs (created_at DESC);
+
+-- ----------------------------------------------------------------
+-- 9. Automatic updated_at trigger
 -- ----------------------------------------------------------------
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$

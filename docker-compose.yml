@@ -27,15 +27,14 @@
 #     they survive container restarts.
 
 services:
-
   # ── PostgreSQL 16 + PostGIS 3.4 ────────────────────────────
   db:
     image: postgis/postgis:16-3.4
     container_name: site_survey_db
     restart: unless-stopped
     environment:
-      POSTGRES_DB:       site_survey
-      POSTGRES_USER:     survey_user
+      POSTGRES_DB: site_survey
+      POSTGRES_USER: survey_user
       POSTGRES_PASSWORD: survey_pass_2024
     ports:
       # Expose port 5432 on the host so local tools (psql, DBeaver)
@@ -67,8 +66,12 @@ services:
     env_file:
       # Uses the Docker-specific env file so DB_HOST=db (not localhost)
       - ./backend/.env.docker
+    environment:
+      - ROBOFLOW_API_KEY=${ROBOFLOW_API_KEY}
+      - ROBOFLOW_MODEL_ID=electrical-inspection/1 # Update with your ID
+      - PORT=3000
     ports:
-      - "3001:3001"
+      - "3000:3000"
     volumes:
       # Persist uploaded photos across container rebuilds
       - uploads:/app/uploads

@@ -44,6 +44,13 @@
       "expo-router",
       "expo-sqlite",
       [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "Site Survey needs camera access for AR inspection.",
+          "enableMicrophonePermission": false
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "Site Survey needs your location to record GPS coordinates."
@@ -55,7 +62,8 @@
           "photosPermission": "Site Survey needs photo library access.",
           "cameraPermission": "Site Survey needs camera access."
         }
-      ]
+      ],
+      "react-native-vision-camera"
     ],
     "extra": {
       "router": {},

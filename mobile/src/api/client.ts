@@ -11,6 +11,11 @@ import type {
   SurveyFormData,
   ApiSyncResponse,
   ApiPhotoUploadResponse,
+  ARDetectionPayload,
+  ARDetectionResponse,
+  ARDetectionListResponse,
+  PhotoInferenceRequest,
+  PhotoInferenceResponse,
 } from "../types";
 
 export interface AuthUser {
@@ -404,4 +409,70 @@ export async function downloadReportMarkdown(
     throw new Error(message);
   }
   return res.text();
+}
+
+// ----------------------------------------------------------------
+// AR Detection
+// ----------------------------------------------------------------
+
+/**
+ * POST /api/surveys/:id/ar-detection
+ * Submits an AR detection payload for a survey.
+ * If a main service panel (class === "panel") is present the backend
+ * will auto-escalate the survey to "submitted" (Ready for Engineering)
+ * and append a pass checklist item.
+ */
+export async function submitARDetection(
+  surveyId: string,
+  payload: ARDetectionPayload,
+  token: string,
+): Promise<ARDetectionResponse> {
+  const res = await fetchWithFallback(`/api/surveys/${surveyId}/ar-detection`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<ARDetectionResponse>(res);
+}
+
+/**
+ * GET /api/surveys/:id/ar-detections
+ * Returns all AR detection records for a survey, newest-first.
+ */
+export async function fetchARDetections(
+  surveyId: string,
+  token: string,
+): Promise<ARDetectionListResponse> {
+  const res = await fetchWithFallback(
+    `/api/surveys/${surveyId}/ar-detections`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  return handleResponse<ARDetectionListResponse>(res);
+}
+
+/**
+ * POST /api/surveys/:id/photos/:photoId/infer
+ * Runs Roboflow inference for a stored survey photo.
+ */
+export async function inferSurveyPhoto(
+  surveyId: string,
+  photoId: string,
+  token: string,
+  payload: PhotoInferenceRequest = {},
+): Promise<PhotoInferenceResponse> {
+  const res = await fetchWithFallback(
+    `/api/surveys/${surveyId}/photos/${photoId}/infer`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+  return handleResponse<PhotoInferenceResponse>(res);
 }
