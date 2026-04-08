@@ -5,6 +5,10 @@
   "scripts": {
     "start": "expo start",
     "android": "node ./scripts/run-android-safe.js",
+    "android:emulator": "node ./scripts/start-emulator-and-run.js",
+    "android:diagnose": "node ./scripts/diagnose-android.js",
+    "android:reset-adb": "node ./scripts/reset-adb.js",
+    "android:test-device": "node ./scripts/test-device-connection.js",
     "android:unsafe": "expo run:android",
     "android:check-tooling": "node ./scripts/check-android-tooling.js",
     "android:prebuild": "expo prebuild --platform android",

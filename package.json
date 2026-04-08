@@ -8,6 +8,7 @@
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:mobile": "npm run start --prefix mobile",
+    "dev:android": "node scripts/start-full-stack.js",
     "deploy": "npm --prefix mobile run deploy --",
     "deploy-prod": "npm --prefix mobile run deploy-prod --",
     "build:mobile": "npm --prefix mobile run build --",

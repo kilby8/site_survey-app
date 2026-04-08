@@ -8,10 +8,43 @@ Full-stack site survey platform with:
 
 ## Local Development
 
+### Quick Start - Full Stack with Android
+
 1. Install dependencies from the repo root:
+   ```bash
    npm install
+   ```
+
+2. Start everything (Docker + Backend + Android):
+   ```bash
+   npm run dev:android
+   ```
+
+### Alternative - Backend + Frontend Only
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+
 2. Start local development stack:
+   ```bash
    npm run dev:local
+   ```
+
+### Mobile Development
+
+For detailed Android setup and troubleshooting, see:
+- **[mobile/QUICK_REFERENCE.md](mobile/QUICK_REFERENCE.md)** - Quick command reference
+- **[mobile/ANDROID_TROUBLESHOOTING.md](mobile/ANDROID_TROUBLESHOOTING.md)** - Complete troubleshooting guide
+- **[mobile/ANDROID_FIX_SUMMARY.md](mobile/ANDROID_FIX_SUMMARY.md)** - Technical implementation details
+
+**Quick commands from mobile directory:**
+```bash
+npm run android:emulator    # Auto-start emulator and run
+npm run android:diagnose    # Check Android setup
+npm run android:reset-adb   # Fix device detection issues
+```
 
 ## Mobile EAS Builds
 
