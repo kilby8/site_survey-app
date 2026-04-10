@@ -69,6 +69,7 @@ export interface UploadInferSyncResult {
   inferenceResponses: PhotoInferenceResponse[];
   arResponses: Array<{ status: string; message: string }>;
   skippedReasons: Array<{ photoId: string; reason: string }>;
+}
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -116,9 +117,7 @@ function predictionsToAR(
       confidence: e.confidence,
       track_id: electrical.length + i + 1,
     })),
-    distances: {},
     track_ids: trackIds,
-    measurements: {},
     roof_type: roofType,
   };
 }
@@ -160,7 +159,7 @@ export async function uploadInferAndSyncSurveyPhotos(
       // Read the uploaded photo as base64
       const base64Image = await FileSystem.readAsStringAsync(
         photo.file_path,
-        { encoding: FileSystem.EncodingType.Base64 },
+        { encoding: "base64" },
       );
 
       // Send to Roboflow cloud for inference

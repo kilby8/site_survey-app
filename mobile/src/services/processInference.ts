@@ -1,54 +1,36 @@
 /**
  * processInference.ts
  *
- * Bridges the Roboflow AR inference pipeline to the Site Survey backend.
- *
- * Call this function once per inference result that comes off the model.
- * The `track_ids` guard ensures we only POST when ByteTracker has assigned
- * stable IDs — i.e. the model has locked onto real objects, not transient
- * detections at the edge of the camera frame.
+ * Processes cloud Roboflow inference results and syncs them to the backend
+ * as AR detections for storage and reporting.
  */
 
 import { submitARDetection } from "../api/client";
 import type {
   ARElectricalDetection,
   ARExteriorDetection,
-  ARDistances,
-  ARMeasurements,
 } from "../types";
-
-// ----------------------------------------------------------------
-// Roboflow inference result shape
-// ----------------------------------------------------------------
 
 export interface RoboflowInferenceResult {
   /** Electrical component detections (panel, meter, disconnect, breaker…) */
   electrical: ARElectricalDetection[];
   /** Structural / exterior detections (brick, siding, conduit, weatherhead…) */
   exterior?: ARExteriorDetection[];
-  /** Depth-anchored spatial distances from the Depth Estimation model */
-  distances?: ARDistances;
-  /** Active ByteTracker IDs — non-empty only when tracks are stable */
+  /** Track IDs for detection tracking */
   track_ids: number[];
-  /** Optional measured values captured during the session */
-  measurements?: ARMeasurements;
   /** Roof material type if determined by the model */
   roof_type?: string;
 }
 
-// ----------------------------------------------------------------
-// processInference
-// ----------------------------------------------------------------
-
 /**
- * Processes a single Roboflow inference result and pushes it to the
- * web pipeline via POST /api/surveys/:id/ar-detection.
+ * Processes a single cloud Roboflow inference result and pushes it to
+ * the backend via POST /api/surveys/:id/ar-detection.
  *
  * @param surveyId  - The UUID of the survey being inspected.
  * @param projectId - The project identifier to associate the detection with.
  * @param authToken - Bearer token for the authenticated inspector.
- * @param roboflowResult - Raw output from the AR/Roboflow inference model.
- * @returns The API response, or null if the guard condition was not met.
+ * @param roboflowResult - Inference result from cloud Roboflow API.
+ * @returns The API response, or null if there were no detections.
  */
 export async function processInference(
   surveyId: string,
@@ -59,14 +41,11 @@ export async function processInference(
   const {
     electrical,
     exterior,
-    distances,
     track_ids,
-    measurements,
     roof_type,
   } = roboflowResult;
 
-  // Only sync when ByteTracker has assigned stable IDs — prevents
-  // redundant or noise-only updates during a live AR session.
+  // Only sync if there are actual detections
   if (track_ids.length === 0) {
     return null;
   }
@@ -77,9 +56,7 @@ export async function processInference(
       project_id: projectId,
       electrical,
       exterior,
-      distances,
       track_ids,
-      measurements,
       roof_type,
       timestamp: new Date().toISOString(),
     },
