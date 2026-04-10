@@ -143,13 +143,24 @@ async function main() {
     }
   }
 
-  // Step 4: Run expo with explicit device
+  // Step 4: Run expo with explicit device (or fallback)
   console.log(`\n=== Running Expo on ${deviceId} ===\n`);
-  const expoResult = spawnSync("npx", ["expo", "run:android", "--device", deviceId], {
+  const expoArgs = deviceId ? ["expo", "run:android", "--device", deviceId] : ["expo", "run:android"];
+  const expoResult = spawnSync("npx", expoArgs, {
     stdio: "inherit",
     shell: isWindows,
     env: process.env,
   });
+
+  if (expoResult.status !== 0 && deviceId) {
+    console.log("\n⚠️  Device flag failed, retrying without it...");
+    const expoRetry = spawnSync("npx", ["expo", "run:android"], {
+      stdio: "inherit",
+      shell: isWindows,
+      env: process.env,
+    });
+    process.exit(expoRetry.status || 0);
+  }
 
   process.exit(expoResult.status || 0);
 }
