@@ -6,6 +6,7 @@
  * In production set EXPO_PUBLIC_API_URL in your Expo environment.
  */
 import Constants from "expo-constants";
+import { Platform } from "react-native";
 import type {
   Survey,
   SurveyFormData,
@@ -134,17 +135,21 @@ function uniqueStrings(values: Array<string | null>): string[] {
 }
 
 const configuredApiUrl = normalizeApiUrl(process.env.EXPO_PUBLIC_API_URL);
-const developmentFallbackApiUrl = isDevelopmentRuntime
-  ? (readExpoExtraApiUrl() ??
-    inferLanApiUrlFromExpoHost() ??
-    "http://localhost:3001")
-  : null;
 
-export const API_URL = configuredApiUrl ?? developmentFallbackApiUrl ?? "";
+const developmentFallbackCandidates = isDevelopmentRuntime
+  ? uniqueStrings([
+      readExpoExtraApiUrl(),
+      inferLanApiUrlFromExpoHost(),
+      Platform.OS === "android" ? "http://10.0.2.2:3001" : null,
+      "http://localhost:3001",
+    ])
+  : [];
+
+export const API_URL = configuredApiUrl ?? developmentFallbackCandidates[0] ?? "";
 
 const API_CANDIDATES = uniqueStrings([
   configuredApiUrl,
-  developmentFallbackApiUrl,
+  ...developmentFallbackCandidates,
 ]);
 
 const API_NETWORK_ERROR =

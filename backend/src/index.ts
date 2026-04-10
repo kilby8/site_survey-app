@@ -17,6 +17,7 @@ import multer from "multer";
 import surveysRouter from "./routes/surveys";
 import categoriesRouter from "./routes/categories";
 import usersRouter from "./routes/users";
+import roboflowProxyRouter from "./routes/roboflowProxy";
 import { requireAuth } from "./middleware/auth";
 import { pool } from "./database";
 
@@ -164,6 +165,7 @@ app.post("/api/surveys/upload", requireAuth, (req, res) => {
 app.use("/api/surveys", requireAuth, surveysRouter);
 app.use("/api/categories", requireAuth, categoriesRouter);
 app.use("/api/users", usersRouter);
+app.use("/api/roboflow", requireAuth, roboflowProxyRouter);
 
 // ----------------------------------------------------------------
 // 404
