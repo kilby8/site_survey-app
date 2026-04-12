@@ -99,6 +99,13 @@ export async function inferRoboflowFromBuffer(
   return parseRoboflowResponse(response);
 }
 
+export async function analyzeImage(
+  image: Buffer,
+  options: RoboflowInferOptions = {},
+): Promise<unknown> {
+  return inferRoboflowFromBuffer(image, options);
+}
+
 export async function inferRoboflowFromFile(
   filePath: string,
   options: RoboflowInferOptions = {},

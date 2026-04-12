@@ -28,24 +28,27 @@ export interface RoboflowCloudInferenceResult {
 }
 
 /**
- * Send image to backend which will proxy it to Roboflow cloud.
- * Backend handles API key management and secrets.
+ * Send optimized JPEG image URI to backend which proxies to Roboflow cloud.
  */
 export async function inferImageWithRoboflow(
-  base64Image: string,
+  optimizedImageUri: string,
   authToken: string,
   modelVersion: string = "1",
 ): Promise<RoboflowCloudInferenceResult> {
+  const formData = new FormData();
+  formData.append("file", {
+    uri: optimizedImageUri,
+    name: "survey_photo.jpg",
+    type: "image/jpeg",
+  } as never);
+  formData.append("model_version", modelVersion);
+
   const response = await fetch(`${API_URL}/api/roboflow/infer`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
       Authorization: `Bearer ${authToken}`,
     },
-    body: JSON.stringify({
-      image: base64Image,
-      model_version: modelVersion,
-    }),
+    body: formData,
   });
 
   if (!response.ok) {

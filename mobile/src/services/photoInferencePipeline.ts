@@ -9,6 +9,8 @@
  */
 
 import * as FileSystem from "expo-file-system";
+import * as ImageManipulator from "expo-image-manipulator";
+import { Image } from "react-native";
 import { inferSurveyPhoto, uploadPhotos } from "../api/client";
 import {
   inferImageWithRoboflow,
@@ -94,6 +96,42 @@ function normalizeConfidenceThreshold(
   return Math.min(Math.max(value, 0), 1);
 }
 
+function getImageSize(uri: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    Image.getSize(
+      uri,
+      (width, height) => resolve({ width, height }),
+      reject,
+    );
+  });
+}
+
+/**
+ * Pre-processes the image for the Roboflow pipeline.
+ * Reduces payload size and matches model expectations.
+ */
+async function compressAndResizeForInference(uri: string): Promise<string> {
+  try {
+    const { width } = await getImageSize(uri);
+    const actions: ImageManipulator.Action[] = [];
+
+    // Resize only when needed so we keep aspect ratio and avoid upscaling.
+    if (width > 1024) {
+      actions.push({ resize: { width: 1024 } });
+    }
+
+    const result = await ImageManipulator.manipulateAsync(uri, actions, {
+      compress: 0.8,
+      format: ImageManipulator.SaveFormat.JPEG,
+    });
+
+    return result.uri;
+  } catch (error) {
+    console.error("Failed to pre-process image:", error);
+    return uri;
+  }
+}
+
 /**
  * Convert cloud Roboflow predictions to AR detection format.
  */
@@ -156,15 +194,12 @@ export async function uploadInferAndSyncSurveyPhotos(
     if (!photo.file_path) continue;
 
     try {
-      // Read the uploaded photo as base64
-      const base64Image = await FileSystem.readAsStringAsync(
-        photo.file_path,
-        { encoding: "base64" },
-      );
+      const sourceUri = photo.file_path;
+      const processedUri = await compressAndResizeForInference(sourceUri);
 
-      // Send to Roboflow cloud for inference
+      // Send the pre-processed JPEG URI to Roboflow cloud via backend proxy
       const roboflowResult = await inferImageWithRoboflow(
-        base64Image,
+        processedUri,
         input.authToken,
       );
 

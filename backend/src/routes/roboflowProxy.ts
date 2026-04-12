@@ -6,60 +6,83 @@
  */
 
 import { Router, Request, Response } from "express";
+import multer from "multer";
 import { requireAuth } from "../middleware/auth";
-import {
-  inferRoboflowFromBuffer,
-  dataUrlToBuffer,
-} from "../utils/roboflowClient";
+import { analyzeImage } from "../utils/roboflowClient";
 
 const router = Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 2 * 1024 * 1024,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === "image/jpeg" || file.mimetype === "image/jpg") {
+      cb(null, true);
+      return;
+    }
+    cb(new Error("Only JPEG images are supported for inference"));
+  },
+});
 
 /**
  * POST /api/roboflow/infer
  *
- * Request body:
- *   - image: base64 data URL or raw base64 string
+ * multipart/form-data:
+ *   - file: JPEG image (max 2MB)
  *   - model_version: optional version override
- *
- * Response: Roboflow inference result (predictions, image dimensions, etc.)
  */
-router.post("/infer", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const { image, model_version } = req.body;
-
-    if (!image) {
-      res.status(400).json({ error: "Missing 'image' in request body" });
+router.post("/infer", requireAuth, (req: Request, res: Response) => {
+  upload.single("file")(req, res, async (err: unknown) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        res.status(413).json({ error: "Image exceeds 2MB limit" });
+        return;
+      }
+      res.status(400).json({ error: err.message });
       return;
     }
 
-    let imageBuffer: Buffer;
+    if (err) {
+      const message = err instanceof Error ? err.message : "Upload failed";
+      res.status(400).json({ error: message });
+      return;
+    }
+
     try {
-      // Try to parse as data URL first, fall back to raw base64
-      imageBuffer = dataUrlToBuffer(image);
-    } catch {
-      try {
-        imageBuffer = Buffer.from(image, "base64");
-      } catch {
-        res.status(400).json({
-          error:
-            "Invalid image format. Expected base64 string or data URL (data:image/...;base64,...)",
+      const { model_version } = req.body as { model_version?: string };
+
+      if (!req.file) {
+        res.status(400).json({ error: "No image provided" });
+        return;
+      }
+
+      if (
+        req.file.mimetype !== "image/jpeg" &&
+        req.file.mimetype !== "image/jpg"
+      ) {
+        res.status(415).json({
+          error: "Only JPEG images are supported for inference",
         });
         return;
       }
+
+      const optimizedBuffer = req.file.buffer;
+      const result = await analyzeImage(optimizedBuffer, {
+        modelId: model_version
+          ? `${process.env.ROBOFLOW_MODEL_ID}/${model_version}`
+          : undefined,
+      });
+
+      res.json(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Inference failed";
+      console.error("Proxy Error:", message);
+      res.status(500).json({ error: "Inference failed" });
     }
-
-    const result = await inferRoboflowFromBuffer(imageBuffer, {
-      modelId: model_version ? `${process.env.ROBOFLOW_MODEL_ID}/${model_version}` : undefined,
-    });
-
-    res.json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Inference failed";
-    console.error("Roboflow inference error:", message);
-    res.status(503).json({
-      error: `Roboflow inference failed: ${message}`,
-    });
-  }
+  });
 });
 
 export default router;

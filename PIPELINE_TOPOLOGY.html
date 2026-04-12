@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Site Survey Pipeline Topology</title>
+    <style>
+      :root {
+        --bg: #060816;
+        --panel: #0f1633cc;
+        --card: #151f45;
+        --text: #e8eeff;
+        --muted: #9fb0e8;
+        --mobile: #4fd1c5;
+        --backend: #7aa2ff;
+        --cloud: #c084fc;
+        --db: #fbbf24;
+        --web: #34d399;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, Segoe UI, Arial, sans-serif;
+        color: var(--text);
+        background: radial-gradient(1200px 600px at 10% 0%, #172554 0%, transparent 55%),
+          radial-gradient(1000px 500px at 90% 20%, #3b0764 0%, transparent 60%),
+          var(--bg);
+      }
+      .wrap { max-width: 1240px; margin: 0 auto; padding: 32px 20px 56px; }
+      h1 {
+        margin: 0;
+        font-size: clamp(26px, 4vw, 42px);
+        letter-spacing: 0.3px;
+      }
+      .subtitle { margin-top: 8px; color: var(--muted); font-size: 15px; }
+
+      .legend {
+        margin-top: 20px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid #ffffff1c;
+        background: #ffffff0a;
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .dot { width: 10px; height: 10px; border-radius: 50%; }
+
+      .grid {
+        margin-top: 28px;
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 16px;
+      }
+      .panel {
+        grid-column: span 12;
+        background: var(--panel);
+        backdrop-filter: blur(8px);
+        border: 1px solid #ffffff1c;
+        border-radius: 16px;
+        padding: 18px;
+      }
+      @media (min-width: 980px) {
+        .panel.mobile { grid-column: span 4; }
+        .panel.backend { grid-column: span 4; }
+        .panel.cloud { grid-column: span 4; }
+        .panel.flow { grid-column: span 12; }
+      }
+      .panel h2 { margin: 0 0 12px; font-size: 16px; letter-spacing: 0.2px; }
+
+      .card {
+        background: var(--card);
+        border: 1px solid #ffffff1f;
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 10px;
+      }
+      .card:last-child { margin-bottom: 0; }
+      .title { font-weight: 700; font-size: 14px; }
+      .path {
+        margin-top: 3px;
+        color: var(--muted);
+        font-family: Consolas, Monaco, monospace;
+        font-size: 12px;
+      }
+
+      .flowline {
+        margin-top: 8px;
+        overflow-x: auto;
+        padding-bottom: 6px;
+      }
+      .steps {
+        min-width: 940px;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 12px;
+        align-items: center;
+      }
+      .step {
+        background: #111a3a;
+        border: 1px solid #ffffff2a;
+        border-radius: 12px;
+        padding: 14px;
+        min-height: 92px;
+      }
+      .step strong { display: block; margin-bottom: 6px; font-size: 14px; }
+      .step small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+      .arrow {
+        position: relative;
+        height: 2px;
+        background: linear-gradient(90deg, #5eead4, #60a5fa, #c084fc);
+        margin: 0 2px;
+      }
+      .arrow::after {
+        content: "";
+        position: absolute;
+        right: -2px;
+        top: -4px;
+        border-left: 8px solid #c084fc;
+        border-top: 5px solid transparent;
+        border-bottom: 5px solid transparent;
+      }
+
+      .health {
+        margin-top: 18px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 10px;
+      }
+      .health .item {
+        background: #0f1a3b;
+        border: 1px solid #ffffff1c;
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .cmd { color: #c7d2fe; font-family: Consolas, monospace; font-size: 12px; }
+
+      footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Site Survey App — Pipeline Topology</h1>
+      <div class="subtitle">Mobile UI → Backend API → Roboflow Cloud → Database → Website Rendering</div>
+
+      <div class="legend">
+        <div class="chip"><span class="dot" style="background: var(--mobile)"></span>Mobile Layer</div>
+        <div class="chip"><span class="dot" style="background: var(--backend)"></span>Backend Layer</div>
+        <div class="chip"><span class="dot" style="background: var(--cloud)"></span>Cloud AI Layer</div>
+        <div class="chip"><span class="dot" style="background: var(--db)"></span>Database</div>
+        <div class="chip"><span class="dot" style="background: var(--web)"></span>Website/UI</div>
+      </div>
+
+      <div class="grid">
+        <section class="panel mobile">
+          <h2>📱 Mobile</h2>
+          <div class="card">
+            <div class="title">Capture & Submit</div>
+            <div class="path">`mobile/src/screens/NewSurveyScreen.tsx`</div>
+          </div>
+          <div class="card">
+            <div class="title">API Routing + Fallback URLs</div>
+            <div class="path">`mobile/src/api/client.ts`</div>
+          </div>
+          <div class="card">
+            <div class="title">Photo Inference Pipeline</div>
+            <div class="path">`mobile/src/services/photoInferencePipeline.ts`</div>
+          </div>
+        </section>
+
+        <section class="panel backend">
+          <h2>🛠️ Backend</h2>
+          <div class="card">
+            <div class="title">API Entry / Routes</div>
+            <div class="path">`backend/src/index.ts`</div>
+          </div>
+          <div class="card">
+            <div class="title">Roboflow Proxy Endpoint</div>
+            <div class="path">`backend/src/routes/roboflowProxy.ts`</div>
+          </div>
+          <div class="card">
+            <div class="title">Roboflow HTTP Client</div>
+            <div class="path">`backend/src/utils/roboflowClient.ts`</div>
+          </div>
+        </section>
+
+        <section class="panel cloud">
+          <h2>☁️ Cloud / Storage</h2>
+          <div class="card">
+            <div class="title">Roboflow Hosted Model Inference</div>
+            <div class="path">`https://detect.roboflow.com`</div>
+          </div>
+          <div class="card">
+            <div class="title">PostgreSQL + PostGIS</div>
+            <div class="path">`docker compose` service `db`</div>
+          </div>
+          <div class="card">
+            <div class="title">Website Consumption</div>
+            <div class="path">`frontend/src/api/apiClient.ts`</div>
+          </div>
+        </section>
+
+        <section class="panel flow">
+          <h2>🔄 End-to-End Data Flow</h2>
+          <div class="flowline">
+            <div class="steps">
+              <div class="step">
+                <strong>1) Mobile Upload</strong>
+                <small>User captures photo and submits survey payload from mobile UI.</small>
+              </div>
+              <div class="arrow"></div>
+              <div class="step">
+                <strong>2) Backend Intake</strong>
+                <small>Photo + metadata received by survey routes and stored.</small>
+              </div>
+              <div class="arrow"></div>
+              <div class="step">
+                <strong>3) Cloud Inference</strong>
+                <small>Backend proxy sends image bytes to Roboflow hosted model.</small>
+              </div>
+              <div class="arrow"></div>
+              <div class="step">
+                <strong>4) Normalize & Persist</strong>
+                <small>Predictions are adapted and written to DB records.</small>
+              </div>
+              <div class="arrow"></div>
+              <div class="step">
+                <strong>5) Website Visuals</strong>
+                <small>Frontend reads processed results and displays project insights.</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="health">
+            <div class="item"><div><strong>Backend health</strong></div><div class="cmd">curl http://localhost:3001/api/health</div></div>
+            <div class="item"><div><strong>ADB device check</strong></div><div class="cmd">cd mobile; npm run android:test-device</div></div>
+            <div class="item"><div><strong>Start Android flow</strong></div><div class="cmd">cd mobile; npm run android:emulator</div></div>
+            <div class="item"><div><strong>Full stack start</strong></div><div class="cmd">node quick-start.js</div></div>
+          </div>
+        </section>
+      </div>
+
+      <footer>Generated topology for current `main` branch architecture. Open this file directly in a browser.</footer>
+    </div>
+  </body>
+</html>
