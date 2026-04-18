@@ -1548,10 +1548,10 @@ async function triggerPipeline(surveyId: string, event: string): Promise<void> {
 
   await pool.query(
     `INSERT INTO checklist_items (survey_id, label, status, notes, sort_order)
-     SELECT $1, $2, 'pass', $3,
-            COALESCE((SELECT MAX(sort_order) + 1 FROM checklist_items WHERE survey_id = $1), 0)
+     SELECT $1::uuid, $2::text, 'pass', $3::text,
+            COALESCE((SELECT MAX(sort_order) + 1 FROM checklist_items WHERE survey_id = $1::uuid), 0)
      WHERE NOT EXISTS (
-       SELECT 1 FROM checklist_items WHERE survey_id = $1 AND label = $2
+       SELECT 1 FROM checklist_items WHERE survey_id = $1::uuid AND label = $2::text
      )`,
     [
       surveyId,
