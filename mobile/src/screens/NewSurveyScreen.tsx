@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   ActivityIndicator,
@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import axios from "axios";
 import { API_URL } from "../api/client";
 import { useAuth } from "../context/AuthContext";
@@ -22,6 +23,8 @@ import { uploadInferAndSyncSurveyPhotos } from "../services/photoInferencePipeli
 import { solarProTheme } from "../theme/solarProTheme";
 
 const { colors } = solarProTheme;
+const AUTO_SAVE_INTERVAL_MS = 300_000;
+const DRAFTS_DIR = `${FileSystem.documentDirectory}survey-drafts/`;
 
 interface UploadResponse {
   filePath: string;
@@ -30,6 +33,14 @@ interface UploadResponse {
 interface CreatedSurveyResponse {
   id: string;
   project_id?: string | null;
+}
+
+interface NewSurveyDraft {
+  saved_at: string;
+  roof_pitch: string;
+  azimuth: string;
+  photo_uri: string | null;
+  user_id: string | null;
 }
 
 function getPitchPreview(value: string): {
@@ -68,6 +79,65 @@ export default function NewSurveyScreen() {
   const [azimuth, setAzimuth] = useState("");
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [draftFileUri, setDraftFileUri] = useState<string | null>(null);
+
+  const buildDraftPayload = useCallback((): NewSurveyDraft => ({
+    saved_at: new Date().toISOString(),
+    roof_pitch: roofPitch,
+    azimuth,
+    photo_uri: photoUri,
+    user_id: user?.id ?? null,
+  }), [roofPitch, azimuth, photoUri, user?.id]);
+
+  const saveDraftToFile = useCallback(async () => {
+    if (!draftFileUri) return;
+    await FileSystem.writeAsStringAsync(
+      draftFileUri,
+      JSON.stringify(buildDraftPayload(), null, 2),
+      { encoding: FileSystem.EncodingType.UTF8 },
+    );
+  }, [buildDraftPayload, draftFileUri]);
+
+  // Create a new draft file when the screen opens
+  useEffect(() => {
+    let mounted = true;
+
+    async function initDraftFile() {
+      try {
+        await FileSystem.makeDirectoryAsync(DRAFTS_DIR, { intermediates: true });
+        const uri = `${DRAFTS_DIR}draft-${Date.now()}.json`;
+        await FileSystem.writeAsStringAsync(
+          uri,
+          JSON.stringify(buildDraftPayload(), null, 2),
+          { encoding: FileSystem.EncodingType.UTF8 },
+        );
+        if (mounted) {
+          setDraftFileUri(uri);
+        }
+      } catch (err) {
+        console.error("Draft init error:", err);
+      }
+    }
+
+    initDraftFile();
+    return () => {
+      mounted = false;
+    };
+  }, [buildDraftPayload]);
+
+  // Auto-save draft every 300 seconds and once on unmount
+  useEffect(() => {
+    if (!draftFileUri) return;
+
+    const timer = setInterval(() => {
+      saveDraftToFile().catch((err) => console.error("Draft autosave error:", err));
+    }, AUTO_SAVE_INTERVAL_MS);
+
+    return () => {
+      clearInterval(timer);
+      saveDraftToFile().catch((err) => console.error("Draft final save error:", err));
+    };
+  }, [draftFileUri, saveDraftToFile]);
 
   const pitchPreview = getPitchPreview(roofPitch);
 
@@ -221,6 +291,11 @@ export default function NewSurveyScreen() {
         });
       }
 
+      // Remove local draft after successful submit
+      if (draftFileUri) {
+        await FileSystem.deleteAsync(draftFileUri, { idempotent: true });
+      }
+
       Alert.alert("Success", "Survey created and photos analyzed!");
       router.push(`/surveys/${surveyId}`);
     } catch (error) {
@@ -241,6 +316,7 @@ export default function NewSurveyScreen() {
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.title}>New Survey</Text>
+          <Text style={styles.autoSaveHint}>Auto-saving draft every 300 seconds</Text>
 
           <View style={styles.section}>
             <Text style={styles.label}>Roof Pitch</Text>
@@ -321,7 +397,12 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "700",
     color: colors.textPrimary,
-    marginBottom: 24,
+    marginBottom: 8,
+  },
+  autoSaveHint: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginBottom: 16,
   },
   section: {
     marginBottom: 20,
