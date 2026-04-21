@@ -1,7 +1,12 @@
 import { createHash, randomBytes } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { pool } from '../database';
-import { signAuthToken } from '../utils/authToken';
+import {
+  signAuthToken,
+  generateRefreshToken,
+  hashRefreshToken,
+  refreshTokenExpiresAt,
+} from '../utils/authToken';
 import { requireAuth } from '../middleware/auth';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { authAudit } from '../utils/authAudit';
@@ -49,12 +54,20 @@ const signInAttemptMap = new Map<string, SignInAttemptState>();
 const passwordResetMap = new Map<string, PasswordResetState>();
 const SUPPORTED_SOCIAL_PROVIDERS = new Set(['google', 'microsoft', 'apple']);
 
+function getAdminPassword(): string {
+  if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('ADMIN_PASSWORD environment variable must be set in production');
+  }
+  return 'admin123!';
+}
+
 const ADMIN_USER = {
   id: 'admin-local-user',
-  username: 'admin',
-  email: 'admin@site-survey.local',
-  fullName: 'Administrator',
-  password: 'admin123!',
+  username: process.env.ADMIN_USERNAME || 'admin',
+  email: process.env.ADMIN_EMAIL || 'admin@site-survey.local',
+  fullName: process.env.ADMIN_FULL_NAME || 'Administrator',
+  password: getAdminPassword(),
   role: 'admin' as const,
 };
 
@@ -181,7 +194,33 @@ async function ensureUsersTable(): Promise<void> {
   );
 
   await pool.query('CREATE INDEX IF NOT EXISTS users_email_idx ON users (email)');
+
+  // Refresh tokens table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      id          UUID  PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id     UUID  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash  TEXT  NOT NULL UNIQUE,
+      expires_at  TIMESTAMPTZ NOT NULL,
+      revoked     BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS refresh_tokens_hash_idx ON refresh_tokens (token_hash)');
+
   usersTableReady = true;
+}
+
+/** Issues a new refresh token, persists its hash, and returns the raw value. */
+async function issueRefreshToken(userId: string): Promise<string> {
+  const raw = generateRefreshToken();
+  const hash = hashRefreshToken(raw);
+  const expiresAt = refreshTokenExpiresAt();
+  await pool.query(
+    `INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+    [userId, hash, expiresAt],
+  );
+  return raw;
 }
 
 // GET /api/users/me
@@ -273,10 +312,12 @@ router.post('/register', registerRateLimit, async (req: Request, res: Response) 
 
     const user = rows[0];
     const token = signAuthToken({ userId: user.id, email: user.email });
-  authAudit('users.register.success', req, user.email, { status: 201, userId: user.id });
+    const refreshToken = await issueRefreshToken(user.id);
+    authAudit('users.register.success', req, user.email, { status: 201, userId: user.id });
 
     res.status(201).json({
       token,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
@@ -323,9 +364,9 @@ router.post('/signin', async (req: Request, res: Response) => {
         email: ADMIN_USER.email,
         role: ADMIN_USER.role,
       });
-
+      // Admin is a synthetic user — no DB row, so skip DB refresh token
       authAudit('users.signin.success', req, ADMIN_USER.email, { status: 200, userId: ADMIN_USER.id });
-      res.json({ token, user: buildAdminUser() });
+      res.json({ token, refreshToken: null, user: buildAdminUser() });
       return;
     }
 
@@ -354,10 +395,12 @@ router.post('/signin', async (req: Request, res: Response) => {
     const user = rows[0];
     clearSignInFailures(key);
     const token = signAuthToken({ userId: user.id, email: user.email });
+    const refreshToken = await issueRefreshToken(user.id);
     authAudit('users.signin.success', req, user.email, { status: 200, userId: user.id });
 
     res.json({
       token,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
@@ -484,6 +527,83 @@ router.post('/oauth/:provider', (req: Request, res: Response) => {
 
   authAudit('users.oauth.placeholder', req, provider, { status: 501, reason: `${provider}-not-configured` });
   res.status(501).json({ error: `${provider[0].toUpperCase()}${provider.slice(1)} sign-in is not configured yet.` });
+});
+
+// POST /api/users/refresh
+// Validates a refresh token and issues a new access token + rotated refresh token.
+router.post('/refresh', async (req: Request, res: Response) => {
+  const { refreshToken } = req.body as { refreshToken?: string };
+
+  if (!refreshToken || typeof refreshToken !== 'string') {
+    res.status(400).json({ error: 'refreshToken is required' });
+    return;
+  }
+
+  try {
+    await ensureUsersTable();
+
+    const hash = hashRefreshToken(refreshToken);
+    const { rows } = await pool.query(
+      `SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked,
+              u.email, u.full_name
+       FROM refresh_tokens rt
+       JOIN users u ON u.id = rt.user_id
+       WHERE rt.token_hash = $1
+       LIMIT 1`,
+      [hash],
+    );
+
+    if (!rows[0]) {
+      authAudit('users.refresh.reject', req, undefined, { status: 401, reason: 'token-not-found' });
+      res.status(401).json({ error: 'Invalid refresh token' });
+      return;
+    }
+
+    const row = rows[0] as {
+      id: string; user_id: string; expires_at: Date;
+      revoked: boolean; email: string; full_name: string;
+    };
+
+    if (row.revoked || new Date(row.expires_at) <= new Date()) {
+      // Revoke all tokens for this user on reuse of an expired/revoked token
+      await pool.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [row.user_id]);
+      authAudit('users.refresh.reject', req, row.email, { status: 401, reason: row.revoked ? 'revoked' : 'expired' });
+      res.status(401).json({ error: 'Refresh token expired or revoked' });
+      return;
+    }
+
+    // Rotate: revoke old token, issue new pair
+    await pool.query('UPDATE refresh_tokens SET revoked = TRUE WHERE id = $1', [row.id]);
+    const newAccessToken = signAuthToken({ userId: row.user_id, email: row.email });
+    const newRefreshToken = await issueRefreshToken(row.user_id);
+
+    authAudit('users.refresh.success', req, row.email, { status: 200, userId: row.user_id });
+    res.json({ token: newAccessToken, refreshToken: newRefreshToken });
+  } catch (err) {
+    console.error('POST /api/users/refresh error:', err);
+    res.status(500).json({ error: 'Failed to refresh token' });
+  }
+});
+
+// POST /api/users/logout
+// Revokes the supplied refresh token server-side.
+router.post('/logout', async (req: Request, res: Response) => {
+  const { refreshToken } = req.body as { refreshToken?: string };
+
+  if (refreshToken && typeof refreshToken === 'string') {
+    try {
+      await ensureUsersTable();
+      const hash = hashRefreshToken(refreshToken);
+      await pool.query(
+        'UPDATE refresh_tokens SET revoked = TRUE WHERE token_hash = $1',
+        [hash],
+      );
+    } catch (err) {
+      console.error('POST /api/users/logout error:', err);
+    }
+  }
+
+  res.json({ message: 'Logged out' });
 });
 
 export default router;

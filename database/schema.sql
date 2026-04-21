@@ -213,6 +213,24 @@ CREATE INDEX IF NOT EXISTS photo_inference_logs_created_at_idx
   ON photo_inference_logs (created_at DESC);
 
 -- ----------------------------------------------------------------
+-- 9. REFRESH_TOKENS
+--    Server-side store for long-lived refresh tokens.
+--    Allows revocation without waiting for expiry.
+-- ----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash  TEXT         NOT NULL UNIQUE,   -- SHA-256 of the raw token
+  expires_at  TIMESTAMPTZ  NOT NULL,
+  revoked     BOOLEAN      NOT NULL DEFAULT FALSE,
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS refresh_tokens_user_id_idx  ON refresh_tokens (user_id);
+CREATE INDEX IF NOT EXISTS refresh_tokens_hash_idx     ON refresh_tokens (token_hash);
+CREATE INDEX IF NOT EXISTS refresh_tokens_expires_idx  ON refresh_tokens (expires_at);
+
+-- ----------------------------------------------------------------
 -- 9. Automatic updated_at trigger
 -- ----------------------------------------------------------------
 CREATE OR REPLACE FUNCTION set_updated_at()

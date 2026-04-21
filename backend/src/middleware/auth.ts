@@ -10,14 +10,21 @@ declare global {
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  // Primary: Authorization: Bearer <token> header
+  // Fallback: ?token= query param (used by SSE clients that can't set headers)
   const authHeader = req.header('Authorization') || '';
-  if (!authHeader.startsWith('Bearer ')) {
+  const rawToken = authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7).trim()
+    : typeof req.query.token === 'string'
+      ? req.query.token.trim()
+      : '';
+
+  if (!rawToken) {
     res.status(401).json({ error: 'Missing or invalid Authorization header' });
     return;
   }
 
-  const token = authHeader.slice(7).trim();
-  const payload = verifyAuthToken(token);
+  const payload = verifyAuthToken(rawToken);
 
   if (!payload) {
     res.status(401).json({ error: 'Invalid or expired token' });

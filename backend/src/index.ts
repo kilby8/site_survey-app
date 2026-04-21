@@ -20,6 +20,7 @@ import usersRouter from "./routes/users";
 import roboflowProxyRouter from "./routes/roboflowProxy";
 import { requireAuth } from "./middleware/auth";
 import { pool } from "./database";
+import { uploadFile, isS3Mode } from "./utils/storageClient";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "3001", 10);
@@ -28,19 +29,14 @@ const PUBLIC_DIR = path.join(__dirname, "..", "public");
 const IOS_BUNDLE_ID = process.env.IOS_BUNDLE_ID || "com.sitesurvey.mobile";
 const APPLE_TEAM_ID = (process.env.APPLE_TEAM_ID || "").trim();
 
-if (!fs.existsSync(UPLOADS_DIR)) {
+// Only create local uploads dir when not using S3
+if (!isS3Mode() && !fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
+// Use memory storage — storageClient handles the final destination
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname) || ".jpg";
-      const name = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-      cb(null, name);
-    },
-  }),
+  storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith("image/")) {
       cb(null, true);
@@ -107,7 +103,11 @@ app.get("/view/:surveyId", (_req, res) => {
 // ----------------------------------------------------------------
 // Serve uploaded photos statically
 // ----------------------------------------------------------------
-app.use("/uploads", express.static(UPLOADS_DIR));
+// Serve uploaded photos statically — local mode only
+// ----------------------------------------------------------------
+if (!isS3Mode()) {
+  app.use("/uploads", express.static(UPLOADS_DIR));
+}
 
 // ----------------------------------------------------------------
 // Health check
@@ -133,7 +133,7 @@ app.get("/api/health", async (_req, res) => {
 // Survey image upload
 // ----------------------------------------------------------------
 app.post("/api/surveys/upload", requireAuth, (req, res) => {
-  upload.single("image")(req, res, (err: unknown) => {
+  upload.single("image")(req, res, async (err: unknown) => {
     if (err instanceof multer.MulterError) {
       if (err.code === "LIMIT_FILE_SIZE") {
         res.status(413).json({ error: "Image exceeds 10MB limit" });
@@ -154,8 +154,15 @@ app.post("/api/surveys/upload", requireAuth, (req, res) => {
       return;
     }
 
-    const filePath = `/uploads/${req.file.filename}`;
-    res.status(201).json({ filePath });
+    try {
+      const ext = require("path").extname(req.file.originalname) || ".jpg";
+      const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+      const filePath = await uploadFile(req.file.buffer, filename, req.file.mimetype);
+      res.status(201).json({ filePath });
+    } catch (uploadErr) {
+      const message = uploadErr instanceof Error ? uploadErr.message : "Upload failed";
+      res.status(500).json({ error: message });
+    }
   });
 });
 

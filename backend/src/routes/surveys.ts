@@ -6,7 +6,6 @@
  * Location is stored as GEOGRAPHY(POINT, 4326) via PostGIS.
  */
 import path from "path";
-import fs from "fs";
 import { Router, Request, Response } from "express";
 import multer from "multer";
 import { pool } from "../database";
@@ -16,28 +15,51 @@ import { generateReport, toMarkdown } from "../utils/reportGenerator";
 import {
   dataUrlToBuffer,
   inferRoboflowFromBuffer,
-  inferRoboflowFromFile,
+  inferRoboflowFromPath,
 } from "../utils/roboflowClient";
+import { uploadFile } from "../utils/storageClient";
 
 const router = Router();
 
 // ----------------------------------------------------------------
-// Multer — photo upload storage
+// SSE — real-time survey event broadcasting
 // ----------------------------------------------------------------
-const UPLOADS_DIR = path.join(__dirname, "..", "..", "uploads");
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+type SseEventType = "survey.created" | "survey.updated" | "survey.deleted";
+
+interface SseClient {
+  id: string;
+  res: Response;
 }
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || ".jpg";
-    const name = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-    cb(null, name);
-  },
-});
+const sseClients: SseClient[] = [];
 
+/** Register a new SSE connection and remove it when the client disconnects. */
+function addSseClient(res: Response): SseClient {
+  const client: SseClient = { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, res };
+  sseClients.push(client);
+  res.on("close", () => {
+    const idx = sseClients.indexOf(client);
+    if (idx !== -1) sseClients.splice(idx, 1);
+  });
+  return client;
+}
+
+/** Broadcast a typed event to all connected SSE clients. */
+export function broadcastSurveyEvent(type: SseEventType, payload: unknown): void {
+  if (sseClients.length === 0) return;
+  const data = JSON.stringify({ type, payload, timestamp: new Date().toISOString() });
+  for (const client of sseClients) {
+    try {
+      client.res.write(`event: ${type}\ndata: ${data}\n\n`);
+    } catch {
+      // Client disconnected mid-write — will be cleaned up on "close"
+    }
+  }
+}
+
+// ----------------------------------------------------------------
+// Multer — memory storage; storageClient handles final destination
+// ----------------------------------------------------------------
 // Only allow image MIME types
 const imageFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
   if (file.mimetype.startsWith("image/")) {
@@ -48,7 +70,7 @@ const imageFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
 };
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   fileFilter: imageFilter,
   limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB per photo
 });
@@ -368,6 +390,37 @@ async function upsertPhotos(
     );
   }
 }
+
+/**
+ * GET /api/surveys/events
+ *
+ * Server-Sent Events stream. Clients subscribe once and receive
+ * real-time survey.created / survey.updated / survey.deleted events.
+ * The connection is kept alive with a 30-second heartbeat comment.
+ */
+router.get("/events", (req: Request, res: Response) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // disable Nginx buffering
+  res.flushHeaders();
+
+  // Send an initial connection-established event
+  res.write("event: connected\ndata: {}\n\n");
+
+  addSseClient(res);
+
+  // Heartbeat every 30 s to prevent proxy/load-balancer timeouts
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(": heartbeat\n\n");
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, 30_000);
+
+  res.on("close", () => clearInterval(heartbeat));
+});
 
 /**
  * POST /api/surveys/validate/solar
@@ -1075,6 +1128,7 @@ router.post("/", async (req: Request, res: Response) => {
     await client.query("COMMIT");
 
     const full = await fetchSurveyFull(newId);
+    broadcastSurveyEvent("survey.created", full);
     res.status(201).json(full);
   } catch (err) {
     await client.query("ROLLBACK");
@@ -1162,6 +1216,7 @@ router.put("/:id", async (req: Request, res: Response) => {
     await client.query("COMMIT");
 
     const full = await fetchSurveyFull(id);
+    broadcastSurveyEvent("survey.updated", full);
     res.json(full);
   } catch (err) {
     await client.query("ROLLBACK");
@@ -1226,6 +1281,11 @@ router.post(
       const file = files[i];
       const label = labels[i] ?? file.originalname ?? "";
 
+      // Upload buffer to storage backend (local disk or S3)
+      const ext = path.extname(file.originalname) || ".jpg";
+      const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+      const storedPath = await uploadFile(file.buffer, filename, file.mimetype);
+
       const { rows: photoRows } = await pool.query(
         `INSERT INTO survey_photos
          (survey_id, filename, label, file_path, mime_type, captured_at)
@@ -1235,7 +1295,7 @@ router.post(
           id,
           file.originalname,
           label,
-          file.path, // absolute path inside uploads/
+          storedPath, // URL returned by storageClient (local path or S3 presigned URL)
           file.mimetype,
           captured_at,
         ],
@@ -1337,7 +1397,7 @@ router.post(
 
     try {
       const inferenceResult = photo.file_path
-        ? await inferRoboflowFromFile(photo.file_path, {
+        ? await inferRoboflowFromPath(photo.file_path, {
             modelId: model_id,
             confidence,
             overlap,

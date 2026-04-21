@@ -114,6 +114,35 @@ export async function inferRoboflowFromFile(
   return inferRoboflowFromBuffer(image, options);
 }
 
+/**
+ * Resolves a stored `file_path` value to a buffer and runs inference.
+ *
+ * Handles two formats produced by storageClient:
+ *   - Local path  : "/uploads/filename.jpg"  → read from disk
+ *   - Remote URL  : "https://..."            → fetch over HTTP (S3 presigned URL)
+ */
+export async function inferRoboflowFromPath(
+  filePathOrUrl: string,
+  options: RoboflowInferOptions = {},
+): Promise<unknown> {
+  if (filePathOrUrl.startsWith("http://") || filePathOrUrl.startsWith("https://")) {
+    const response = await fetch(filePathOrUrl);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch photo for inference (${response.status}): ${filePathOrUrl}`,
+      );
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return inferRoboflowFromBuffer(Buffer.from(arrayBuffer), options);
+  }
+
+  // Local path — strip leading "/" and resolve from uploads dir
+  const localPath = filePathOrUrl.startsWith("/")
+    ? require("path").join(__dirname, "..", "..", filePathOrUrl)
+    : filePathOrUrl;
+  return inferRoboflowFromFile(localPath, options);
+}
+
 export function dataUrlToBuffer(dataUrl: string): Buffer {
   const match = /^data:[^;]+;base64,(.+)$/.exec(dataUrl);
   if (!match) {

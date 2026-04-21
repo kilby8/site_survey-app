@@ -30,6 +30,7 @@ export interface AuthUser {
 
 export interface AuthResponse {
   token: string;
+  refreshToken: string | null;
   user: AuthUser;
 }
 
@@ -480,4 +481,36 @@ export async function inferSurveyPhoto(
     },
   );
   return handleResponse<PhotoInferenceResponse>(res);
+}
+
+/**
+ * POST /api/users/refresh
+ * Exchanges a valid refresh token for a new access token + rotated refresh token.
+ */
+export async function refreshAccessToken(
+  refreshToken: string,
+): Promise<{ token: string; refreshToken: string }> {
+  const res = await fetchWithFallback("/api/users/refresh", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),
+  });
+  return handleResponse<{ token: string; refreshToken: string }>(res);
+}
+
+/**
+ * POST /api/users/logout
+ * Revokes the refresh token server-side.
+ */
+export async function logout(refreshToken: string | null): Promise<void> {
+  if (!refreshToken) return;
+  try {
+    await fetchWithFallback("/api/users/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+  } catch {
+    // Best-effort — local session cleared regardless
+  }
 }
