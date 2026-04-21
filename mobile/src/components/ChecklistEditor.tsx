@@ -18,6 +18,9 @@ import {
 } from "react-native";
 import type { ChecklistStatus } from "../types";
 import { captureFromCamera, pickFromLibrary } from "../services/photoService";
+import { solarProTheme } from "../theme/solarProTheme";
+
+const { colors } = solarProTheme;
 
 export interface ChecklistItemPhoto {
   uri: string;
@@ -206,7 +209,7 @@ export default function ChecklistEditor({ items, onChange }: Props) {
             <TextInput
               style={styles.notesInput}
               placeholder="Notes (optional)"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors.textMuted}
               value={item.notes}
               onChangeText={(t) => setNotes(idx, t)}
               multiline
@@ -242,7 +245,7 @@ export default function ChecklistEditor({ items, onChange }: Props) {
                           <TextInput
                             style={styles.photoLabelInput}
                             placeholder="Label…"
-                            placeholderTextColor="#9ca3af"
+                            placeholderTextColor={colors.textMuted}
                             value={photo.label}
                             onChangeText={(t) =>
                               setPhotoLabel(idx, photoIdx, t)
@@ -265,7 +268,7 @@ export default function ChecklistEditor({ items, onChange }: Props) {
                     disabled={loadingItemIdx === idx}
                   >
                     {loadingItemIdx === idx ? (
-                      <ActivityIndicator size="small" color="#ffffff" />
+                      <ActivityIndicator size="small" color={colors.white} />
                     ) : (
                       <Text style={styles.cameraBtnText}>📷 Camera</Text>
                     )}
@@ -280,7 +283,7 @@ export default function ChecklistEditor({ items, onChange }: Props) {
                     disabled={loadingItemIdx === idx}
                   >
                     {loadingItemIdx === idx ? (
-                      <ActivityIndicator size="small" color="#3b82f6" />
+                      <ActivityIndicator size="small" color={colors.primary} />
                     ) : (
                       <Text
                         style={[
@@ -304,7 +307,7 @@ export default function ChecklistEditor({ items, onChange }: Props) {
         <TextInput
           style={styles.addInput}
           placeholder="Add checklist item…"
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={colors.textMuted}
           value={newLabel}
           onChangeText={setNewLabel}
           onSubmitEditing={addItem}
@@ -327,16 +330,16 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#111827",
+    color: colors.textPrimary,
     marginBottom: 10,
   },
   item: {
-    backgroundColor: "#f9fafb",
+    backgroundColor: colors.card,
     borderRadius: 8,
     padding: 12,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: colors.border,
   },
   itemHeader: {
     flexDirection: "row",
@@ -344,8 +347,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 8,
   },
-  itemLabel: { fontSize: 14, fontWeight: "600", color: "#374151", flex: 1 },
-  removeBtn: { fontSize: 14, color: "#9ca3af", paddingLeft: 8 },
+  itemLabel: { fontSize: 14, fontWeight: "600", color: colors.textSecondary, flex: 1 },
+  removeBtn: { fontSize: 14, color: colors.textMuted, paddingLeft: 8 },
   statusRow: {
     flexDirection: "row",
     gap: 6,
@@ -357,12 +360,12 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: "#d1d5db",
-    backgroundColor: "#ffffff",
+    borderColor: colors.inputBorder,
+    backgroundColor: colors.inputBg,
     minHeight: 36,
     justifyContent: "center",
   },
-  statusBtnText: { fontSize: 12, color: "#374151", fontWeight: "600" },
+  statusBtnText: { fontSize: 12, color: colors.textSecondary, fontWeight: "600" },
   statusBtnTextActive: { color: "#ffffff" },
   statusIndicator: {
     alignSelf: "flex-start",
@@ -374,12 +377,12 @@ const styles = StyleSheet.create({
   statusIndicatorText: { color: "#ffffff", fontSize: 11, fontWeight: "700" },
   notesInput: {
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: colors.inputBorder,
     borderRadius: 6,
     padding: 8,
     fontSize: 13,
-    color: "#374151",
-    backgroundColor: "#ffffff",
+    color: colors.textSecondary,
+    backgroundColor: colors.inputBg,
     minHeight: 36,
   },
   addRow: {
@@ -390,36 +393,36 @@ const styles = StyleSheet.create({
   addInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#d1d5db",
+    borderColor: colors.inputBorder,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#111827",
-    backgroundColor: "#ffffff",
+    color: colors.textPrimary,
+    backgroundColor: colors.inputBg,
     minHeight: 44,
   },
   addBtn: {
-    backgroundColor: "#1a56db",
+    backgroundColor: colors.primary,
     paddingHorizontal: 16,
     borderRadius: 8,
     justifyContent: "center",
     minHeight: 44,
   },
-  addBtnDisabled: { backgroundColor: "#93c5fd" },
-  addBtnText: { color: "#ffffff", fontWeight: "700", fontSize: 14 },
+  addBtnDisabled: { backgroundColor: colors.primaryDark },
+  addBtnText: { color: colors.background, fontWeight: "700", fontSize: 14 },
   expandBtn: {
     paddingRight: 8,
   },
   expandIcon: {
     fontSize: 12,
-    color: "#6b7280",
+    color: colors.textMuted,
   },
   expandedSection: {
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
+    borderTopColor: colors.border,
   },
   photosGallery: {
     marginBottom: 12,
@@ -427,7 +430,7 @@ const styles = StyleSheet.create({
   photosTitle: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#374151",
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   photoRow: {
@@ -442,7 +445,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 90,
     borderRadius: 6,
-    backgroundColor: "#e5e7eb",
+    backgroundColor: colors.inputBg,
   },
   photoRemoveBtn: {
     position: "absolute",
@@ -462,14 +465,14 @@ const styles = StyleSheet.create({
   },
   photoLabelInput: {
     borderWidth: 1,
-    borderColor: "#d1d5db",
+    borderColor: colors.inputBorder,
     borderRadius: 4,
     marginTop: 4,
     paddingHorizontal: 6,
     paddingVertical: 4,
     fontSize: 11,
-    color: "#374151",
-    backgroundColor: "#ffffff",
+    color: colors.textSecondary,
+    backgroundColor: colors.inputBg,
   },
   cameraRow: {
     flexDirection: "row",
@@ -477,24 +480,24 @@ const styles = StyleSheet.create({
   },
   cameraBtn: {
     flex: 1,
-    backgroundColor: "#16a34a",
+    backgroundColor: colors.primary,
     paddingVertical: 10,
     borderRadius: 6,
     alignItems: "center",
     justifyContent: "center",
   },
   cameraBtnSecondary: {
-    backgroundColor: "#e0e7ff",
+    backgroundColor: colors.inputBg,
   },
   cameraBtnDisabled: {
     opacity: 0.6,
   },
   cameraBtnText: {
-    color: "#ffffff",
+    color: colors.background,
     fontWeight: "600",
     fontSize: 13,
   },
   cameraBtnTextSecondary: {
-    color: "#3b82f6",
+    color: colors.primary,
   },
 });

@@ -1,3 +1,13 @@
+import React, { useState } from 'react';
+import {
+  View, Text, TouchableOpacity, TextInput, ScrollView,
+  Image, Alert, StyleSheet,
+} from 'react-native';
+import { captureFromCamera, pickFromLibrary } from '../services/photoService';
+import { solarProTheme } from '../theme/solarProTheme';
+
+const { colors } = solarProTheme;
+
 /**
  * components/PhotoCapture.tsx
  *
@@ -5,13 +15,6 @@
  * Photos are immediately copied to the app's document directory.
  * Calls back with the permanent local file path for SQLite storage.
  */
-import React, { useState } from 'react';
-import {
-  View, Text, TouchableOpacity, TextInput, ScrollView,
-  Image, Alert, StyleSheet,
-} from 'react-native';
-import { captureFromCamera, pickFromLibrary } from '../services/photoService';
-
 export interface PhotoDraft {
   uri:      string;
   label:    string;
@@ -88,7 +91,7 @@ export default function PhotoCapture({ photos, onChange }: Props) {
               <TextInput
                 style={styles.labelInput}
                 placeholder="Add label…"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor={colors.textMuted}
                 value={photo.label}
                 onChangeText={t => setLabel(idx, t)}
               />
@@ -121,7 +124,7 @@ export default function PhotoCapture({ photos, onChange }: Props) {
 
 const styles = StyleSheet.create({
   container:    { marginBottom: 16 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
   photoRow:     { marginBottom: 10 },
   photoCard: {
     width:       140,
@@ -132,7 +135,7 @@ const styles = StyleSheet.create({
     width:        140,
     height:       100,
     borderRadius:  8,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.inputBg,
   },
   removeBtn: {
     position:        'absolute',
@@ -148,28 +151,28 @@ const styles = StyleSheet.create({
   removeBtnText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
   labelInput: {
     borderWidth:  1,
-    borderColor:  '#d1d5db',
+    borderColor:  colors.inputBorder,
     borderRadius:  6,
     paddingHorizontal: 8,
     paddingVertical:   4,
     fontSize:      12,
-    color:         '#374151',
-    backgroundColor: '#ffffff',
+    color:         colors.textPrimary,
+    backgroundColor: colors.inputBg,
     marginTop:     4,
     minHeight:     32,
   },
   btnRow:    { flexDirection: 'row', gap: 10 },
   btn: {
     flex:            1,
-    backgroundColor: '#1a56db',
+    backgroundColor: colors.primary,
     paddingVertical: 13,
     borderRadius:    10,
     alignItems:      'center',
     minHeight:       48,
     justifyContent:  'center',
   },
-  btnSecondary:     { backgroundColor: '#ffffff', borderWidth: 1.5, borderColor: '#1a56db' },
+  btnSecondary:     { backgroundColor: colors.inputBg, borderWidth: 1.5, borderColor: colors.primary },
   btnDisabled:      { opacity: 0.5 },
-  btnText:          { color: '#ffffff', fontSize: 14, fontWeight: '700' },
-  btnTextSecondary: { color: '#1a56db' },
+  btnText:          { color: colors.background, fontSize: 14, fontWeight: '700' },
+  btnTextSecondary: { color: colors.primary },
 });

@@ -9,6 +9,9 @@ import {
   View, Text, TouchableOpacity, ActivityIndicator, StyleSheet,
 } from 'react-native';
 import type { GpsCoordinates } from '../types';
+import { solarProTheme } from '../theme/solarProTheme';
+
+const { colors } = solarProTheme;
 
 type Status = 'idle' | 'requesting' | 'capturing' | 'success' | 'error';
 
@@ -57,7 +60,7 @@ export default function GPSCapture({
           disabled={isBusy}
         >
           {isBusy ? (
-            <ActivityIndicator color="#ffffff" size="small" />
+            <ActivityIndicator color={colors.white} size="small" />
           ) : (
             <Text style={styles.captureBtnText}>📍 Capture Location</Text>
           )}
@@ -79,37 +82,37 @@ export default function GPSCapture({
 
 const styles = StyleSheet.create({
   container:         { marginBottom: 16 },
-  label:             { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 6 },
+  label:             { fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 6 },
   coordBox: {
-    backgroundColor: '#f0fdf4',
-    borderColor:     '#bbf7d0',
+    backgroundColor: colors.successBg,
+    borderColor:     colors.successBorder,
     borderWidth:     1,
     borderRadius:    8,
     padding:         12,
   },
-  coordText:         { fontSize: 15, fontWeight: '700', color: '#15803d', fontFamily: 'monospace' },
-  accuracy:          { fontSize: 12, color: '#16a34a', marginTop: 2 },
+  coordText:         { fontSize: 15, fontWeight: '700', color: colors.successText, fontFamily: 'monospace' },
+  accuracy:          { fontSize: 12, color: colors.successText, marginTop: 2 },
   row:               { flexDirection: 'row', gap: 8, marginTop: 8 },
   btnSecondary: {
     paddingHorizontal: 12, paddingVertical: 6,
-    backgroundColor:   '#dcfce7', borderRadius: 6,
+    backgroundColor:   colors.inputBg, borderRadius: 6,
   },
-  btnSecondaryText:  { color: '#15803d', fontSize: 13, fontWeight: '600' },
+  btnSecondaryText:  { color: colors.textPrimary, fontSize: 13, fontWeight: '600' },
   btnClear: {
     paddingHorizontal: 12, paddingVertical: 6,
-    backgroundColor:   '#fee2e2', borderRadius: 6,
+    backgroundColor:   colors.errorBg, borderRadius: 6,
   },
-  btnClearText:      { color: '#dc2626', fontSize: 13, fontWeight: '600' },
+  btnClearText:      { color: colors.errorText, fontSize: 13, fontWeight: '600' },
   captureBtn: {
-    backgroundColor: '#1a56db',
+    backgroundColor: colors.primary,
     paddingVertical: 14,
     borderRadius:    10,
     alignItems:      'center',
     minHeight:       48,
     justifyContent:  'center',
   },
-  captureBtnDisabled:{ backgroundColor: '#93c5fd' },
-  captureBtnText:    { color: '#ffffff', fontSize: 15, fontWeight: '700' },
-  hint:              { marginTop: 6, fontSize: 12, color: '#6b7280', textAlign: 'center' },
-  error:             { marginTop: 6, fontSize: 12, color: '#dc2626' },
+  captureBtnDisabled:{ backgroundColor: colors.primaryDark },
+  captureBtnText:    { color: colors.background, fontSize: 15, fontWeight: '700' },
+  hint:              { marginTop: 6, fontSize: 12, color: colors.textSecondary, textAlign: 'center' },
+  error:             { marginTop: 6, fontSize: 12, color: colors.errorText },
 });

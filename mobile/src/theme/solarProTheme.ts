@@ -1,0 +1,21 @@
+export const solarProTheme = {
+  colors: {
+    background: '#050B1F',
+    card: '#0A1533',
+    border: '#1D2C55',
+    inputBg: '#101E45',
+    inputBorder: '#2A3B6A',
+    textPrimary: '#F8FAFC',
+    textSecondary: '#93A4C6',
+    textMuted: '#6E7FA7',
+    primary: '#FFB020',
+    primaryDark: '#D89213',
+    successBg: '#0F2A1F',
+    successBorder: '#2D8A5A',
+    successText: '#79D9A9',
+    errorBg: '#2A1216',
+    errorBorder: '#8D2E39',
+    errorText: '#F4A4AD',
+    white: '#FFFFFF',
+  },
+};

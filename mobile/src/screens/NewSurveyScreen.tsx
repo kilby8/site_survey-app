@@ -19,6 +19,9 @@ import { API_URL } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { convertPitchToDegrees } from "../services/pitch";
 import { uploadInferAndSyncSurveyPhotos } from "../services/photoInferencePipeline";
+import { solarProTheme } from "../theme/solarProTheme";
+
+const { colors } = solarProTheme;
 
 interface UploadResponse {
   filePath: string;
@@ -246,7 +249,7 @@ export default function NewSurveyScreen() {
               placeholder="Enter pitch (e.g., 5/12 or 22.6)"
               value={roofPitch}
               onChangeText={setRoofPitch}
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors.textMuted}
             />
             {pitchPreview.degrees !== null && (
               <Text style={styles.preview}>
@@ -266,7 +269,7 @@ export default function NewSurveyScreen() {
               value={azimuth}
               onChangeText={setAzimuth}
               keyboardType="numeric"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors.textMuted}
             />
           </View>
 
@@ -295,7 +298,7 @@ export default function NewSurveyScreen() {
             disabled={submitting}
           >
             {submitting ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.btnText}>Create Survey</Text>
             )}
@@ -309,7 +312,7 @@ export default function NewSurveyScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f172a",
+    backgroundColor: colors.background,
   },
   scrollContent: {
     padding: 20,
@@ -317,7 +320,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#f8fafc",
+    color: colors.textPrimary,
     marginBottom: 24,
   },
   section: {
@@ -326,55 +329,55 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#cbd5e1",
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: "#1e293b",
+    backgroundColor: colors.inputBg,
     borderWidth: 1,
-    borderColor: "#334155",
+    borderColor: colors.inputBorder,
     borderRadius: 6,
     padding: 12,
-    color: "#f8fafc",
+    color: colors.textPrimary,
     fontSize: 16,
   },
   preview: {
-    color: "#86efac",
+    color: colors.successText,
     fontSize: 12,
     marginTop: 4,
   },
   error: {
-    color: "#f87171",
+    color: colors.errorText,
     fontSize: 12,
     marginTop: 4,
   },
   photoPreview: {
-    backgroundColor: "#1e293b",
+    backgroundColor: colors.inputBg,
     borderWidth: 1,
-    borderColor: "#334155",
+    borderColor: colors.inputBorder,
     borderRadius: 6,
     padding: 16,
     alignItems: "center",
     gap: 12,
   },
   photoText: {
-    color: "#86efac",
+    color: colors.successText,
     fontSize: 16,
   },
   captureBtn: {
-    backgroundColor: "#0ea5e9",
+    backgroundColor: colors.primary,
     borderRadius: 6,
     padding: 14,
     alignItems: "center",
   },
   changePhotoBtn: {
-    backgroundColor: "#475569",
+    backgroundColor: colors.inputBorder,
     borderRadius: 6,
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
   submitBtn: {
-    backgroundColor: "#22c55e",
+    backgroundColor: colors.primary,
     borderRadius: 6,
     padding: 14,
     alignItems: "center",
@@ -384,7 +387,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   btnText: {
-    color: "#fff",
+    color: colors.background,
     fontSize: 16,
     fontWeight: "600",
   },

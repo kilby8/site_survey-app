@@ -12,6 +12,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { solarProTheme } from '../theme/solarProTheme';
+
+const { colors } = solarProTheme;
 
 // ----------------------------------------------------------------
 // StatusBanner
@@ -66,25 +69,25 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 14,
   },
-  bannerSuccess: { backgroundColor: '#dcfce7', borderWidth: 1, borderColor: '#86efac' },
-  bannerError:   { backgroundColor: '#fee2e2', borderWidth: 1, borderColor: '#fca5a5' },
-  bannerSuccessText: { color: '#15803d', fontSize: 13, fontWeight: '600' },
-  bannerErrorText:   { color: '#b91c1c', fontSize: 13, fontWeight: '600' },
+  bannerSuccess: { backgroundColor: colors.successBg, borderWidth: 1, borderColor: colors.successBorder },
+  bannerError:   { backgroundColor: colors.errorBg, borderWidth: 1, borderColor: colors.errorBorder },
+  bannerSuccessText: { color: colors.successText, fontSize: 13, fontWeight: '600' },
+  bannerErrorText:   { color: colors.errorText, fontSize: 13, fontWeight: '600' },
 
   pwRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: colors.inputBorder,
     borderRadius: 10,
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.inputBg,
     marginBottom: 12,
     height: 46,
     paddingHorizontal: 12,
   },
   pwInput: {
     flex: 1,
-    color: '#0f172a',
+    color: colors.textPrimary,
     fontSize: 14,
     height: '100%',
     borderWidth: 0,

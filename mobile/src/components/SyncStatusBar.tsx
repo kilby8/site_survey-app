@@ -10,6 +10,9 @@ import {
   View, Text, TouchableOpacity, ActivityIndicator,
   StyleSheet, Platform,
 } from 'react-native';
+import { solarProTheme } from '../theme/solarProTheme';
+
+const { colors } = solarProTheme;
 
 interface Props {
   isOnline:      boolean;
@@ -33,12 +36,12 @@ export default function SyncStatusBar({
   // When everything is synced and we're online, show nothing (all good)
   if (isOnline && total === 0) return null;
 
-  let bgColor   = '#6b7280'; // gray  — offline
+  let bgColor   = colors.textMuted;
   let label     = 'Offline';
   if (isOnline && isBusy)         { bgColor = '#2563eb'; label = `Uploading ${syncingCount} survey${syncingCount !== 1 ? 's' : ''}…`; }
-  else if (isOnline && total > 0) { bgColor = '#f59e0b'; label = `${total} survey${total !== 1 ? 's' : ''} pending upload`; }
   else if (isOnline && hasError)  { bgColor = '#dc2626'; label = `${errorCount} upload failed — tap to retry`; }
-  else if (!isOnline && total > 0){ bgColor = '#6b7280'; label = `Offline — ${total} survey${total !== 1 ? 's' : ''} queued`; }
+  else if (isOnline && total > 0) { bgColor = '#f59e0b'; label = `${total} survey${total !== 1 ? 's' : ''} pending upload`; }
+  else if (!isOnline && total > 0){ bgColor = colors.textMuted; label = `Offline — ${total} survey${total !== 1 ? 's' : ''} queued`; }
 
   return (
     <TouchableOpacity
@@ -50,7 +53,7 @@ export default function SyncStatusBar({
     >
       <View style={styles.inner}>
         {isBusy && (
-          <ActivityIndicator size="small" color="#ffffff" style={styles.spinner} />
+          <ActivityIndicator size="small" color={colors.white} style={styles.spinner} />
         )}
         <Text style={styles.text}>{label}</Text>
         {isOnline && !isBusy && total > 0 && (
@@ -76,13 +79,13 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   text: {
-    color:      '#ffffff',
+    color:      colors.white,
     fontSize:   13,
     fontWeight: '600',
     textAlign:  'center',
   },
   cta: {
-    color:        '#e0e7ff',
+    color:        colors.background,
     fontSize:     12,
     marginLeft:   8,
     fontStyle:    'italic',

@@ -18,12 +18,15 @@ import { getSurveyById } from '../database/surveyDb';
 import { syncPending, isOnline } from '../services/SyncManager';
 import { fetchReport, downloadReportMarkdown } from '../api/client';
 import type { EngineeringReport } from '../api/client';
+import { solarProTheme } from '../theme/solarProTheme';
+
+const { colors } = solarProTheme;
 
 const SYNC_COLORS: Record<string, string> = {
   pending: '#f59e0b', syncing: '#2563eb', synced: '#16a34a', error: '#dc2626',
 };
 const STATUS_COLORS: Record<string, string> = {
-  pass: '#16a34a', fail: '#dc2626', 'n/a': '#6b7280', pending: '#f59e0b',
+  pass: '#16a34a', fail: '#dc2626', 'n/a': colors.textMuted, pending: '#f59e0b',
 };
 
 export default function ViewSurveyScreen() {
@@ -124,7 +127,7 @@ export default function ViewSurveyScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.centered}>
-        <ActivityIndicator size="large" color="#1a56db" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </SafeAreaView>
     );
   }
@@ -137,7 +140,7 @@ export default function ViewSurveyScreen() {
     );
   }
 
-  const syncColor = SYNC_COLORS[survey.sync_status] ?? '#6b7280';
+  const syncColor = SYNC_COLORS[survey.sync_status] ?? colors.textMuted;
   const formattedDate = new Date(survey.survey_date).toLocaleString(undefined, {
     year: 'numeric', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -261,7 +264,7 @@ export default function ViewSurveyScreen() {
             disabled={syncing}
           >
             {syncing
-              ? <ActivityIndicator color="#ffffff" size="small" />
+              ? <ActivityIndicator color={colors.white} size="small" />
               : <Text style={styles.syncBtnText}>⬆ Sync to Server</Text>
             }
           </TouchableOpacity>
@@ -274,7 +277,7 @@ export default function ViewSurveyScreen() {
           disabled={reportLoading}
         >
           {reportLoading
-            ? <ActivityIndicator color="#ffffff" size="small" />
+            ? <ActivityIndicator color={colors.white} size="small" />
             : <Text style={styles.reportBtnText}>📊 Generate Design Report</Text>
           }
         </TouchableOpacity>
@@ -381,7 +384,7 @@ function ReportCard({
         disabled={markdownLoading}
       >
         {markdownLoading
-          ? <ActivityIndicator color="#1a56db" size="small" />
+          ? <ActivityIndicator color={colors.background} size="small" />
           : <Text style={reportStyles.downloadBtnText}>⬇ Share Markdown Report</Text>
         }
       </TouchableOpacity>
@@ -418,13 +421,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 const styles = StyleSheet.create({
-  screen:     { flex: 1, backgroundColor: '#f0f4ff' },
+  screen:     { flex: 1, backgroundColor: colors.background },
   centered:   { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll:     { padding: 16, paddingBottom: 40 },
-  errorText:  { color: '#dc2626', fontSize: 16 },
+  errorText:  { color: colors.errorText, fontSize: 16 },
 
   headerCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+    borderWidth: 1,
     borderRadius:    14,
     padding:         16,
     marginBottom:    12,
@@ -440,73 +445,77 @@ const styles = StyleSheet.create({
     alignItems:      'flex-start',
     marginBottom:     8,
   },
-  projectName:   { fontSize: 20, fontWeight: '800', color: '#111827', flex: 1, marginRight: 8 },
+  projectName:   { fontSize: 20, fontWeight: '800', color: colors.textPrimary, flex: 1, marginRight: 8 },
   syncBadge:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   syncBadgeText: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
   categoryTag: {
     alignSelf:         'flex-start',
-    backgroundColor:   '#eff6ff',
+    backgroundColor:   colors.inputBg,
+    borderColor: colors.inputBorder,
+    borderWidth: 1,
     paddingHorizontal:  10,
     paddingVertical:     4,
     borderRadius:       12,
     marginBottom:        10,
   },
-  categoryTagText: { color: '#1d4ed8', fontSize: 12, fontWeight: '700' },
-  row:       { flexDirection: 'row', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  rowLabel:  { width: 80, fontSize: 13, color: '#9ca3af', fontWeight: '600' },
-  rowValue:  { flex: 1, fontSize: 13, color: '#374151' },
+  categoryTagText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
+  row:       { flexDirection: 'row', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: colors.border },
+  rowLabel:  { width: 80, fontSize: 13, color: colors.textMuted, fontWeight: '600' },
+  rowValue:  { flex: 1, fontSize: 13, color: colors.textSecondary },
   gpsBox: {
-    backgroundColor: '#f0fdf4',
+    backgroundColor: colors.successBg,
     borderRadius:     8,
     padding:          10,
     marginTop:        10,
     borderWidth:      1,
-    borderColor:      '#bbf7d0',
+    borderColor:      colors.successBorder,
   },
-  gpsTitle:     { fontSize: 13, fontWeight: '700', color: '#15803d', marginBottom: 4 },
-  gpsCoords:    { fontSize: 14, color: '#166534', fontFamily: 'monospace', fontWeight: '600' },
-  gpsAccuracy:  { fontSize: 11, color: '#16a34a', marginTop: 2 },
-  noGps:        { fontSize: 12, color: '#9ca3af', marginTop: 10, fontStyle: 'italic' },
+  gpsTitle:     { fontSize: 13, fontWeight: '700', color: colors.successText, marginBottom: 4 },
+  gpsCoords:    { fontSize: 14, color: colors.successText, fontFamily: 'monospace', fontWeight: '600' },
+  gpsAccuracy:  { fontSize: 11, color: colors.successText, marginTop: 2 },
+  noGps:        { fontSize: 12, color: colors.textMuted, marginTop: 10, fontStyle: 'italic' },
 
   section: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+    borderWidth: 1,
     borderRadius:    12,
     padding:         14,
     marginBottom:    12,
   },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 },
-  notes:        { fontSize: 14, color: '#374151', lineHeight: 20 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
+  notes:        { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
 
   checkRow: {
     flexDirection:  'row',
     alignItems:     'flex-start',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: colors.border,
     gap:             8,
   },
   statusDot:    { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
-  checkLabel:   { fontSize: 14, color: '#374151', fontWeight: '600' },
-  checkNotes:   { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  checkLabel:   { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
+  checkNotes:   { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   checkStatus:  { fontSize: 11, fontWeight: '800', marginTop: 3 },
 
   photoItem:    { marginRight: 10, alignItems: 'center', width: 120 },
-  photo:        { width: 120, height: 90, borderRadius: 8, backgroundColor: '#e5e7eb' },
-  photoLabel:   { fontSize: 11, color: '#6b7280', marginTop: 4, textAlign: 'center' },
+  photo:        { width: 120, height: 90, borderRadius: 8, backgroundColor: colors.inputBg },
+  photoLabel:   { fontSize: 11, color: colors.textMuted, marginTop: 4, textAlign: 'center' },
 
   errorBox: {
-    backgroundColor: '#fef2f2',
+    backgroundColor: colors.errorBg,
     borderRadius:    8,
     padding:         12,
     borderWidth:     1,
-    borderColor:     '#fecaca',
+    borderColor:     colors.errorBorder,
     marginBottom:    12,
   },
-  errorBoxTitle: { fontSize: 14, fontWeight: '700', color: '#dc2626', marginBottom: 4 },
-  errorBoxText:  { fontSize: 13, color: '#7f1d1d' },
+  errorBoxTitle: { fontSize: 14, fontWeight: '700', color: colors.errorText, marginBottom: 4 },
+  errorBoxText:  { fontSize: 13, color: colors.errorText },
 
   syncBtn: {
-    backgroundColor: '#1a56db',
+    backgroundColor: colors.primary,
     paddingVertical:  16,
     borderRadius:    12,
     alignItems:      'center',
@@ -514,11 +523,11 @@ const styles = StyleSheet.create({
     minHeight:        52,
     justifyContent:  'center',
   },
-  syncBtnDisabled: { backgroundColor: '#93c5fd' },
-  syncBtnText:     { color: '#ffffff', fontWeight: '700', fontSize: 16 },
+  syncBtnDisabled: { backgroundColor: colors.primaryDark },
+  syncBtnText:     { color: colors.background, fontWeight: '700', fontSize: 16 },
 
   reportBtn: {
-    backgroundColor: '#0f766e',
+    backgroundColor: colors.primary,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -526,13 +535,15 @@ const styles = StyleSheet.create({
     minHeight: 52,
     justifyContent: 'center',
   },
-  reportBtnDisabled: { backgroundColor: '#99f6e4' },
-  reportBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 16 },
+  reportBtnDisabled: { backgroundColor: colors.primaryDark },
+  reportBtnText: { color: colors.background, fontWeight: '700', fontSize: 16 },
 });
 
 const reportStyles = StyleSheet.create({
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+    borderWidth: 1,
     borderRadius: 12,
     padding: 14,
     marginTop: 12,
@@ -544,8 +555,8 @@ const reportStyles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 10,
   },
-  title: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  dismiss: { fontSize: 18, color: '#6b7280', fontWeight: '700' },
+  title: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  dismiss: { fontSize: 18, color: colors.textMuted, fontWeight: '700' },
   riskBadge: {
     borderRadius: 10,
     borderWidth: 1,
@@ -555,16 +566,16 @@ const reportStyles = StyleSheet.create({
   },
   riskText: { fontSize: 13, fontWeight: '700' },
   section: { marginTop: 8 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#111827', marginBottom: 8 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
   flagRow: {
     borderLeftWidth: 3,
     paddingLeft: 10,
     marginBottom: 8,
   },
   flagPriority: { fontSize: 12, fontWeight: '700', marginBottom: 2 },
-  flagMessage: { fontSize: 13, color: '#374151', lineHeight: 18 },
+  flagMessage: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
   noFlags: { fontSize: 13, color: '#16a34a', fontWeight: '600', marginTop: 8 },
-  rec: { fontSize: 13, color: '#374151', lineHeight: 18, marginBottom: 4 },
+  rec: { fontSize: 13, color: colors.textSecondary, lineHeight: 18, marginBottom: 4 },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -573,16 +584,16 @@ const reportStyles = StyleSheet.create({
   },
   summaryCell: { flex: 1, alignItems: 'center' },
   summaryCount: { fontSize: 18, fontWeight: '800' },
-  summaryLabel: { fontSize: 11, color: '#6b7280', marginTop: 2 },
+  summaryLabel: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
   downloadBtn: {
     marginTop: 8,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#bfdbfe',
-    backgroundColor: '#eff6ff',
+    borderColor: colors.inputBorder,
+    backgroundColor: colors.inputBg,
     paddingVertical: 12,
     alignItems: 'center',
   },
   downloadBtnDisabled: { opacity: 0.6 },
-  downloadBtnText: { color: '#1d4ed8', fontWeight: '700', fontSize: 14 },
+  downloadBtnText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
 });

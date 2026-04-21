@@ -1,6 +1,17 @@
 import { createHash, randomBytes } from 'crypto';
 import { Router, Request, Response } from 'express';
-import { pool } from '../database';
+import {
+  getUserById,
+  getUserByEmail,
+  createUser,
+  verifyUserCredentials,
+  updateUserPasswordByEmail,
+  insertRefreshToken,
+  getRefreshTokenWithUserByHash,
+  revokeRefreshTokenById,
+  revokeRefreshTokensByUserId,
+  revokeRefreshTokenByHash,
+} from '../services/sqliteAuthStore';
 import {
   signAuthToken,
   generateRefreshToken,
@@ -13,7 +24,6 @@ import { authAudit } from '../utils/authAudit';
 import { sendPasswordResetEmail } from '../utils/passwordResetMailer';
 
 const router = Router();
-let usersTableReady = false;
 
 interface AuthBody {
   identifier?: string;
@@ -176,50 +186,12 @@ function isValidResetToken(email: string, token: string): boolean {
   return resetState.tokenHash === hashResetToken(token);
 }
 
-async function ensureUsersTable(): Promise<void> {
-  if (usersTableReady) return;
-
-  // crypt()/gen_salt()/gen_random_uuid() require pgcrypto.
-  await pool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
-
-  await pool.query(
-    `CREATE TABLE IF NOT EXISTS users (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      email VARCHAR(255) NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      full_name VARCHAR(255) NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )`
-  );
-
-  await pool.query('CREATE INDEX IF NOT EXISTS users_email_idx ON users (email)');
-
-  // Refresh tokens table
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS refresh_tokens (
-      id          UUID  PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id     UUID  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      token_hash  TEXT  NOT NULL UNIQUE,
-      expires_at  TIMESTAMPTZ NOT NULL,
-      revoked     BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query('CREATE INDEX IF NOT EXISTS refresh_tokens_hash_idx ON refresh_tokens (token_hash)');
-
-  usersTableReady = true;
-}
-
 /** Issues a new refresh token, persists its hash, and returns the raw value. */
 async function issueRefreshToken(userId: string): Promise<string> {
   const raw = generateRefreshToken();
   const hash = hashRefreshToken(raw);
   const expiresAt = refreshTokenExpiresAt();
-  await pool.query(
-    `INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
-    [userId, hash, expiresAt],
-  );
+  await insertRefreshToken(userId, hash, expiresAt);
   return raw;
 }
 
@@ -232,8 +204,6 @@ router.get('/me', requireAuth, meRateLimit, async (req: Request, res: Response) 
       return;
     }
 
-    await ensureUsersTable();
-
     const userId = req.authUser?.userId;
     if (!userId) {
       authAudit('users.me.unauthorized', req, req.authUser?.email, { status: 401, reason: 'missing-auth-user' });
@@ -241,21 +211,14 @@ router.get('/me', requireAuth, meRateLimit, async (req: Request, res: Response) 
       return;
     }
 
-    const { rows } = await pool.query(
-      `SELECT id, email, full_name, created_at
-       FROM users
-       WHERE id = $1
-       LIMIT 1`,
-      [userId]
-    );
+    const user = await getUserById(userId);
 
-    if (!rows[0]) {
+    if (!user) {
       authAudit('users.me.not_found', req, req.authUser?.email, { status: 404, userId });
       res.status(404).json({ error: 'User not found' });
       return;
     }
 
-    const user = rows[0];
     authAudit('users.me.success', req, user.email, { status: 200, userId });
     res.json({
       user: {
@@ -294,23 +257,14 @@ router.post('/register', registerRateLimit, async (req: Request, res: Response) 
   }
 
   try {
-    await ensureUsersTable();
-
-    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
-    if (existing.rowCount && existing.rowCount > 0) {
+    const existing = await getUserByEmail(normalizedEmail);
+    if (existing) {
       authAudit('users.register.conflict', req, normalizedEmail, { status: 409, reason: 'email-exists' });
       res.status(409).json({ error: 'An account with this email already exists' });
       return;
     }
 
-    const { rows } = await pool.query(
-      `INSERT INTO users (email, password_hash, full_name)
-       VALUES ($1, crypt($2, gen_salt('bf')), $3)
-       RETURNING id, email, full_name, created_at`,
-      [normalizedEmail, password, displayName]
-    );
-
-    const user = rows[0];
+    const user = await createUser(normalizedEmail, password, displayName);
     const token = signAuthToken({ userId: user.id, email: user.email });
     const refreshToken = await issueRefreshToken(user.id);
     authAudit('users.register.success', req, user.email, { status: 201, userId: user.id });
@@ -364,23 +318,14 @@ router.post('/signin', async (req: Request, res: Response) => {
         email: ADMIN_USER.email,
         role: ADMIN_USER.role,
       });
-      // Admin is a synthetic user — no DB row, so skip DB refresh token
       authAudit('users.signin.success', req, ADMIN_USER.email, { status: 200, userId: ADMIN_USER.id });
       res.json({ token, refreshToken: null, user: buildAdminUser() });
       return;
     }
 
-    await ensureUsersTable();
+    const user = await verifyUserCredentials(normalizedIdentifier, password);
 
-    const { rows } = await pool.query(
-      `SELECT id, email, full_name, created_at
-       FROM users
-       WHERE email = $1 AND password_hash = crypt($2, password_hash)
-       LIMIT 1`,
-      [normalizedIdentifier, password]
-    );
-
-    if (!rows[0]) {
+    if (!user) {
       recordSignInFailure(state);
       if (isSignInLocked(state)) {
         authAudit('users.signin.locked', req, normalizedIdentifier, { status: 429, reason: 'lockout-threshold-reached' });
@@ -392,7 +337,6 @@ router.post('/signin', async (req: Request, res: Response) => {
       return;
     }
 
-    const user = rows[0];
     clearSignInFailures(key);
     const token = signAuthToken({ userId: user.id, email: user.email });
     const refreshToken = await issueRefreshToken(user.id);
@@ -430,10 +374,9 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
 
   try {
     const genericMessage = 'If that email exists, password reset instructions have been sent.';
-    await ensureUsersTable();
 
-    const { rows } = await pool.query('SELECT id FROM users WHERE email = $1 LIMIT 1', [normalizedEmail]);
-    if (rows[0]) {
+    const user = await getUserByEmail(normalizedEmail);
+    if (user) {
       const resetToken = createPasswordResetToken(normalizedEmail);
       let delivery = 'sent';
 
@@ -444,7 +387,7 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
         console.error('Password reset email delivery error:', mailErr);
       }
 
-      authAudit('users.forgot-password.success', req, normalizedEmail, { status: 200, userId: rows[0].id });
+      authAudit('users.forgot-password.success', req, normalizedEmail, { status: 200, userId: user.id });
       res.json({
         message: genericMessage,
         delivery,
@@ -482,32 +425,23 @@ router.post('/reset-password', async (req: Request, res: Response) => {
   authAudit('users.reset-password.attempt', req, normalizedEmail);
 
   try {
-    await ensureUsersTable();
-
     if (!isValidResetToken(normalizedEmail, token)) {
       authAudit('users.reset-password.reject', req, normalizedEmail, { status: 400, reason: 'invalid-token' });
       res.status(400).json({ error: 'Invalid or expired reset token' });
       return;
     }
 
-    const { rows } = await pool.query(
-      `UPDATE users
-       SET password_hash = crypt($2, gen_salt('bf')),
-           updated_at = NOW()
-       WHERE email = $1
-       RETURNING id`,
-      [normalizedEmail, nextPassword]
-    );
+    const user = await updateUserPasswordByEmail(normalizedEmail, nextPassword);
 
     passwordResetMap.delete(normalizedEmail);
 
-    if (!rows[0]) {
+    if (!user) {
       authAudit('users.reset-password.reject', req, normalizedEmail, { status: 404, reason: 'user-not-found' });
       res.status(404).json({ error: 'User not found' });
       return;
     }
 
-    authAudit('users.reset-password.success', req, normalizedEmail, { status: 200, userId: rows[0].id });
+    authAudit('users.reset-password.success', req, normalizedEmail, { status: 200, userId: user.id });
     res.json({ message: 'Password reset successful. You can now sign in with your new password.' });
   } catch (err) {
     console.error('POST /api/users/reset-password error:', err);
@@ -540,40 +474,23 @@ router.post('/refresh', async (req: Request, res: Response) => {
   }
 
   try {
-    await ensureUsersTable();
-
     const hash = hashRefreshToken(refreshToken);
-    const { rows } = await pool.query(
-      `SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked,
-              u.email, u.full_name
-       FROM refresh_tokens rt
-       JOIN users u ON u.id = rt.user_id
-       WHERE rt.token_hash = $1
-       LIMIT 1`,
-      [hash],
-    );
+    const row = await getRefreshTokenWithUserByHash(hash);
 
-    if (!rows[0]) {
+    if (!row) {
       authAudit('users.refresh.reject', req, undefined, { status: 401, reason: 'token-not-found' });
       res.status(401).json({ error: 'Invalid refresh token' });
       return;
     }
 
-    const row = rows[0] as {
-      id: string; user_id: string; expires_at: Date;
-      revoked: boolean; email: string; full_name: string;
-    };
-
-    if (row.revoked || new Date(row.expires_at) <= new Date()) {
-      // Revoke all tokens for this user on reuse of an expired/revoked token
-      await pool.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [row.user_id]);
+    if (Boolean(row.revoked) || new Date(row.expires_at) <= new Date()) {
+      await revokeRefreshTokensByUserId(row.user_id);
       authAudit('users.refresh.reject', req, row.email, { status: 401, reason: row.revoked ? 'revoked' : 'expired' });
       res.status(401).json({ error: 'Refresh token expired or revoked' });
       return;
     }
 
-    // Rotate: revoke old token, issue new pair
-    await pool.query('UPDATE refresh_tokens SET revoked = TRUE WHERE id = $1', [row.id]);
+    await revokeRefreshTokenById(row.id);
     const newAccessToken = signAuthToken({ userId: row.user_id, email: row.email });
     const newRefreshToken = await issueRefreshToken(row.user_id);
 
@@ -592,12 +509,8 @@ router.post('/logout', async (req: Request, res: Response) => {
 
   if (refreshToken && typeof refreshToken === 'string') {
     try {
-      await ensureUsersTable();
       const hash = hashRefreshToken(refreshToken);
-      await pool.query(
-        'UPDATE refresh_tokens SET revoked = TRUE WHERE token_hash = $1',
-        [hash],
-      );
+      await revokeRefreshTokenByHash(hash);
     } catch (err) {
       console.error('POST /api/users/logout error:', err);
     }

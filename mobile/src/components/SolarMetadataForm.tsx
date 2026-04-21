@@ -1,18 +1,3 @@
-/**
- * components/SolarMetadataForm.tsx
- *
- * Conditional metadata form that renders category-specific input sections.
- *
- * Trigger rules:
- *  • category_id === 'ground_mount'  → Ground Mount section
- *  • category_id === 'roof_mount'    → Roof Mount section
- *  • category_id === 'solar_fencing' → Solar Fencing section
- *  • anything else                   → renders nothing
- *
- * All field changes call `onChange(metadata)` so the parent screen
- * can store the value in local SQLite and later sync to the server's
- * JSONB `metadata` column.
- */
 import React from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Switch,
@@ -23,6 +8,9 @@ import type {
   RoofMountMetadata,
   SolarFencingMetadata,
 } from '../types';
+import { solarProTheme } from '../theme/solarProTheme';
+
+const { colors } = solarProTheme;
 
 interface Props {
   categoryId: string | null;
@@ -82,10 +70,10 @@ function BooleanToggle({
       <Switch
         value={value}
         onValueChange={onChange}
-        trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
-        thumbColor={value ? '#1a56db' : '#9ca3af'}
+        trackColor={{ false: colors.inputBorder, true: colors.primaryDark }}
+        thumbColor={value ? colors.primary : colors.textMuted}
       />
-      <Text style={[styles.boolLabel, { color: value ? '#1d4ed8' : '#6b7280' }]}>
+      <Text style={[styles.boolLabel, { color: value ? colors.primary : colors.textSecondary }]}>
         {value ? 'Yes' : 'No'}
       </Text>
     </View>
@@ -109,7 +97,7 @@ function NumberInput({
       style={styles.input}
       keyboardType={decimal ? 'decimal-pad' : 'number-pad'}
       placeholder={placeholder}
-      placeholderTextColor="#9ca3af"
+      placeholderTextColor={colors.textMuted}
       value={value != null ? String(value) : ''}
       onChangeText={(t) => {
         if (t === '' || t === '-') { onChange(null); return; }
@@ -174,7 +162,7 @@ function GroundMountSection({
       <TextInput
         style={[styles.input, styles.textArea]}
         placeholder="Note underground obstructions, irrigation lines, etc."
-        placeholderTextColor="#9ca3af"
+        placeholderTextColor={colors.textMuted}
         multiline
         numberOfLines={3}
         value={meta.trenching_path}
@@ -338,27 +326,27 @@ export default function SolarMetadataForm({ categoryId, metadata, onChange }: Pr
 
 const styles = StyleSheet.create({
   section: {
-    backgroundColor: '#fafafa',
+    backgroundColor: colors.card,
     borderRadius:    12,
     padding:         14,
     borderWidth:     1.5,
-    borderColor:     '#e0e7ff',
+    borderColor:     colors.border,
     marginBottom:    12,
   },
   sectionTitle: {
     fontSize:     16,
     fontWeight:   '800',
-    color:        '#1e3a8a',
+    color:        colors.textPrimary,
     marginBottom: 12,
   },
   fieldLabel: {
     fontSize:     13,
     fontWeight:   '600',
-    color:        '#374151',
+    color:        colors.textSecondary,
     marginBottom:  4,
     marginTop:     10,
   },
-  required: { color: '#dc2626' },
+  required: { color: colors.errorText },
   selectorRow: {
     flexDirection: 'row',
     flexWrap:      'wrap',
@@ -370,23 +358,23 @@ const styles = StyleSheet.create({
     paddingVertical:    7,
     borderRadius:      20,
     borderWidth:       1.5,
-    borderColor:       '#d1d5db',
-    backgroundColor:   '#ffffff',
+    borderColor:       colors.inputBorder,
+    backgroundColor:   colors.inputBg,
     minHeight:         36,
     justifyContent:    'center',
   },
-  selBtnActive:     { backgroundColor: '#1a56db', borderColor: '#1a56db' },
-  selBtnText:       { fontSize: 13, color: '#374151', fontWeight: '600' },
-  selBtnTextActive: { color: '#ffffff' },
+  selBtnActive:     { backgroundColor: colors.primary, borderColor: colors.primary },
+  selBtnText:       { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+  selBtnTextActive: { color: colors.background },
   input: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.inputBg,
     borderWidth:      1,
-    borderColor:      '#d1d5db',
+    borderColor:      colors.inputBorder,
     borderRadius:     10,
     paddingHorizontal: 14,
     paddingVertical:   10,
     fontSize:         14,
-    color:            '#111827',
+    color:            colors.textPrimary,
     marginBottom:      4,
     minHeight:         44,
   },

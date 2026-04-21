@@ -30,6 +30,9 @@ web-build/
 # Database / uploads
 backend/data/
 backend/uploads/
+backend/*.sqlite
+backend/*.sqlite-shm
+backend/*.sqlite-wal
 
 # OS / editor
 .DS_Store

@@ -4,6 +4,9 @@ import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AppBootstrapProvider, useAppBootstrap } from '../src/context/AppBootstrapContext';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
+import { solarProTheme } from '../src/theme/solarProTheme';
+
+const { colors } = solarProTheme;
 
 function BootstrapGate({ children }: { children: React.ReactNode }) {
   const { ready, error } = useAppBootstrap();
@@ -20,7 +23,7 @@ function BootstrapGate({ children }: { children: React.ReactNode }) {
   if (!ready) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1a56db" />
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Initialising...</Text>
       </View>
     );
@@ -53,7 +56,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1a56db" />
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Checking session...</Text>
       </View>
     );
@@ -71,10 +74,10 @@ export default function RootLayout() {
           <AuthGate>
             <Stack
               screenOptions={{
-                headerStyle: { backgroundColor: '#1a56db' },
-                headerTintColor: '#ffffff',
+                headerStyle: { backgroundColor: colors.card },
+                headerTintColor: colors.textPrimary,
                 headerTitleStyle: { fontWeight: '700', fontSize: 18 },
-                contentStyle: { backgroundColor: '#f0f4ff' },
+                contentStyle: { backgroundColor: colors.background },
               }}
             >
               <Stack.Screen name="index" options={{ title: 'Site Surveys', headerShown: false }} />
@@ -96,10 +99,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f0f4ff',
+    backgroundColor: colors.background,
     padding: 24,
   },
-  errorTitle: { fontSize: 18, fontWeight: '700', color: '#dc2626', marginBottom: 8 },
-  errorMsg: { fontSize: 14, color: '#374151', textAlign: 'center' },
-  loadingText: { fontSize: 14, color: '#6b7280', marginTop: 12 },
+  errorTitle: { fontSize: 18, fontWeight: '700', color: colors.errorText, marginBottom: 8 },
+  errorMsg: { fontSize: 14, color: colors.textSecondary, textAlign: 'center' },
+  loadingText: { fontSize: 14, color: colors.textSecondary, marginTop: 12 },
 });

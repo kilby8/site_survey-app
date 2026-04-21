@@ -24,6 +24,9 @@ import SyncStatusBar       from '../components/SyncStatusBar';
 import SurveyCard          from '../components/SurveyCard';
 import { useAppBootstrap } from '../context/AppBootstrapContext';
 import { useAuth }         from '../context/AuthContext';
+import { solarProTheme }   from '../theme/solarProTheme';
+
+const { colors } = solarProTheme;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -115,7 +118,7 @@ export default function HomeScreen() {
   if (!dbReady || loading) {
     return (
       <SafeAreaView style={styles.centered}>
-        <ActivityIndicator size="large" color="#1a56db" />
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Loading surveys…</Text>
       </SafeAreaView>
     );
@@ -142,7 +145,7 @@ export default function HomeScreen() {
             disabled={!sync.isOnline || exporting}
           >
             {exporting
-              ? <ActivityIndicator size="small" color="#ffffff" />
+              ? <ActivityIndicator size="small" color={colors.background} />
               : <Text style={styles.exportBtnText}>⬇ GeoJSON</Text>
             }
           </TouchableOpacity>
@@ -161,7 +164,7 @@ export default function HomeScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); loadSurveys(); }}
-            tintColor="#1a56db"
+            tintColor={colors.primary}
           />
         }
         ListEmptyComponent={
@@ -192,27 +195,27 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen:       { flex: 1, backgroundColor: '#f0f4ff' },
-  centered:     { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0f4ff' },
-  loadingText:  { marginTop: 12, color: '#6b7280', fontSize: 14 },
+  screen:       { flex: 1, backgroundColor: colors.background },
+  centered:     { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  loadingText:  { marginTop: 12, color: colors.textSecondary, fontSize: 14 },
   toolbar: {
     flexDirection:  'row',
     alignItems:     'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical:   12,
-    backgroundColor:   '#ffffff',
+    backgroundColor:   colors.card,
     borderBottomWidth:  1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: colors.border,
   },
   toolbarActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  title: { fontSize: 22, fontWeight: '800', color: '#111827' },
+  title: { fontSize: 22, fontWeight: '800', color: colors.textPrimary },
   exportBtn: {
-    backgroundColor: '#1a56db',
+    backgroundColor: colors.primary,
     paddingHorizontal: 14,
     paddingVertical:    8,
     borderRadius:       8,
@@ -221,17 +224,19 @@ const styles = StyleSheet.create({
     minWidth:          90,
     alignItems:        'center',
   },
-  exportBtnDisabled: { backgroundColor: '#93c5fd' },
-  exportBtnText:     { color: '#ffffff', fontWeight: '700', fontSize: 13 },
+  exportBtnDisabled: { backgroundColor: colors.primaryDark },
+  exportBtnText:     { color: colors.background, fontWeight: '700', fontSize: 13 },
   logoutBtn: {
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.inputBg,
+    borderColor: colors.inputBorder,
+    borderWidth: 1,
     borderRadius: 8,
     minHeight: 36,
     paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoutBtnText: { color: '#1f2937', fontSize: 13, fontWeight: '700' },
+  logoutBtnText: { color: colors.textPrimary, fontSize: 13, fontWeight: '700' },
   list:              { padding: 16, paddingBottom: 80 },
   empty: {
     alignItems:  'center',
@@ -239,8 +244,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   emptyIcon:     { fontSize: 48, marginBottom: 16 },
-  emptyTitle:    { fontSize: 20, fontWeight: '700', color: '#374151', textAlign: 'center' },
-  emptySubtitle: { fontSize: 14, color: '#9ca3af', textAlign: 'center', marginTop: 8 },
+  emptyTitle:    { fontSize: 20, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
+  emptySubtitle: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 8 },
   fab: {
     position:        'absolute',
     bottom:           24,
@@ -248,14 +253,14 @@ const styles = StyleSheet.create({
     width:            60,
     height:           60,
     borderRadius:     30,
-    backgroundColor: '#1a56db',
+    backgroundColor: colors.primary,
     alignItems:      'center',
     justifyContent:  'center',
-    shadowColor:     '#1a56db',
+    shadowColor:     colors.primary,
     shadowOffset:    { width: 0, height: 4 },
     shadowOpacity:   0.4,
     shadowRadius:    8,
     elevation:       6,
   },
-  fabText: { color: '#ffffff', fontSize: 30, lineHeight: 34, fontWeight: '300' },
+  fabText: { color: colors.background, fontSize: 30, lineHeight: 34, fontWeight: '300' },
 });

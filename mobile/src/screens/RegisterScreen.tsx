@@ -16,8 +16,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { PasswordInput, StatusBanner } from '../components/AuthFormHelpers';
 import { API_URL } from '../api/client';
+import { solarProTheme } from '../theme/solarProTheme';
 
-const BRAND_PRIMARY = '#6495ed';
+const { colors } = solarProTheme;
+const BRAND_PRIMARY = colors.primary;
 const LOGO_URL = 'https://img1.wsimg.com/isteam/ip/b4ef19f7-7f46-446b-bbe2-755512fcd4f8/UNDER%20THE%20SUN%20LOGO.jpg/:/rs=w:300,h:300,m';
 
 export default function RegisterScreen() {
@@ -71,7 +73,7 @@ export default function RegisterScreen() {
               value={fullName}
               onChangeText={setFullName}
               placeholder="Full name"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors.textMuted}
               style={styles.input}
             />
 
@@ -79,7 +81,7 @@ export default function RegisterScreen() {
               value={email}
               onChangeText={setEmail}
               placeholder="Email"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="email-address"
@@ -90,14 +92,14 @@ export default function RegisterScreen() {
               value={password}
               onChangeText={setPassword}
               placeholder="Password (min 8 chars)"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors.textMuted}
             />
 
             <PasswordInput
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               placeholder="Confirm password"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors.textMuted}
             />
 
             {passwordMismatch && (
@@ -113,7 +115,7 @@ export default function RegisterScreen() {
               onPress={handleRegister}
               disabled={!canSubmit || submitting}
             >
-              {submitting ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.buttonText}>Create Account</Text>}
+              {submitting ? <ActivityIndicator color={colors.white} /> : <Text style={styles.buttonText}>Create Account</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => router.replace('/login')} style={styles.linkRow}>
@@ -128,32 +130,32 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f2f8ff' },
+  screen: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   scroll: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
   card: {
     width: '100%',
     maxWidth: 420,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.card,
     borderRadius: 14,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#cfe0fb',
+    borderColor: colors.border,
   },
   logo: { width: 170, height: 72, alignSelf: 'center', marginBottom: 8 },
-  title: { fontSize: 28, fontWeight: '800', color: '#1e3a5f', textAlign: 'center' },
-  subtitle: { fontSize: 14, color: '#475569', marginTop: 6, marginBottom: 18 },
+  title: { fontSize: 28, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' },
+  subtitle: { fontSize: 14, color: colors.textSecondary, marginTop: 6, marginBottom: 18 },
   input: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: colors.inputBorder,
     borderRadius: 10,
     height: 46,
     paddingHorizontal: 12,
-    color: '#0f172a',
+    color: colors.textPrimary,
     marginBottom: 12,
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.inputBg,
   },
-  fieldError: { color: '#b91c1c', fontSize: 12, marginBottom: 8, marginTop: -6 },
+  fieldError: { color: colors.errorText, fontSize: 12, marginBottom: 8, marginTop: -6 },
   button: {
     height: 46,
     borderRadius: 10,
@@ -163,8 +165,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+  buttonText: { color: '#0B1220', fontSize: 15, fontWeight: '700' },
   linkRow: { marginTop: 14, alignItems: 'center' },
   linkText: { color: BRAND_PRIMARY, fontSize: 13, fontWeight: '600' },
-  apiHint: { marginTop: 6, fontSize: 11, color: '#94a3b8', textAlign: 'center' },
+  apiHint: { marginTop: 6, fontSize: 11, color: colors.textMuted, textAlign: 'center' },
 });

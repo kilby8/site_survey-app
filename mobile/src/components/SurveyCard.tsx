@@ -7,6 +7,9 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import type { Survey } from '../types';
+import { solarProTheme } from '../theme/solarProTheme';
+
+const { colors } = solarProTheme;
 
 interface Props {
   survey:  Omit<Survey, 'checklist' | 'photos'> & {
@@ -17,7 +20,7 @@ interface Props {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  draft:     '#6b7280',
+  draft:     colors.textMuted,
   submitted: '#2563eb',
   synced:    '#16a34a',
 };
@@ -41,8 +44,8 @@ export default function SurveyCard({ survey, onPress }: Props) {
     year: 'numeric', month: 'short', day: 'numeric',
   });
   const hasGps     = survey.latitude != null && survey.longitude != null;
-  const statusColor = STATUS_COLORS[survey.status]  ?? '#6b7280';
-  const syncColor   = SYNC_COLORS[survey.sync_status] ?? '#6b7280';
+  const statusColor = STATUS_COLORS[survey.status]  ?? colors.textMuted;
+  const syncColor   = SYNC_COLORS[survey.sync_status] ?? colors.textMuted;
   const syncLabel   = SYNC_LABELS[survey.sync_status] ?? survey.sync_status;
 
   return (
@@ -103,7 +106,9 @@ export default function SurveyCard({ survey, onPress }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+    borderWidth: 1,
     borderRadius:    12,
     padding:         16,
     marginBottom:    12,
@@ -123,7 +128,7 @@ const styles = StyleSheet.create({
   projectName: {
     fontSize:    17,
     fontWeight:  '700',
-    color:       '#111827',
+    color:       colors.textPrimary,
     flex:        1,
     marginRight: 8,
   },
@@ -140,13 +145,13 @@ const styles = StyleSheet.create({
   },
   siteName: {
     fontSize:    15,
-    color:       '#374151',
+    color:       colors.textSecondary,
     fontWeight:  '600',
     marginBottom: 2,
   },
   address: {
     fontSize:    13,
-    color:       '#6b7280',
+    color:       colors.textMuted,
     marginBottom: 6,
   },
   metaRow: {
@@ -156,7 +161,7 @@ const styles = StyleSheet.create({
   },
   meta: {
     fontSize: 12,
-    color:    '#6b7280',
+    color:    colors.textMuted,
   },
   footerRow: {
     flexDirection: 'row',
@@ -165,19 +170,21 @@ const styles = StyleSheet.create({
     alignItems:    'center',
   },
   category: {
-    backgroundColor: '#eff6ff',
+    backgroundColor: colors.inputBg,
+    borderColor: colors.inputBorder,
+    borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical:   2,
     borderRadius:      8,
   },
   categoryText: {
     fontSize:  12,
-    color:     '#1d4ed8',
+    color:     colors.primary,
     fontWeight:'600',
   },
   gpsTag: {
     fontSize: 12,
-    color:    '#059669',
+    color:    '#22c55e',
   },
   syncBadge: {
     position:          'absolute',
