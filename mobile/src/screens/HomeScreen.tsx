@@ -7,7 +7,7 @@
  *  • Survey cards sorted by most-recent date
  *  • FAB to create a new survey
  */
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, ActivityIndicator,
   Alert, StyleSheet, RefreshControl,
@@ -19,7 +19,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import type { Survey } from '../types';
 import { getAllSurveys } from '../database/surveyDb';
 import { useSyncManager } from '../hooks/useSyncManager';
-import { API_URL }         from '../api/client';
 import SyncStatusBar       from '../components/SyncStatusBar';
 import SurveyCard          from '../components/SurveyCard';
 import { useAppBootstrap } from '../context/AppBootstrapContext';
@@ -38,6 +37,11 @@ export default function HomeScreen() {
   const [exporting,    setExporting]    = useState(false);
 
   const sync = useSyncManager(dbReady);
+
+  const gpsMarkedSurveys = useMemo(
+    () => surveys.filter((s) => s.latitude != null && s.longitude != null),
+    [surveys],
+  );
 
   // ----------------------------------------------------------------
   // Load surveys from local SQLite
@@ -67,50 +71,67 @@ export default function HomeScreen() {
   );
 
   // ----------------------------------------------------------------
-  // Export GeoJSON — download from server, share via system sheet
+  // GPS Marking export — generate local GeoJSON from SQLite and share
   // ----------------------------------------------------------------
-  const handleExportGeoJSON = useCallback(async () => {
-    if (!sync.isOnline) {
-      Alert.alert('Offline', 'Connect to the internet to export GeoJSON.');
-      return;
-    }
-
+  const handleShareGpsMarkings = useCallback(async () => {
     setExporting(true);
     try {
+      if (gpsMarkedSurveys.length === 0) {
+        Alert.alert('No GPS Markings', 'Capture GPS coordinates on surveys first.');
+        return;
+      }
+
       const available = await Sharing.isAvailableAsync();
       if (!available) {
         Alert.alert('Sharing Unavailable', 'File sharing is not available on this device.');
         return;
       }
 
-      const filename   = `site_surveys_${Date.now()}.geojson`;
-      const destUri    = `${FileSystem.documentDirectory}${filename}`;
+      const featureCollection = {
+        type: 'FeatureCollection',
+        features: gpsMarkedSurveys.map((s) => ({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [s.longitude, s.latitude],
+          },
+          properties: {
+            id: s.id,
+            project_name: s.project_name,
+            site_name: s.site_name,
+            inspector_name: s.inspector_name,
+            category_name: s.category_name,
+            survey_date: s.survey_date,
+            status: s.status,
+            sync_status: s.sync_status,
+            gps_accuracy: s.gps_accuracy,
+          },
+        })),
+      };
 
-      // Download the GeoJSON from the backend
-      const download = await FileSystem.downloadAsync(
-        `${API_URL}/api/surveys/export/geojson`,
-        destUri
+      const filename = `gps_markings_${Date.now()}.geojson`;
+      const destUri = `${FileSystem.documentDirectory}${filename}`;
+
+      await FileSystem.writeAsStringAsync(
+        destUri,
+        JSON.stringify(featureCollection, null, 2),
+        { encoding: FileSystem.EncodingType.UTF8 },
       );
 
-      if (download.status !== 200) {
-        throw new Error(`Server returned ${download.status}`);
-      }
-
-      // Open the system share sheet (email, cloud storage, AirDrop, etc.)
-      await Sharing.shareAsync(download.uri, {
-        mimeType:    'application/geo+json',
-        dialogTitle: 'Share Site Survey GeoJSON',
-        UTI:         'public.json',
+      await Sharing.shareAsync(destUri, {
+        mimeType: 'application/geo+json',
+        dialogTitle: 'Share GPS Markings',
+        UTI: 'public.json',
       });
     } catch (err) {
       Alert.alert(
-        'Export Failed',
-        err instanceof Error ? err.message : 'Could not export surveys.'
+        'GPS Marking Export Failed',
+        err instanceof Error ? err.message : 'Could not export GPS markings.',
       );
     } finally {
       setExporting(false);
     }
-  }, [sync.isOnline]);
+  }, [gpsMarkedSurveys]);
 
   // ----------------------------------------------------------------
   // Render
@@ -140,13 +161,13 @@ export default function HomeScreen() {
         <Text style={styles.title}>Site Surveys</Text>
         <View style={styles.toolbarActions}>
           <TouchableOpacity
-            style={[styles.exportBtn, (!sync.isOnline || exporting) && styles.exportBtnDisabled]}
-            onPress={handleExportGeoJSON}
-            disabled={!sync.isOnline || exporting}
+            style={[styles.exportBtn, (exporting || gpsMarkedSurveys.length === 0) && styles.exportBtnDisabled]}
+            onPress={handleShareGpsMarkings}
+            disabled={exporting || gpsMarkedSurveys.length === 0}
           >
             {exporting
               ? <ActivityIndicator size="small" color={colors.background} />
-              : <Text style={styles.exportBtnText}>⬇ GeoJSON</Text>
+              : <Text style={styles.exportBtnText}>📍 GPS Marking</Text>
             }
           </TouchableOpacity>
           <TouchableOpacity style={styles.logoutBtn} onPress={() => { signOut().catch(console.error); }}>
