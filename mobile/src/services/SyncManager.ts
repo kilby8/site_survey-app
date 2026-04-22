@@ -18,6 +18,8 @@ import type { EventSubscription } from 'expo-modules-core';
 import {
   getPendingSurveys,
   setSyncStatus,
+  ensureSurveyUuid,
+  getSurveyById,
 } from '../database/surveyDb';
 import { postSurvey, uploadPhotos } from '../api/client';
 import type { Survey } from '../types';
@@ -125,8 +127,19 @@ export async function syncPending(): Promise<void> {
 // ----------------------------------------------------------------
 
 async function _syncOneSurvey(survey: Survey): Promise<void> {
+  let workingSurvey = survey;
+
+  const migratedId = await ensureSurveyUuid(survey.id);
+  if (migratedId !== survey.id) {
+    const migrated = await getSurveyById(migratedId);
+    if (!migrated) {
+      throw new Error('Failed to migrate local survey ID for sync');
+    }
+    workingSurvey = migrated;
+  }
+
   // Mark as syncing so the UI shows a spinner for this record
-  await setSyncStatus(survey.id, 'syncing');
+  await setSyncStatus(workingSurvey.id, 'syncing');
   _notifyCallbacks();
 
   try {
@@ -134,22 +147,22 @@ async function _syncOneSurvey(survey: Survey): Promise<void> {
     //    The local UUID is sent as `id` so the server stores the same ID,
     //    enabling idempotent re-sync if the app crashes mid-upload.
     await postSurvey({
-      id:             survey.id,
-      project_name:   survey.project_name,
-      category_id:    survey.category_id,
-      category_name:  survey.category_name,
-      inspector_name: survey.inspector_name,
-      site_name:      survey.site_name,
-      site_address:   survey.site_address,
-      latitude:       survey.latitude,
-      longitude:      survey.longitude,
-      gps_accuracy:   survey.gps_accuracy,
-      survey_date:    survey.survey_date,
-      notes:          survey.notes,
+      id:             workingSurvey.id,
+      project_name:   workingSurvey.project_name,
+      category_id:    workingSurvey.category_id,
+      category_name:  workingSurvey.category_name,
+      inspector_name: workingSurvey.inspector_name,
+      site_name:      workingSurvey.site_name,
+      site_address:   workingSurvey.site_address,
+      latitude:       workingSurvey.latitude,
+      longitude:      workingSurvey.longitude,
+      gps_accuracy:   workingSurvey.gps_accuracy,
+      survey_date:    workingSurvey.survey_date,
+      notes:          workingSurvey.notes,
       status:         'submitted',
       device_id:      _deviceId,
-      metadata:       survey.metadata ?? null,
-      checklist: (survey.checklist ?? []).map(c => ({
+      metadata:       workingSurvey.metadata ?? null,
+      checklist: (workingSurvey.checklist ?? []).map(c => ({
         label:      c.label,
         status:     c.status,
         notes:      c.notes,
@@ -159,10 +172,10 @@ async function _syncOneSurvey(survey: Survey): Promise<void> {
     });
 
     // 2. Upload photos as multipart/form-data (one batch per survey)
-    if (survey.photos && survey.photos.length > 0) {
+    if (workingSurvey.photos && workingSurvey.photos.length > 0) {
       await uploadPhotos(
-        survey.id,
-        survey.photos.map(p => ({
+        workingSurvey.id,
+        workingSurvey.photos.map(p => ({
           uri:      p.file_path,       // local file:// URI
           label:    p.label,
           mimeType: p.mime_type,
@@ -171,12 +184,12 @@ async function _syncOneSurvey(survey: Survey): Promise<void> {
     }
 
     // 3. Mark the local record as synced
-    await setSyncStatus(survey.id, 'synced');
+    await setSyncStatus(workingSurvey.id, 'synced');
 
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await setSyncStatus(survey.id, 'error', message);
-    console.warn(`[SyncManager] Failed to sync survey ${survey.id}:`, message);
+    await setSyncStatus(workingSurvey.id, 'error', message);
+    console.warn(`[SyncManager] Failed to sync survey ${workingSurvey.id}:`, message);
   }
 }
 

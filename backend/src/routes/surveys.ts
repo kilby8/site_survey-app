@@ -1017,6 +1017,22 @@ router.get("/:id/report", async (req: Request, res: Response) => {
   }
 });
 
+router.delete("/:id/report", async (req: Request, res: Response) => {
+  try {
+    const survey = await fetchSurveyFull(req.params.id);
+    if (!survey) {
+      res.status(404).json({ error: "Survey not found" });
+      return;
+    }
+
+    res.json({ message: "Report cleared" });
+  } catch (err) {
+    console.error("DELETE /api/surveys/:id/report error:", err);
+    res.status(500).json({ error: "Failed to delete report" });
+  }
+});
+
+
 /** GET /api/surveys/:id */
 router.get("/:id", async (req: Request, res: Response) => {
   try {
@@ -1646,6 +1662,7 @@ router.post("/:id/ar-detection", async (req: Request, res: Response) => {
       res
         .status(400)
         .json({ error: "`confidence` must be a number between 0 and 1" });
+
       return;
     }
     if (typeof item.track_id !== "number" || !Number.isInteger(item.track_id)) {
@@ -1771,6 +1788,43 @@ router.get("/:id/ar-detections", async (req: Request, res: Response) => {
   );
 
   res.json({ detections: rows, total: rows.length });
+});
+
+/** DELETE /api/surveys/:id */
+router.delete("/:id", async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { rows: existing } = await client.query(
+      "SELECT id FROM surveys WHERE id = $1",
+      [id],
+    );
+    if (existing.length === 0) {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Survey not found" });
+      return;
+    }
+
+    await client.query("DELETE FROM survey_photos WHERE survey_id = $1", [
+      id,
+    ]);
+    await client.query("DELETE FROM checklist_items WHERE survey_id = $1", [
+      id,
+    ]);
+    await client.query("DELETE FROM surveys WHERE id = $1", [id]);
+
+    await client.query("COMMIT");
+    res.status(204).send();
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("DELETE /api/surveys/:id error:", err);
+    res.status(500).json({ error: "Failed to delete survey" });
+  } finally {
+    client.release();
+  }
 });
 
 export default router;

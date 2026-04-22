@@ -16,6 +16,18 @@ function makeLocalId(): string {
   return `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function makeSurveyId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const rand = Math.floor(Math.random() * 16);
+    const value = char === 'x' ? rand : ((rand & 0x3) | 0x8);
+    return value.toString(16);
+  });
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 // ----------------------------------------------------------------
 // DB accessor — callers must call initDb() before using this
 // ----------------------------------------------------------------
@@ -96,7 +108,7 @@ function rowToPhoto(r: PhotoRow): SurveyPhoto {
 /** Insert a new survey (and its checklist/photos) as a single transaction. */
 export async function createSurvey(data: SurveyFormData, deviceId: string): Promise<Survey> {
   const db = getDb();
-  const id        = makeLocalId();
+  const id        = makeSurveyId();
   const now       = new Date().toISOString();
 
   await db.withTransactionAsync(async () => {
@@ -369,4 +381,53 @@ export async function deletePhoto(photoId: string, surveyId: string): Promise<vo
 export async function deleteSurvey(id: string): Promise<void> {
   const db = getDb();
   await db.runAsync('DELETE FROM surveys WHERE id = ?', [id]);
+}
+
+/** Migrate legacy surveys with non-UUID IDs to new UUIDs. */
+export async function ensureSurveyUuid(surveyId: string): Promise<string> {
+  if (isUuid(surveyId)) return surveyId;
+
+  const db = getDb();
+  const row = await db.getFirstAsync<SurveyRow>('SELECT * FROM surveys WHERE id = ?', [surveyId]);
+  if (!row) return surveyId;
+
+  const newId = makeSurveyId();
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `INSERT INTO surveys
+         (id, project_name, category_id, category_name, inspector_name,
+          site_name, site_address, latitude, longitude, gps_accuracy,
+          survey_date, notes, status, sync_status, sync_error, device_id, metadata,
+          created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        newId,
+        row.project_name,
+        row.category_id,
+        row.category_name,
+        row.inspector_name,
+        row.site_name,
+        row.site_address,
+        row.latitude,
+        row.longitude,
+        row.gps_accuracy,
+        row.survey_date,
+        row.notes,
+        row.status,
+        row.sync_status,
+        row.sync_error,
+        row.device_id,
+        row.metadata,
+        row.created_at,
+        row.updated_at,
+      ],
+    );
+
+    await db.runAsync('UPDATE checklist_items SET survey_id = ? WHERE survey_id = ?', [newId, surveyId]);
+    await db.runAsync('UPDATE survey_photos SET survey_id = ? WHERE survey_id = ?', [newId, surveyId]);
+    await db.runAsync('DELETE FROM surveys WHERE id = ?', [surveyId]);
+  });
+
+  return newId;
 }

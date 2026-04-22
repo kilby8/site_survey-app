@@ -7,6 +7,7 @@
  */
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type {
   Survey,
   SurveyFormData,
@@ -205,6 +206,18 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+const AUTH_TOKEN_KEY = "site-survey.auth.token.v2";
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  try {
+    const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+    if (!token) return {};
+    return { Authorization: `Bearer ${token}` };
+  } catch {
+    return {};
+  }
+}
+
 // ----------------------------------------------------------------
 // Health
 // ----------------------------------------------------------------
@@ -291,7 +304,10 @@ export interface ApiCategory {
 }
 
 export async function fetchCategories(): Promise<ApiCategory[]> {
-  const res = await fetchWithFallback("/api/categories", {});
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithFallback("/api/categories", {
+    headers: authHeaders,
+  });
   const data = await handleResponse<{ categories: ApiCategory[] }>(res);
   return data.categories;
 }
@@ -304,9 +320,13 @@ export async function fetchCategories(): Promise<ApiCategory[]> {
 export async function postSurvey(
   survey: SurveyFormData & { id: string },
 ): Promise<Survey> {
+  const authHeaders = await getAuthHeaders();
   const res = await fetchWithFallback("/api/surveys", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders,
+    },
     body: JSON.stringify({
       id: survey.id,
       project_name: survey.project_name,
@@ -357,8 +377,10 @@ export async function uploadPhotos(
   }
   form.append("labels", JSON.stringify(labels));
 
+  const authHeaders = await getAuthHeaders();
   const res = await fetchWithFallback(`/api/surveys/${surveyId}/photos`, {
     method: "POST",
+    headers: authHeaders,
     body: form,
     // Do NOT manually set Content-Type — fetch sets it with the boundary
   });
@@ -370,9 +392,10 @@ export async function batchSync(payload: {
   device_id: string;
   surveys: Array<{ action: "create" | "update"; survey: Survey }>;
 }): Promise<ApiSyncResponse> {
+  const authHeaders = await getAuthHeaders();
   const res = await fetchWithFallback("/api/surveys/sync", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders },
     body: JSON.stringify(payload),
   });
   return handleResponse<ApiSyncResponse>(res);
@@ -389,7 +412,10 @@ export async function batchSync(payload: {
 export async function fetchReport(
   surveyId: string,
 ): Promise<EngineeringReport> {
-  const res = await fetchWithFallback(`/api/surveys/${surveyId}/report`, {});
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithFallback(`/api/surveys/${surveyId}/report`, {
+    headers: authHeaders,
+  });
   return handleResponse<EngineeringReport>(res);
 }
 
@@ -400,9 +426,10 @@ export async function fetchReport(
 export async function downloadReportMarkdown(
   surveyId: string,
 ): Promise<string> {
+  const authHeaders = await getAuthHeaders();
   const res = await fetchWithFallback(
     `/api/surveys/${surveyId}/report?format=markdown`,
-    {},
+    { headers: authHeaders },
   );
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
@@ -415,6 +442,21 @@ export async function downloadReportMarkdown(
     throw new Error(message);
   }
   return res.text();
+}
+
+/**
+ * DELETE /api/surveys/:id/report
+ * Requests deletion of the Engineering Report for a survey.
+ */
+export async function deleteReport(
+  surveyId: string,
+): Promise<{ message: string }> {
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithFallback(`/api/surveys/${surveyId}/report`, {
+    method: "DELETE",
+    headers: authHeaders,
+  });
+  return handleResponse<{ message: string }>(res);
 }
 
 // ----------------------------------------------------------------

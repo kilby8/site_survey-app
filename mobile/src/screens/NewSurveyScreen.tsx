@@ -195,6 +195,15 @@ export default function NewSurveyScreen() {
     try {
       const now = new Date().toISOString();
 
+      const checklistPhotos = checklist.flatMap((item) =>
+        (item.photos ?? []).map((p) => ({
+          file_path: p.uri,
+          label: p.label?.trim() || `${item.label} Photo`,
+          mime_type: p.mimeType,
+          captured_at: now,
+        })),
+      );
+
       const payload: SurveyFormData = {
         project_name: projectName.trim(),
         category_id: categoryId,
@@ -216,12 +225,15 @@ export default function NewSurveyScreen() {
           notes: item.notes ?? "",
           sort_order: i,
         })),
-        photos: photos.map((p) => ({
-          file_path: p.uri,
-          label: p.label,
-          mime_type: p.mimeType,
-          captured_at: now,
-        })),
+        photos: [
+          ...photos.map((p) => ({
+            file_path: p.uri,
+            label: p.label,
+            mime_type: p.mimeType,
+            captured_at: now,
+          })),
+          ...checklistPhotos,
+        ],
       };
 
       const created = await createSurvey(payload, deviceId);

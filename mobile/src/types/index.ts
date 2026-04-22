@@ -147,20 +147,21 @@ export const DEFAULT_CHECKLIST: Omit<
   "id" | "survey_id" | "created_at"
 >[] = [
   { label: "Site Access", status: "pending", notes: "", sort_order: 0 },
-  { label: "Power Supply", status: "pending", notes: "", sort_order: 1 },
+  { label: "Overhead Line", status: "pending", notes: "", sort_order: 1 },
+  { label: "Meter", status: "pending", notes: "", sort_order: 2 },
   {
     label: "Network Connectivity",
     status: "pending",
     notes: "",
-    sort_order: 2,
+    sort_order: 3,
   },
-  { label: "Safety Compliance", status: "pending", notes: "", sort_order: 3 },
-  { label: "Equipment Condition", status: "pending", notes: "", sort_order: 4 },
+  { label: "Safety Compliance", status: "pending", notes: "", sort_order: 4 },
+  { label: "Equipment Condition", status: "pending", notes: "", sort_order: 5 },
   {
     label: "Documentation Review",
     status: "pending",
     notes: "",
-    sort_order: 5,
+    sort_order: 6,
   },
 ];
 

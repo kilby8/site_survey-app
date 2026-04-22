@@ -16,7 +16,7 @@ import { useLocalSearchParams } from 'expo-router';
 import type { Survey } from '../types';
 import { getSurveyById } from '../database/surveyDb';
 import { syncPending, isOnline } from '../services/SyncManager';
-import { fetchReport, downloadReportMarkdown } from '../api/client';
+import { fetchReport, downloadReportMarkdown, deleteReport } from '../api/client';
 import type { EngineeringReport } from '../api/client';
 import { solarProTheme } from '../theme/solarProTheme';
 
@@ -122,6 +122,31 @@ export default function ViewSurveyScreen() {
     } finally {
       setMarkdownLoading(false);
     }
+  }
+
+  async function handleDeleteReport() {
+    if (!isOnline()) {
+      Alert.alert('Offline', 'An internet connection is required to delete the report.');
+      return;
+    }
+
+    Alert.alert('Delete Report', 'Remove the generated report from this view?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteReport(surveyId);
+            setReport(null);
+            setReportExpanded(false);
+            Alert.alert('Report Deleted', 'The report was removed.');
+          } catch (err) {
+            Alert.alert('Delete Error', err instanceof Error ? err.message : String(err));
+          }
+        },
+      },
+    ]);
   }
 
   if (loading) {
@@ -288,6 +313,7 @@ export default function ViewSurveyScreen() {
             markdownLoading={markdownLoading}
             onDownload={handleDownloadMarkdown}
             onDismiss={() => setReportExpanded(false)}
+            onDelete={handleDeleteReport}
           />
         )}
 
@@ -316,11 +342,13 @@ function ReportCard({
   markdownLoading,
   onDownload,
   onDismiss,
+  onDelete,
 }: {
   report:          EngineeringReport;
   markdownLoading: boolean;
   onDownload:      () => void;
   onDismiss:       () => void;
+  onDelete:        () => void;
 }) {
   const riskColor = RISK_COLOR[report.overall_risk] ?? '#6b7280';
   const cs = report.checklist_summary;
@@ -388,6 +416,13 @@ function ReportCard({
           : <Text style={reportStyles.downloadBtnText}>⬇ Share Markdown Report</Text>
         }
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={reportStyles.deleteBtn}
+        onPress={onDelete}
+      >
+        <Text style={reportStyles.deleteBtnText}>🗑 Delete Report</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -430,7 +465,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderColor: colors.border,
     borderWidth: 1,
-    borderRadius:    14,
+    borderRadius:     14,
     padding:         16,
     marginBottom:    12,
     shadowColor:     '#000',
@@ -596,4 +631,14 @@ const reportStyles = StyleSheet.create({
   },
   downloadBtnDisabled: { opacity: 0.6 },
   downloadBtnText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
+  deleteBtn: {
+    marginTop: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.errorBorder,
+    backgroundColor: colors.errorBg,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  deleteBtnText: { color: colors.errorText, fontWeight: '700', fontSize: 14 },
 });

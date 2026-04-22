@@ -9,6 +9,9 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sitesurvey.mobile",
+      "runtimeVersion": {
+        "policy": "appVersion"
+      },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Site Survey needs your location to record GPS coordinates for each survey.",
         "NSCameraUsageDescription": "Site Survey needs camera access to capture site photos.",
@@ -18,6 +21,9 @@
     },
     "android": {
       "package": "com.sitesurvey.mobile",
+      "runtimeVersion": {
+        "policy": "appVersion"
+      },
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
@@ -64,9 +70,6 @@
       }
     },
     "owner": "kilby",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
     "updates": {
       "url": "https://u.expo.dev/aed7aae8-7d55-47e1-8850-c6b0040c99b5"
     }
