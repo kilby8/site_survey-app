@@ -8,9 +8,12 @@
  */
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem  from 'expo-file-system/legacy';
-import { v4 as uuidv4 } from 'uuid';
 
 const PHOTOS_DIR = `${FileSystem.documentDirectory}survey-photos/`;
+
+function makeLocalId(): string {
+  return `photo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 // ----------------------------------------------------------------
 // Ensure the photo storage directory exists
@@ -80,7 +83,7 @@ async function _copyToDocuments(
   await ensureDir();
 
   const ext      = (asset.mimeType ?? 'image/jpeg') === 'image/png' ? '.png' : '.jpg';
-  const filename = `${uuidv4()}${ext}`;
+  const filename = `${makeLocalId()}${ext}`;
   const destPath = `${PHOTOS_DIR}${filename}`;
 
   await FileSystem.copyAsync({ from: asset.uri, to: destPath });

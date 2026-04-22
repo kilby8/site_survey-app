@@ -8,10 +8,13 @@
  * here and pushes to the server when a connection is available.
  */
 import * as SQLite from 'expo-sqlite';
-import { v4 as uuidv4 } from 'uuid';
 import type { Survey, ChecklistItem, SurveyPhoto, SurveyFormData, SyncStatus } from '../types';
 
 let _db: SQLite.SQLiteDatabase | null = null;
+
+function makeLocalId(): string {
+  return `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 // ----------------------------------------------------------------
 // DB accessor — callers must call initDb() before using this
@@ -93,7 +96,7 @@ function rowToPhoto(r: PhotoRow): SurveyPhoto {
 /** Insert a new survey (and its checklist/photos) as a single transaction. */
 export async function createSurvey(data: SurveyFormData, deviceId: string): Promise<Survey> {
   const db = getDb();
-  const id        = uuidv4();
+  const id        = makeLocalId();
   const now       = new Date().toISOString();
 
   await db.withTransactionAsync(async () => {
@@ -133,7 +136,7 @@ export async function createSurvey(data: SurveyFormData, deviceId: string): Prom
         `INSERT INTO checklist_items
            (id, survey_id, label, status, notes, sort_order, created_at)
          VALUES (?,?,?,?,?,?,?)`,
-        [uuidv4(), id, item.label, item.status, item.notes ?? '', i, now]
+        [makeLocalId(), id, item.label, item.status, item.notes ?? '', i, now]
       );
     }
 
@@ -144,7 +147,7 @@ export async function createSurvey(data: SurveyFormData, deviceId: string): Prom
            (id, survey_id, file_path, label, mime_type, captured_at, created_at)
          VALUES (?,?,?,?,?,?,?)`,
         [
-          uuidv4(), id,
+          makeLocalId(), id,
           photo.file_path, photo.label ?? '',
           photo.mime_type ?? 'image/jpeg',
           photo.captured_at ?? now, now,
@@ -212,7 +215,7 @@ export async function updateSurvey(
           `INSERT INTO checklist_items
              (id, survey_id, label, status, notes, sort_order, created_at)
            VALUES (?,?,?,?,?,?,?)`,
-          [uuidv4(), id, item.label, item.status, item.notes ?? '', i, now]
+          [makeLocalId(), id, item.label, item.status, item.notes ?? '', i, now]
         );
       }
     }
@@ -226,7 +229,7 @@ export async function updateSurvey(
              (id, survey_id, file_path, label, mime_type, captured_at, created_at)
            VALUES (?,?,?,?,?,?,?)`,
           [
-            uuidv4(), id,
+            makeLocalId(), id,
             photo.file_path, photo.label ?? '',
             photo.mime_type ?? 'image/jpeg',
             photo.captured_at ?? now, now,
@@ -332,7 +335,7 @@ export async function addPhotoToSurvey(
 ): Promise<SurveyPhoto> {
   const db  = getDb();
   const now = new Date().toISOString();
-  const id  = uuidv4();
+  const id  = makeLocalId();
 
   await db.runAsync(
     `INSERT INTO survey_photos

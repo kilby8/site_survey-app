@@ -17,6 +17,11 @@ interface UseDatabaseResult {
   deviceId: string;
 }
 
+function makeDeviceId(seed?: string | null): string {
+  const base = (seed || 'device').replace(/\s+/g, '-').toLowerCase();
+  return `${base}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export function useDatabase(): UseDatabaseResult {
   const [ready,    setReady]    = useState(false);
   const [error,    setError]    = useState<string | null>(null);
@@ -37,10 +42,7 @@ export function useDatabase(): UseDatabaseResult {
         // Register db globally so surveyDb helpers can use it
         setDb(db);
 
-        const id =
-          Device.modelName
-            ? `${Device.modelName}-${Date.now()}`
-            : `device-${Date.now()}`;
+        const id = makeDeviceId(Device.modelName ?? null);
 
         if (!cancelled) {
           setDeviceId(id);
