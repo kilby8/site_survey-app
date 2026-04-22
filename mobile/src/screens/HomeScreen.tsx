@@ -13,11 +13,9 @@ import {
   Alert, StyleSheet, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing   from 'expo-sharing';
 import { useFocusEffect, useRouter } from 'expo-router';
 import type { Survey } from '../types';
-import { getAllSurveys } from '../database/surveyDb';
+import { getAllSurveys, deleteSurvey } from '../database/surveyDb';
 import { useSyncManager } from '../hooks/useSyncManager';
 import SyncStatusBar       from '../components/SyncStatusBar';
 import SurveyCard          from '../components/SurveyCard';
@@ -34,14 +32,9 @@ export default function HomeScreen() {
   const [surveys,      setSurveys]      = useState<Omit<Survey, 'checklist' | 'photos'>[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
-  const [exporting,    setExporting]    = useState(false);
+  const [deleting,     setDeleting]     = useState(false);
 
   const sync = useSyncManager(dbReady);
-
-  const gpsMarkedSurveys = useMemo(
-    () => surveys.filter((s) => s.latitude != null && s.longitude != null),
-    [surveys],
-  );
 
   // ----------------------------------------------------------------
   // Load surveys from local SQLite
@@ -70,68 +63,35 @@ export default function HomeScreen() {
     }, [loadSurveys])
   );
 
-  // ----------------------------------------------------------------
-  // GPS Marking export — generate local GeoJSON from SQLite and share
-  // ----------------------------------------------------------------
-  const handleShareGpsMarkings = useCallback(async () => {
-    setExporting(true);
-    try {
-      if (gpsMarkedSurveys.length === 0) {
-        Alert.alert('No GPS Markings', 'Capture GPS coordinates on surveys first.');
-        return;
-      }
+  const handleDeleteAllSurveys = useCallback(() => {
+    if (surveys.length === 0 || deleting) return;
 
-      const available = await Sharing.isAvailableAsync();
-      if (!available) {
-        Alert.alert('Sharing Unavailable', 'File sharing is not available on this device.');
-        return;
-      }
-
-      const featureCollection = {
-        type: 'FeatureCollection',
-        features: gpsMarkedSurveys.map((s) => ({
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: [s.longitude, s.latitude],
+    Alert.alert(
+      'Delete All Surveys',
+      `This will permanently delete ${surveys.length} local survey${surveys.length !== 1 ? 's' : ''}.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await Promise.all(surveys.map((s) => deleteSurvey(s.id)));
+              await loadSurveys();
+            } catch (err) {
+              Alert.alert(
+                'Delete Failed',
+                err instanceof Error ? err.message : 'Could not delete surveys.',
+              );
+            } finally {
+              setDeleting(false);
+            }
           },
-          properties: {
-            id: s.id,
-            project_name: s.project_name,
-            site_name: s.site_name,
-            inspector_name: s.inspector_name,
-            category_name: s.category_name,
-            survey_date: s.survey_date,
-            status: s.status,
-            sync_status: s.sync_status,
-            gps_accuracy: s.gps_accuracy,
-          },
-        })),
-      };
-
-      const filename = `gps_markings_${Date.now()}.geojson`;
-      const destUri = `${FileSystem.documentDirectory}${filename}`;
-
-      await FileSystem.writeAsStringAsync(
-        destUri,
-        JSON.stringify(featureCollection, null, 2),
-        { encoding: FileSystem.EncodingType.UTF8 },
-      );
-
-      await Sharing.shareAsync(destUri, {
-        mimeType: 'application/geo+json',
-        dialogTitle: 'Share GPS Markings',
-        UTI: 'public.json',
-      });
-    } catch (err) {
-      Alert.alert(
-        'GPS Marking Export Failed',
-        err instanceof Error ? err.message : 'Could not export GPS markings.',
-      );
-    } finally {
-      setExporting(false);
-    }
-  }, [gpsMarkedSurveys]);
+        },
+      ],
+    );
+  }, [deleting, loadSurveys, surveys]);
 
   // ----------------------------------------------------------------
   // Render
@@ -161,13 +121,13 @@ export default function HomeScreen() {
         <Text style={styles.title}>Site Surveys</Text>
         <View style={styles.toolbarActions}>
           <TouchableOpacity
-            style={[styles.exportBtn, (exporting || gpsMarkedSurveys.length === 0) && styles.exportBtnDisabled]}
-            onPress={handleShareGpsMarkings}
-            disabled={exporting || gpsMarkedSurveys.length === 0}
+            style={[styles.deleteBtn, (deleting || surveys.length === 0) && styles.deleteBtnDisabled]}
+            onPress={handleDeleteAllSurveys}
+            disabled={deleting || surveys.length === 0}
           >
-            {exporting
-              ? <ActivityIndicator size="small" color={colors.background} />
-              : <Text style={styles.exportBtnText}>📍 GPS Marking</Text>
+            {deleting
+              ? <ActivityIndicator size="small" color={colors.white} />
+              : <Text style={styles.deleteBtnText}>🗑 Delete</Text>
             }
           </TouchableOpacity>
           <TouchableOpacity style={styles.logoutBtn} onPress={() => { signOut().catch(console.error); }}>
@@ -235,18 +195,18 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   title: { fontSize: 22, fontWeight: '800', color: colors.textPrimary },
-  exportBtn: {
-    backgroundColor: colors.primary,
+  deleteBtn: {
+    backgroundColor: colors.errorBorder,
     paddingHorizontal: 14,
-    paddingVertical:    8,
-    borderRadius:       8,
-    minHeight:         36,
-    justifyContent:    'center',
-    minWidth:          90,
-    alignItems:        'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+    minHeight: 36,
+    justifyContent: 'center',
+    minWidth: 90,
+    alignItems: 'center',
   },
-  exportBtnDisabled: { backgroundColor: colors.primaryDark },
-  exportBtnText:     { color: colors.background, fontWeight: '700', fontSize: 13 },
+  deleteBtnDisabled: { opacity: 0.6 },
+  deleteBtnText: { color: colors.white, fontWeight: '700', fontSize: 13 },
   logoutBtn: {
     backgroundColor: colors.inputBg,
     borderColor: colors.inputBorder,
