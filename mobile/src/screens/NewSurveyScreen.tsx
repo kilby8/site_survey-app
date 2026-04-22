@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   ActivityIndicator,
@@ -13,13 +13,17 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { useAuth } from "../context/AuthContext";
 import { useAppBootstrap } from "../context/AppBootstrapContext";
 import { createSurvey } from "../database/surveyDb";
-import type { SurveyFormData } from "../types";
-import { convertPitchToDegrees } from "../services/pitch";
+import type { SurveyFormData, SurveyMetadata } from "../types";
+import { DEFAULT_CHECKLIST, SURVEY_CATEGORIES } from "../types";
+import ChecklistEditor, { type ChecklistItemDraft } from "../components/ChecklistEditor";
+import GPSCapture from "../components/GPSCapture";
+import PhotoCapture, { type PhotoDraft } from "../components/PhotoCapture";
+import SolarMetadataForm from "../components/SolarMetadataForm";
+import { useLocation } from "../hooks/useLocation";
 import { solarProTheme } from "../theme/solarProTheme";
 
 const { colors } = solarProTheme;
@@ -28,58 +32,77 @@ const DRAFTS_DIR = `${FileSystem.documentDirectory}survey-drafts/`;
 
 interface NewSurveyDraft {
   saved_at: string;
-  roof_pitch: string;
-  azimuth: string;
-  photo_uri: string | null;
+  project_name: string;
+  inspector_name: string;
+  site_name: string;
+  site_address: string;
+  category_id: string | null;
+  notes: string;
+  coordinates: { latitude: number; longitude: number; accuracy?: number } | null;
+  metadata: SurveyMetadata | null;
+  checklist: ChecklistItemDraft[];
+  photos: PhotoDraft[];
   user_id: string | null;
-}
-
-function getPitchPreview(value: string): {
-  degrees: number | null;
-  error: string | null;
-} {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return { degrees: null, error: null };
-  }
-
-  if (trimmed.includes("/")) {
-    try {
-      return { degrees: convertPitchToDegrees(trimmed), error: null };
-    } catch {
-      return {
-        degrees: null,
-        error: "Invalid ratio. Use Rise/Run like 5/12.",
-      };
-    }
-  }
-
-  const numeric = Number(trimmed);
-  if (!Number.isFinite(numeric)) {
-    return { degrees: null, error: "Enter degrees or ratio like 5/12." };
-  }
-
-  return { degrees: numeric, error: null };
 }
 
 export default function NewSurveyScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { deviceId } = useAppBootstrap();
+  const location = useLocation();
 
-  const [roofPitch, setRoofPitch] = useState("");
-  const [azimuth, setAzimuth] = useState("");
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState("Mobile Site Survey");
+  const [inspectorName, setInspectorName] = useState(user?.fullName ?? "");
+  const [siteName, setSiteName] = useState("");
+  const [siteAddress, setSiteAddress] = useState("");
+  const [categoryId, setCategoryId] = useState<string | null>("roof_mount");
+  const [metadata, setMetadata] = useState<SurveyMetadata | null>(null);
+  const [notes, setNotes] = useState("");
+  const [checklist, setChecklist] = useState<ChecklistItemDraft[]>(
+    DEFAULT_CHECKLIST.map((c) => ({
+      label: c.label,
+      status: c.status,
+      notes: c.notes,
+      photos: [],
+    })),
+  );
+  const [photos, setPhotos] = useState<PhotoDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [draftFileUri, setDraftFileUri] = useState<string | null>(null);
 
+  const selectedCategoryName = useMemo(() => {
+    const found = SURVEY_CATEGORIES.find((c) => c.id === (categoryId ?? ""));
+    return found?.name ?? null;
+  }, [categoryId]);
+
+  const solarCategoryIds = new Set(["ground_mount", "roof_mount", "solar_fencing"]);
+
   const buildDraftPayload = useCallback((): NewSurveyDraft => ({
     saved_at: new Date().toISOString(),
-    roof_pitch: roofPitch,
-    azimuth,
-    photo_uri: photoUri,
+    project_name: projectName,
+    inspector_name: inspectorName,
+    site_name: siteName,
+    site_address: siteAddress,
+    category_id: categoryId,
+    notes,
+    coordinates: location.coordinates,
+    metadata,
+    checklist,
+    photos,
     user_id: user?.id ?? null,
-  }), [roofPitch, azimuth, photoUri, user?.id]);
+  }), [
+    projectName,
+    inspectorName,
+    siteName,
+    siteAddress,
+    categoryId,
+    notes,
+    location.coordinates,
+    metadata,
+    checklist,
+    photos,
+    user?.id,
+  ]);
 
   const saveDraftToFile = useCallback(async () => {
     if (!draftFileUri) return;
@@ -90,7 +113,7 @@ export default function NewSurveyScreen() {
     );
   }, [buildDraftPayload, draftFileUri]);
 
-  // Create a new draft file when the screen opens
+  // Create a single draft file when the screen opens
   useEffect(() => {
     let mounted = true;
 
@@ -103,9 +126,7 @@ export default function NewSurveyScreen() {
           JSON.stringify(buildDraftPayload(), null, 2),
           { encoding: FileSystem.EncodingType.UTF8 },
         );
-        if (mounted) {
-          setDraftFileUri(uri);
-        }
+        if (mounted) setDraftFileUri(uri);
       } catch (err) {
         console.error("Draft init error:", err);
       }
@@ -115,152 +136,105 @@ export default function NewSurveyScreen() {
     return () => {
       mounted = false;
     };
-  }, [buildDraftPayload]);
+    // intentionally run once for file creation
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-save draft every 300 seconds and once on unmount
   useEffect(() => {
     if (!draftFileUri) return;
 
     const timer = setInterval(() => {
-      saveDraftToFile().catch((err) => console.error("Draft autosave error:", err));
+      saveDraftToFile().catch((err) =>
+        console.error("Draft autosave error:", err),
+      );
     }, AUTO_SAVE_INTERVAL_MS);
 
     return () => {
       clearInterval(timer);
-      saveDraftToFile().catch((err) => console.error("Draft final save error:", err));
+      saveDraftToFile().catch((err) =>
+        console.error("Draft final save error:", err),
+      );
     };
   }, [draftFileUri, saveDraftToFile]);
 
-  const pitchPreview = getPitchPreview(roofPitch);
-
-  async function capturePhoto() {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(
-        "Camera Permission Needed",
-        "Please allow camera access to capture a photo.",
-      );
-      return;
+  useEffect(() => {
+    if (categoryId && !solarCategoryIds.has(categoryId)) {
+      setMetadata(null);
     }
+  }, [categoryId]);
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["images"],
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets.length > 0) {
-      setPhotoUri(result.assets[0].uri);
+  function validateInputs(): boolean {
+    if (!projectName.trim()) {
+      Alert.alert("Validation Error", "Project name is required.");
+      return false;
     }
-  }
-
-  function validateInputs(): {
-    pitchValue: number;
-    azimuthValue: number;
-  } | null {
-    const trimmedPitch = roofPitch.trim();
-    let pitchValue: number;
-
-    try {
-      pitchValue = trimmedPitch.includes("/")
-        ? convertPitchToDegrees(trimmedPitch)
-        : Number(trimmedPitch);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Invalid pitch format. Use 'Rise/Run' (e.g., 4/12)";
-      Alert.alert("Validation Error", message);
-      return null;
+    if (!inspectorName.trim()) {
+      Alert.alert("Validation Error", "Inspector name is required.");
+      return false;
     }
-
-    const azimuthValue = Number(azimuth);
-
-    if (!Number.isFinite(pitchValue) || pitchValue < 0 || pitchValue > 90) {
-      Alert.alert(
-        "Validation Error",
-        "Roof Pitch must be a number between 0 and 90.",
-      );
-      return null;
+    if (!siteName.trim()) {
+      Alert.alert("Validation Error", "Site name is required.");
+      return false;
     }
-
-    if (
-      !Number.isFinite(azimuthValue) ||
-      azimuthValue < 0 ||
-      azimuthValue > 360
-    ) {
-      Alert.alert(
-        "Validation Error",
-        "Azimuth must be a number between 0 and 360.",
-      );
-      return null;
-    }
-
-    return { pitchValue, azimuthValue };
+    return true;
   }
 
   async function submitSurvey() {
-    const values = validateInputs();
-    if (!values) return;
+    if (!validateInputs()) return;
 
     if (!deviceId) {
-      Alert.alert("Device Error", "Device identity is not ready yet. Please try again in a moment.");
+      Alert.alert(
+        "Device Error",
+        "Device identity is not ready yet. Please try again in a moment.",
+      );
       return;
     }
 
     setSubmitting(true);
     try {
       const now = new Date().toISOString();
-      const noteParts = [`Roof pitch: ${values.pitchValue}°`];
-      if (photoUri) {
-        noteParts.push("Photo captured on device");
-      }
 
       const payload: SurveyFormData = {
-        project_name: "Mobile Photo Capture",
-        category_id: "roof_mount",
-        category_name: "Roof Mount",
-        inspector_name: user?.fullName ?? "Mobile Inspector",
-        site_name: "Solar Site",
-        site_address: "",
-        latitude: null,
-        longitude: null,
-        gps_accuracy: null,
+        project_name: projectName.trim(),
+        category_id: categoryId,
+        category_name: selectedCategoryName,
+        inspector_name: inspectorName.trim(),
+        site_name: siteName.trim(),
+        site_address: siteAddress.trim(),
+        latitude: location.coordinates?.latitude ?? null,
+        longitude: location.coordinates?.longitude ?? null,
+        gps_accuracy: location.coordinates?.accuracy ?? null,
         survey_date: now,
-        notes: noteParts.join(" | "),
+        notes: notes.trim(),
         status: "draft",
         device_id: deviceId,
-        metadata: {
-          type: "roof_mount",
-          roof_material: null,
-          rafter_size: null,
-          rafter_spacing: null,
-          roof_age_years: null,
-          azimuth: values.azimuthValue,
-        },
-        checklist: [],
-        photos: photoUri
-          ? [
-              {
-                file_path: photoUri,
-                label: "Roof Photo",
-                mime_type: "image/jpeg",
-                captured_at: now,
-              },
-            ]
-          : [],
+        metadata: metadata ?? null,
+        checklist: checklist.map((item, i) => ({
+          label: item.label.trim() || `Checklist Item ${i + 1}`,
+          status: item.status,
+          notes: item.notes ?? "",
+          sort_order: i,
+        })),
+        photos: photos.map((p) => ({
+          file_path: p.uri,
+          label: p.label,
+          mime_type: p.mimeType,
+          captured_at: now,
+        })),
       };
 
       const created = await createSurvey(payload, deviceId);
 
-      // Remove local draft after successful submit
       if (draftFileUri) {
         await FileSystem.deleteAsync(draftFileUri, { idempotent: true });
       }
 
       Alert.alert("Success", "Survey saved locally and queued for sync.");
-      router.push({ pathname: '/survey/[id]', params: { id: created.id } });
+      router.push({ pathname: "/survey/[id]", params: { id: created.id } });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create survey";
+      const message =
+        error instanceof Error ? error.message : "Failed to create survey";
       Alert.alert("Error", message);
     } finally {
       setSubmitting(false);
@@ -278,53 +252,103 @@ export default function NewSurveyScreen() {
           <Text style={styles.autoSaveHint}>Auto-saving draft every 300 seconds</Text>
 
           <View style={styles.section}>
-            <Text style={styles.label}>Roof Pitch</Text>
+            <Text style={styles.label}>Project Name</Text>
             <TextInput
               style={styles.input}
-              placeholder="Enter pitch (e.g., 5/12 or 22.6)"
-              value={roofPitch}
-              onChangeText={setRoofPitch}
-              placeholderTextColor={colors.textMuted}
-            />
-            {pitchPreview.degrees !== null && (
-              <Text style={styles.preview}>
-                ✓ {pitchPreview.degrees.toFixed(1)}°
-              </Text>
-            )}
-            {pitchPreview.error && (
-              <Text style={styles.error}>{pitchPreview.error}</Text>
-            )}
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.label}>Azimuth (0-360°)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter azimuth direction"
-              value={azimuth}
-              onChangeText={setAzimuth}
-              keyboardType="numeric"
+              placeholder="Enter project name"
+              value={projectName}
+              onChangeText={setProjectName}
               placeholderTextColor={colors.textMuted}
             />
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.label}>Photo</Text>
-            {photoUri ? (
-              <View style={styles.photoPreview}>
-                <Text style={styles.photoText}>✓ Photo selected</Text>
+            <Text style={styles.label}>Inspector Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter inspector name"
+              value={inspectorName}
+              onChangeText={setInspectorName}
+              placeholderTextColor={colors.textMuted}
+            />
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.label}>Site Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter site name"
+              value={siteName}
+              onChangeText={setSiteName}
+              placeholderTextColor={colors.textMuted}
+            />
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.label}>Site Address</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter site address"
+              value={siteAddress}
+              onChangeText={setSiteAddress}
+              placeholderTextColor={colors.textMuted}
+            />
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.label}>Category</Text>
+            <View style={styles.categoryRow}>
+              {SURVEY_CATEGORIES.filter((c) => c.id).map((c) => (
                 <TouchableOpacity
-                  style={styles.changePhotoBtn}
-                  onPress={capturePhoto}
+                  key={c.id}
+                  style={[
+                    styles.categoryBtn,
+                    categoryId === c.id && styles.categoryBtnActive,
+                  ]}
+                  onPress={() => setCategoryId(c.id)}
                 >
-                  <Text style={styles.btnText}>Change Photo</Text>
+                  <Text
+                    style={[
+                      styles.categoryBtnText,
+                      categoryId === c.id && styles.categoryBtnTextActive,
+                    ]}
+                  >
+                    {c.name}
+                  </Text>
                 </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity style={styles.captureBtn} onPress={capturePhoto}>
-                <Text style={styles.btnText}>📷 Capture Photo</Text>
-              </TouchableOpacity>
-            )}
+              ))}
+            </View>
+          </View>
+
+          <GPSCapture
+            coordinates={location.coordinates}
+            status={location.status}
+            errorMsg={location.errorMsg}
+            onCapture={location.capture}
+            onClear={location.clear}
+          />
+
+          <SolarMetadataForm
+            categoryId={categoryId}
+            metadata={metadata}
+            onChange={setMetadata}
+          />
+
+          <ChecklistEditor items={checklist} onChange={setChecklist} />
+
+          <PhotoCapture photos={photos} onChange={setPhotos} />
+
+          <View style={styles.section}>
+            <Text style={styles.label}>Notes</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="Add survey notes"
+              value={notes}
+              onChangeText={setNotes}
+              placeholderTextColor={colors.textMuted}
+              multiline
+              numberOfLines={4}
+            />
           </View>
 
           <TouchableOpacity
@@ -351,6 +375,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
+    paddingBottom: 40,
   },
   title: {
     fontSize: 28,
@@ -364,7 +389,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   section: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   label: {
     fontSize: 14,
@@ -381,47 +406,41 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 16,
   },
-  preview: {
-    color: colors.successText,
-    fontSize: 12,
-    marginTop: 4,
+  textArea: {
+    minHeight: 88,
+    textAlignVertical: "top",
   },
-  error: {
-    color: colors.errorText,
-    fontSize: 12,
-    marginTop: 4,
+  categoryRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
   },
-  photoPreview: {
-    backgroundColor: colors.inputBg,
+  categoryBtn: {
     borderWidth: 1,
     borderColor: colors.inputBorder,
-    borderRadius: 6,
-    padding: 16,
-    alignItems: "center",
-    gap: 12,
-  },
-  photoText: {
-    color: colors.successText,
-    fontSize: 16,
-  },
-  captureBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: 6,
-    padding: 14,
-    alignItems: "center",
-  },
-  changePhotoBtn: {
-    backgroundColor: colors.inputBorder,
-    borderRadius: 6,
+    backgroundColor: colors.inputBg,
+    borderRadius: 18,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    paddingHorizontal: 16,
+  },
+  categoryBtnActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  categoryBtnText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  categoryBtnTextActive: {
+    color: colors.background,
   },
   submitBtn: {
     backgroundColor: colors.primary,
     borderRadius: 6,
     padding: 14,
     alignItems: "center",
-    marginTop: 24,
+    marginTop: 16,
   },
   submitBtnDisabled: {
     opacity: 0.6,
