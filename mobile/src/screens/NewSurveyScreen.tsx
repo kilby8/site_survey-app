@@ -26,10 +26,6 @@ const { colors } = solarProTheme;
 const AUTO_SAVE_INTERVAL_MS = 300_000;
 const DRAFTS_DIR = `${FileSystem.documentDirectory}survey-drafts/`;
 
-interface UploadResponse {
-  filePath: string;
-}
-
 interface CreatedSurveyResponse {
   id: string;
   project_id?: string | null;
@@ -220,33 +216,9 @@ export default function NewSurveyScreen() {
 
     setSubmitting(true);
     try {
-      let uploadedFilePath: string | null = null;
-
-      if (photoUri) {
-        const formData = new FormData();
-        formData.append("image", {
-          uri: photoUri,
-          name: "roof-photo.jpg",
-          type: "image/jpeg",
-        } as never);
-
-        const uploadResponse = await axios.post<UploadResponse>(
-          `${API_URL}/api/surveys/upload`,
-          formData,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "multipart/form-data",
-            },
-          },
-        );
-
-        uploadedFilePath = uploadResponse.data.filePath;
-      }
-
       const noteParts = [`Roof pitch: ${values.pitchValue}°`];
-      if (uploadedFilePath) {
-        noteParts.push(`Photo: ${uploadedFilePath}`);
+      if (photoUri) {
+        noteParts.push("Photo captured on device");
       }
 
       // Create survey
