@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as FileSystem from "expo-file-system/legacy";
 import { useAuth } from "../context/AuthContext";
 import { useAppBootstrap } from "../context/AppBootstrapContext";
@@ -25,6 +25,7 @@ import PhotoCapture, { type PhotoDraft } from "../components/PhotoCapture";
 import SolarMetadataForm from "../components/SolarMetadataForm";
 import { useLocation } from "../hooks/useLocation";
 import { solarProTheme } from "../theme/solarProTheme";
+import { fetchHandoffToken } from "../api/client";
 
 const { colors } = solarProTheme;
 const AUTO_SAVE_INTERVAL_MS = 300_000;
@@ -47,17 +48,21 @@ interface NewSurveyDraft {
 
 export default function NewSurveyScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ t?: string }>();
+  const handoffToken = typeof params.t === "string" ? params.t : null;
   const { user } = useAuth();
   const { deviceId } = useAppBootstrap();
   const location = useLocation();
 
   const [projectName, setProjectName] = useState("Mobile Site Survey");
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [inspectorName, setInspectorName] = useState(user?.fullName ?? "");
   const [siteName, setSiteName] = useState("");
   const [siteAddress, setSiteAddress] = useState("");
   const [categoryId, setCategoryId] = useState<string | null>("roof_mount");
   const [metadata, setMetadata] = useState<SurveyMetadata | null>(null);
   const [notes, setNotes] = useState("");
+  const [handoffLinked, setHandoffLinked] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistItemDraft[]>(
     DEFAULT_CHECKLIST.map((c) => ({
       label: c.label,
@@ -164,6 +169,39 @@ export default function NewSurveyScreen() {
     }
   }, [categoryId]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateFromHandoff() {
+      if (!handoffToken) return;
+      try {
+        const handoff = await fetchHandoffToken(handoffToken);
+        if (cancelled) return;
+
+        setProjectId(handoff.project_id);
+        if (handoff.project_name) setProjectName(handoff.project_name);
+        if (handoff.inspector_name) setInspectorName(handoff.inspector_name);
+        if (handoff.site_name) setSiteName(handoff.site_name);
+        if (handoff.site_address) setSiteAddress(handoff.site_address);
+        if (handoff.category_id) setCategoryId(handoff.category_id);
+        if (handoff.notes) setNotes(handoff.notes);
+        if (handoff.metadata) {
+          setMetadata(handoff.metadata as unknown as SurveyMetadata);
+        }
+        setHandoffLinked(true);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to load handoff token";
+        Alert.alert("Handoff Error", message);
+      }
+    }
+
+    hydrateFromHandoff();
+    return () => {
+      cancelled = true;
+    };
+  }, [handoffToken]);
+
   function validateInputs(): boolean {
     if (!projectName.trim()) {
       Alert.alert("Validation Error", "Project name is required.");
@@ -206,6 +244,7 @@ export default function NewSurveyScreen() {
 
       const payload: SurveyFormData = {
         project_name: projectName.trim(),
+        project_id: projectId,
         category_id: categoryId,
         category_name: selectedCategoryName,
         inspector_name: inspectorName.trim(),
@@ -262,6 +301,14 @@ export default function NewSurveyScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.title}>New Survey</Text>
           <Text style={styles.autoSaveHint}>Auto-saving draft every 300 seconds</Text>
+
+          {handoffLinked && projectName.trim() && (
+            <View style={styles.linkedBanner}>
+              <Text style={styles.linkedBannerText}>
+                Linked to SolarPro project: {projectName.trim()}
+              </Text>
+            </View>
+          )}
 
           <View style={styles.section}>
             <Text style={styles.label}>Project Name</Text>
@@ -399,6 +446,20 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
     marginBottom: 16,
+  },
+  linkedBanner: {
+    backgroundColor: colors.successBg,
+    borderColor: colors.successBorder,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 16,
+  },
+  linkedBannerText: {
+    color: colors.successText,
+    fontSize: 13,
+    fontWeight: "700",
   },
   section: {
     marginBottom: 16,

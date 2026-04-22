@@ -8,6 +8,7 @@
 import path from "path";
 import { Router, Request, Response } from "express";
 import multer from "multer";
+import { z } from "zod";
 import { pool } from "../database";
 import { solarSurveySchema } from "../models/Survey";
 import { stringify as csvStringify } from "csv-stringify/sync";
@@ -18,8 +19,66 @@ import {
   inferRoboflowFromPath,
 } from "../utils/roboflowClient";
 import { uploadFile } from "../utils/storageClient";
+import {
+  enqueueSurveyCompleteWebhook,
+  ensureWebhookDeliveriesTable,
+  softDeleteSurveyAndQueueCleanup,
+} from "../services/webhookService";
+import {
+  incrementMetric,
+  recordTiming,
+} from "../services/metrics";
+
+let surveysSoftDeleteReady: Promise<void> | null = null;
+
+async function ensureSurveySoftDeleteColumn(): Promise<void> {
+  if (!surveysSoftDeleteReady) {
+    surveysSoftDeleteReady = pool
+      .query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`)
+      .then(() => undefined)
+      .catch((error) => {
+        surveysSoftDeleteReady = null;
+        throw error;
+      });
+  }
+
+  await surveysSoftDeleteReady;
+}
 
 const router = Router();
+
+const uuidV4Schema = z.string().uuid();
+
+function isValidUuid(value: string): boolean {
+  return uuidV4Schema.safeParse(value).success;
+}
+
+function respondValidationError(
+  res: Response,
+  message: string,
+  field?: string,
+): void {
+  res.status(422).json({
+    error: {
+      code: "VALIDATION_FAILED",
+      message,
+      field,
+    },
+  });
+}
+
+function requireUuidParam(
+  req: Request,
+  res: Response,
+  field: "id" | "photoId",
+): boolean {
+  const raw = req.params[field];
+  if (!raw || !isValidUuid(raw)) {
+    respondValidationError(res, `${field} must be a valid UUID`, field);
+    return false;
+  }
+  return true;
+}
 
 // ----------------------------------------------------------------
 // SSE — real-time survey event broadcasting
@@ -312,6 +371,7 @@ function geoExpr(params: unknown[], lon: number, lat: number): string {
  * Uses ST_AsGeoJSON to serialise the geography point for the response.
  */
 async function fetchSurveyFull(id: string) {
+  await ensureSurveySoftDeleteColumn();
   const { rows } = await pool.query<Record<string, unknown>>(
     `SELECT
        s.id, s.project_name, s.project_id, s.category_id, s.category_name,
@@ -321,7 +381,7 @@ async function fetchSurveyFull(id: string) {
        s.survey_date, s.notes, s.status, s.device_id, s.metadata,
        s.synced_at, s.created_at, s.updated_at
      FROM surveys s
-     WHERE s.id = $1`,
+     WHERE s.id = $1 AND s.deleted_at IS NULL`,
     [id],
   );
   if (rows.length === 0) return null;
@@ -463,11 +523,12 @@ router.post("/validate/solar", async (req: Request, res: Response) => {
  */
 router.get("/export/geojson", async (req: Request, res: Response) => {
   try {
+    await ensureSurveySoftDeleteColumn();
     const { project_id, status, category_id } = req.query as Record<
       string,
       string
     >;
-    const conditions: string[] = [];
+    const conditions: string[] = ["s.deleted_at IS NULL"];
     const params: unknown[] = [];
 
     if (project_id) {
@@ -574,11 +635,12 @@ router.get("/export/geojson", async (req: Request, res: Response) => {
  */
 router.get("/export/csv", async (req: Request, res: Response) => {
   try {
+    await ensureSurveySoftDeleteColumn();
     const { project_id, status, category_id } = req.query as Record<
       string,
       string
     >;
-    const conditions: string[] = [];
+    const conditions: string[] = ["s.deleted_at IS NULL"];
     const params: unknown[] = [];
 
     if (project_id) {
@@ -715,6 +777,7 @@ router.get("/export/csv", async (req: Request, res: Response) => {
  * Each entry includes its local UUID so the client can reconcile.
  */
 router.post("/sync", async (req: Request, res: Response) => {
+  const syncStartedAt = Date.now();
   const { device_id, surveys } = req.body as {
     device_id?: string;
     surveys: Array<{
@@ -726,6 +789,21 @@ router.post("/sync", async (req: Request, res: Response) => {
   if (!Array.isArray(surveys) || surveys.length === 0) {
     res.status(400).json({ error: "surveys array is required" });
     return;
+  }
+
+  for (const entry of surveys) {
+    if (
+      entry.survey.id !== undefined &&
+      entry.survey.id !== null &&
+      !isValidUuid(String(entry.survey.id))
+    ) {
+      respondValidationError(
+        res,
+        "survey.id must be a valid UUID",
+        "id",
+      );
+      return;
+    }
   }
 
   const results: Array<{
@@ -792,7 +870,27 @@ router.post("/sync", async (req: Request, res: Response) => {
                 $${insertParams.length - 1},
                 $${insertParams.length},
                 NOW())
-             ON CONFLICT (id) DO NOTHING`,
+             ON CONFLICT (id) DO UPDATE SET
+               project_name = EXCLUDED.project_name,
+               project_id = EXCLUDED.project_id,
+               category_id = EXCLUDED.category_id,
+               category_name = EXCLUDED.category_name,
+               inspector_name = EXCLUDED.inspector_name,
+               site_name = EXCLUDED.site_name,
+               site_address = EXCLUDED.site_address,
+               latitude = EXCLUDED.latitude,
+               longitude = EXCLUDED.longitude,
+               gps_accuracy = EXCLUDED.gps_accuracy,
+               location = EXCLUDED.location,
+               survey_date = EXCLUDED.survey_date,
+               notes = EXCLUDED.notes,
+               status = EXCLUDED.status,
+               device_id = EXCLUDED.device_id,
+               metadata = EXCLUDED.metadata,
+               synced_at = NOW(),
+               deleted_at = NULL,
+               updated_at = NOW()`,
+
             insertParams,
           );
 
@@ -845,7 +943,6 @@ router.post("/sync", async (req: Request, res: Response) => {
                notes          = COALESCE($${updateParams.length - 2}, notes),
                status         = COALESCE($${updateParams.length - 1}, status),
                metadata       = COALESCE($${updateParams.length}::jsonb, metadata),
-               synced_at      = NOW(),
                updated_at     = NOW()
              WHERE id = $1`,
             updateParams,
@@ -870,26 +967,209 @@ router.post("/sync", async (req: Request, res: Response) => {
       }
     }
 
-    res.json({ synced: results.filter((r) => r.success).length, results });
+    const syncedCount = results.filter((r) => r.success).length;
+    const errorCount = results.length - syncedCount;
+    if (syncedCount > 0) incrementMetric("survey_sync_success_total", syncedCount);
+    if (errorCount > 0) incrementMetric("survey_sync_error_total", errorCount);
+    recordTiming("survey_sync_duration_ms", Date.now() - syncStartedAt);
+
+    console.info(
+      JSON.stringify({
+        type: "survey_sync_summary",
+        device_id: device_id ?? null,
+        total: results.length,
+        success: syncedCount,
+        failed: errorCount,
+      }),
+    );
+
+    res.json({ synced: syncedCount, results });
   } finally {
     client.release();
   }
 });
 
-// ================================================================
-// SURVEY LIST
-// ================================================================
-
 /**
- * GET /api/surveys
+ * POST /api/surveys/:id/complete
  *
- * Returns surveys sorted by most recent survey_date, including
- * category names from the categories table via category_name column.
- * Supports optional filters: project_id, status, category_id.
- * Pagination via limit / offset query params.
+ * Marks a survey as completed and queues a webhook notification.
  */
+router.post("/:id/complete", async (req: Request, res: Response) => {
+  if (!requireUuidParam(req, res, "id")) return;
+
+  try {
+    await ensureSurveySoftDeleteColumn();
+    await ensureWebhookDeliveriesTable();
+
+    const surveyId = req.params.id;
+
+    const { rows: existingDeliveryRows } = await pool.query<{
+      event_id: string;
+    }>(
+      `SELECT event_id::text AS event_id
+         FROM webhook_deliveries
+        WHERE survey_id = $1 AND event_type = 'survey.completed'
+        ORDER BY created_at ASC
+        LIMIT 1`,
+      [surveyId],
+    );
+
+    if (existingDeliveryRows.length > 0) {
+      const { rows: surveyRows } = await pool.query<{ status: string }>(
+        `SELECT status
+           FROM surveys
+          WHERE id = $1 AND deleted_at IS NULL
+          LIMIT 1`,
+        [surveyId],
+      );
+
+      if (surveyRows.length === 0) {
+        res.status(404).json({ error: "Survey not found" });
+        return;
+      }
+
+      res.json({
+        survey_id: surveyId,
+        status: surveyRows[0].status,
+        event_id: existingDeliveryRows[0].event_id,
+      });
+      return;
+    }
+
+    const completedAt = new Date().toISOString();
+
+    const { rows: updatedRows } = await pool.query<{
+      id: string;
+      status: string;
+      project_id: string | null;
+      project_name: string;
+      inspector_name: string;
+      site_name: string;
+    }>(
+      `UPDATE surveys
+          SET status = 'submitted',
+              updated_at = NOW()
+        WHERE id = $1 AND deleted_at IS NULL
+        RETURNING id::text, status, project_id::text, project_name, inspector_name, site_name`,
+      [surveyId],
+    );
+
+    if (updatedRows.length === 0) {
+      res.status(404).json({ error: "Survey not found" });
+      return;
+    }
+
+    const survey = updatedRows[0];
+
+    const eventId = await enqueueSurveyCompleteWebhook({
+      survey_id: survey.id,
+      status: survey.status,
+      project_id: survey.project_id,
+      project_name: survey.project_name,
+      inspector_name: survey.inspector_name,
+      site_name: survey.site_name,
+      completed_at: completedAt,
+    });
+
+    incrementMetric("webhook_enqueued_total");
+
+    console.info(
+      JSON.stringify({
+        type: "survey_completed",
+        survey_id: survey.id,
+        event_id: eventId,
+        project_id: survey.project_id,
+        status: survey.status,
+      }),
+    );
+
+    res.json({
+      survey_id: survey.id,
+      status: survey.status,
+      event_id: eventId,
+    });
+  } catch (err) {
+    console.error("POST /api/surveys/:id/complete error:", err);
+    res.status(500).json({ error: "Failed to complete survey" });
+  }
+});
+
+router.get("/admin/webhook-deliveries", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    await ensureWebhookDeliveriesTable();
+
+    const { survey_id, status, limit = "100", offset = "0" } = req.query as Record<
+      string,
+      string
+    >;
+
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (survey_id) {
+      if (!isValidUuid(survey_id)) {
+        respondValidationError(res, "survey_id must be a valid UUID", "survey_id");
+        return;
+      }
+      conditions.push(`survey_id = $${params.push(survey_id)}`);
+    }
+
+    if (status) {
+      conditions.push(`status = $${params.push(status)}`);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const parsedLimit = Number.parseInt(limit, 10);
+    const parsedOffset = Number.parseInt(offset, 10);
+    const safeLimit = Number.isFinite(parsedLimit)
+      ? Math.min(Math.max(parsedLimit, 1), 500)
+      : 100;
+    const safeOffset = Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0;
+
+    const { rows: countRows } = await pool.query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total FROM webhook_deliveries ${where}`,
+      params,
+    );
+
+    params.push(safeLimit, safeOffset);
+
+    const { rows } = await pool.query(
+      `SELECT
+         id::text,
+         survey_id::text,
+         event_type,
+         event_id::text,
+         payload,
+         status,
+         attempt_count,
+         next_attempt_at,
+         last_error,
+         created_at,
+         updated_at
+       FROM webhook_deliveries
+       ${where}
+       ORDER BY created_at DESC
+       LIMIT $${params.length - 1}
+       OFFSET $${params.length}`,
+      params,
+    );
+
+    res.json({
+      deliveries: rows,
+      total: countRows[0]?.total ?? 0,
+    });
+  } catch (err) {
+    console.error("GET /api/surveys/admin/webhook-deliveries error:", err);
+    res.status(500).json({ error: "Failed to retrieve webhook deliveries" });
+  }
+});
+
 router.get("/", async (req: Request, res: Response) => {
   try {
+    await ensureSurveySoftDeleteColumn();
     const {
       project_id,
       status,
@@ -898,7 +1178,7 @@ router.get("/", async (req: Request, res: Response) => {
       offset = "0",
     } = req.query as Record<string, string>;
 
-    const conditions: string[] = [];
+    const conditions: string[] = ["s.deleted_at IS NULL"];
     const params: unknown[] = [];
 
     if (project_id) {
@@ -915,7 +1195,6 @@ router.get("/", async (req: Request, res: Response) => {
     const lim = Math.min(parseInt(limit, 10), 500);
     const off = parseInt(offset, 10);
 
-    // Total count (without pagination)
     const { rows: countRows } = await pool.query(
       `SELECT COUNT(*)::int AS total FROM surveys s ${where}`,
       params,
@@ -923,14 +1202,11 @@ router.get("/", async (req: Request, res: Response) => {
 
     params.push(lim, off);
 
-    // Surveys sorted by most-recent survey_date first,
-    // with category name and aggregated child counts
     const { rows } = await pool.query(
       `SELECT
          s.id,
          s.project_name,
          s.category_name,
-         -- Resolve category name from categories table when available
          COALESCE(cat.name, s.category_name) AS resolved_category,
          s.inspector_name,
          s.site_name,
@@ -960,32 +1236,8 @@ router.get("/", async (req: Request, res: Response) => {
   }
 });
 
-// ================================================================
-// SINGLE SURVEY
-// ================================================================
-
-// ================================================================
-// ENGINEERING ASSESSMENT REPORT
-// Must be declared BEFORE /:id so Express doesn't shadow it.
-// ================================================================
-
-/**
- * GET /api/surveys/:id/report
- *
- * Generates an Engineering Assessment report by analysing the survey's
- * metadata and checklist results.
- *
- * Query params:
- *   ?format=markdown  → returns a Markdown file download
- *   (default)         → returns the EngineeringReport JSON object
- *
- * Automated High-Priority flags:
- *   - Roof Mount  : roof_age_years > 15 or material === 'Membrane'
- *   - Ground Mount: soil_type === 'Rocky'
- *   - Solar Fencing: lower_shade_risk === true
- *   - Electrical  : checklist "Main Service Panel" status === 'fail'
- */
 router.get("/:id/report", async (req: Request, res: Response) => {
+  if (!requireUuidParam(req, res, "id")) return;
   try {
     const survey = await fetchSurveyFull(req.params.id);
     if (!survey) {
@@ -993,9 +1245,7 @@ router.get("/:id/report", async (req: Request, res: Response) => {
       return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const report = generateReport(survey as any);
-
     const format = (req.query["format"] as string | undefined)?.toLowerCase();
 
     if (format === "markdown") {
@@ -1018,6 +1268,7 @@ router.get("/:id/report", async (req: Request, res: Response) => {
 });
 
 router.delete("/:id/report", async (req: Request, res: Response) => {
+  if (!requireUuidParam(req, res, "id")) return;
   try {
     const survey = await fetchSurveyFull(req.params.id);
     if (!survey) {
@@ -1032,16 +1283,66 @@ router.delete("/:id/report", async (req: Request, res: Response) => {
   }
 });
 
+async function mapSurveyPhotosWithRemoteUrls(
+  photos: Array<Record<string, unknown>>,
+): Promise<Array<Record<string, unknown>>> {
+  if (photos.length === 0) return photos;
+
+  if (!process.env.STORAGE_BACKEND || process.env.STORAGE_BACKEND === "local") {
+    return photos.map((photo) => {
+      const filePath =
+        typeof photo.file_path === "string" ? (photo.file_path as string) : "";
+      const remoteUrl = filePath.startsWith("http")
+        ? filePath
+        : filePath.startsWith("/")
+          ? filePath
+          : `/uploads/${filePath}`;
+
+      return { ...photo, remote_url: remoteUrl };
+    });
+  }
+
+  return photos.map((photo) => {
+    const filePath =
+      typeof photo.file_path === "string" ? (photo.file_path as string) : "";
+    return {
+      ...photo,
+      remote_url: filePath,
+      signed_url: filePath,
+    };
+  });
+}
+
+function requireSurveyReadAccess(req: Request, res: Response): boolean {
+  const role = req.authUser?.role;
+  if (role === "admin" || role === "user") {
+    return true;
+  }
+
+  res.status(403).json({ error: "Forbidden" });
+  return false;
+}
 
 /** GET /api/surveys/:id */
 router.get("/:id", async (req: Request, res: Response) => {
+  if (!requireUuidParam(req, res, "id")) return;
+  if (!requireSurveyReadAccess(req, res)) return;
+
   try {
     const survey = await fetchSurveyFull(req.params.id);
     if (!survey) {
       res.status(404).json({ error: "Survey not found" });
       return;
     }
-    res.json(survey);
+
+    const normalizedPhotos = await mapSurveyPhotosWithRemoteUrls(
+      (survey.photos as Array<Record<string, unknown>>) ?? [],
+    );
+
+    res.json({
+      ...survey,
+      photos: normalizedPhotos,
+    });
   } catch (err) {
     console.error("GET /api/surveys/:id error:", err);
     res.status(500).json({ error: "Failed to retrieve survey" });
@@ -1065,6 +1366,11 @@ router.get("/:id", async (req: Request, res: Response) => {
  */
 router.post("/", async (req: Request, res: Response) => {
   const body = req.body as SurveyInput & { id?: string };
+
+  if (body.id && !isValidUuid(body.id)) {
+    respondValidationError(res, "id must be a valid UUID", "id");
+    return;
+  }
 
   if (
     !body.project_name?.trim() ||
@@ -1131,6 +1437,24 @@ router.post("/", async (req: Request, res: Response) => {
           $${insertParams.length - 2},
           $${insertParams.length - 1},
           $${insertParams.length})
+       ON CONFLICT (id) DO UPDATE SET
+         project_name = EXCLUDED.project_name,
+         project_id = EXCLUDED.project_id,
+         category_id = EXCLUDED.category_id,
+         category_name = EXCLUDED.category_name,
+         inspector_name = EXCLUDED.inspector_name,
+         site_name = EXCLUDED.site_name,
+         site_address = EXCLUDED.site_address,
+         latitude = EXCLUDED.latitude,
+         longitude = EXCLUDED.longitude,
+         gps_accuracy = EXCLUDED.gps_accuracy,
+         location = EXCLUDED.location,
+         survey_date = EXCLUDED.survey_date,
+         notes = EXCLUDED.notes,
+         status = EXCLUDED.status,
+         device_id = EXCLUDED.device_id,
+         metadata = EXCLUDED.metadata,
+         updated_at = NOW()
        RETURNING id`,
       insertParams,
     );
@@ -1161,15 +1485,18 @@ router.post("/", async (req: Request, res: Response) => {
 
 /** PUT /api/surveys/:id */
 router.put("/:id", async (req: Request, res: Response) => {
+  if (!requireUuidParam(req, res, "id")) return;
   const { id } = req.params;
   const body = req.body as Partial<SurveyInput>;
+
+  await ensureSurveySoftDeleteColumn();
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     const { rows: existing } = await client.query(
-      "SELECT id FROM surveys WHERE id = $1",
+      "SELECT id FROM surveys WHERE id = $1 AND deleted_at IS NULL",
       [id],
     );
     if (existing.length === 0) {
@@ -1258,6 +1585,7 @@ router.post(
   "/:id/photos",
   upload.array("photos", 20),
   async (req: Request, res: Response) => {
+    if (!requireUuidParam(req, res, "id")) return;
     const { id } = req.params;
 
     // Verify the survey exists
@@ -1341,6 +1669,8 @@ router.post(
 router.post(
   "/:id/photos/:photoId/infer",
   async (req: Request, res: Response) => {
+    if (!requireUuidParam(req, res, "id")) return;
+    if (!requireUuidParam(req, res, "photoId")) return;
     const { id, photoId } = req.params;
     const { model_id, confidence, overlap, elec_classes, material_classes } =
       req.body as {
@@ -1638,6 +1968,7 @@ async function triggerPipeline(surveyId: string, event: string): Promise<void> {
 }
 
 router.post("/:id/ar-detection", async (req: Request, res: Response) => {
+  if (!requireUuidParam(req, res, "id")) return;
   const { id } = req.params;
   const body = req.body as ARDetectionBody;
 
@@ -1792,14 +2123,16 @@ router.get("/:id/ar-detections", async (req: Request, res: Response) => {
 
 /** DELETE /api/surveys/:id */
 router.delete("/:id", async (req: Request, res: Response) => {
+  if (!requireUuidParam(req, res, "id")) return;
   const { id } = req.params;
 
   const client = await pool.connect();
   try {
+    await ensureSurveySoftDeleteColumn();
     await client.query("BEGIN");
 
     const { rows: existing } = await client.query(
-      "SELECT id FROM surveys WHERE id = $1",
+      "SELECT id FROM surveys WHERE id = $1 AND deleted_at IS NULL",
       [id],
     );
     if (existing.length === 0) {
@@ -1808,15 +2141,18 @@ router.delete("/:id", async (req: Request, res: Response) => {
       return;
     }
 
-    await client.query("DELETE FROM survey_photos WHERE survey_id = $1", [
-      id,
-    ]);
-    await client.query("DELETE FROM checklist_items WHERE survey_id = $1", [
-      id,
-    ]);
-    await client.query("DELETE FROM surveys WHERE id = $1", [id]);
+    await client.query(
+      `UPDATE surveys
+          SET deleted_at = NOW(),
+              updated_at = NOW()
+        WHERE id = $1`,
+      [id],
+    );
 
     await client.query("COMMIT");
+
+    await softDeleteSurveyAndQueueCleanup(id);
+
     res.status(204).send();
   } catch (err) {
     await client.query("ROLLBACK");
@@ -1827,4 +2163,5 @@ router.delete("/:id", async (req: Request, res: Response) => {
   }
 });
 
+export { ensureSurveySoftDeleteColumn };
 export default router;

@@ -18,9 +18,17 @@ import surveysRouter from "./routes/surveys";
 import categoriesRouter from "./routes/categories";
 import usersRouter from "./routes/users";
 import roboflowProxyRouter from "./routes/roboflowProxy";
+import handoffRouter from "./routes/handoff";
+import openApiRouter from "./routes/openapi";
 import { requireAuth } from "./middleware/auth";
 import { pool } from "./database";
 import { uploadFile, isS3Mode } from "./utils/storageClient";
+import { startWebhookWorker } from "./services/webhookService";
+import {
+  incrementMetric,
+  recordTiming,
+  getMetricsSnapshot,
+} from "./services/metrics";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "3001", 10);
@@ -72,6 +80,32 @@ app.use(
 // ----------------------------------------------------------------
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+  res.setHeader("X-Request-Id", requestId);
+
+  res.on("finish", () => {
+    const durationMs = Date.now() - startedAt;
+    incrementMetric("api_requests_total");
+    recordTiming("http_request_duration_ms", durationMs);
+
+    console.info(
+      JSON.stringify({
+        type: "http_request",
+        request_id: requestId,
+        method: req.method,
+        path: req.originalUrl,
+        status: res.statusCode,
+        duration_ms: durationMs,
+      }),
+    );
+  });
+
+  next();
+});
 
 // ----------------------------------------------------------------
 // Public landing page
@@ -166,12 +200,23 @@ app.post("/api/surveys/upload", requireAuth, (req, res) => {
   });
 });
 
+app.get("/api/metrics", requireAuth, (req, res) => {
+  if (req.authUser?.role !== "admin") {
+    res.status(403).json({ error: "Admin access required" });
+    return;
+  }
+
+  res.json(getMetricsSnapshot());
+});
+
 // ----------------------------------------------------------------
 // API routes
 // ----------------------------------------------------------------
 app.use("/api/surveys", requireAuth, surveysRouter);
 app.use("/api/categories", requireAuth, categoriesRouter);
 app.use("/api/users", usersRouter);
+app.use("/api/handoff", handoffRouter);
+app.use("/api", openApiRouter);
 app.use("/api/roboflow", requireAuth, roboflowProxyRouter);
 
 // ----------------------------------------------------------------
@@ -188,6 +233,7 @@ if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`Site Survey API running on http://localhost:${PORT}`);
     console.log(`Photo uploads served from /uploads`);
+    startWebhookWorker();
   });
 }
 

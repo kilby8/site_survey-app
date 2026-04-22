@@ -223,3 +223,14 @@ export async function revokeRefreshTokenByHash(tokenHash: string): Promise<void>
   actionEnsureReady();
   db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ?').run(tokenHash);
 }
+
+export async function deleteRefreshTokensByUserId(userId: string): Promise<void> {
+  actionEnsureReady();
+  db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(userId);
+}
+
+export async function deleteUserById(userId: string): Promise<boolean> {
+  actionEnsureReady();
+  const result = db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  return result.changes > 0;
+}

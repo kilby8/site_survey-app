@@ -9,6 +9,7 @@ export const CREATE_SURVEYS_TABLE = `
   CREATE TABLE IF NOT EXISTS surveys (
     id             TEXT    PRIMARY KEY,
     project_name   TEXT    NOT NULL,
+    project_id     TEXT,
     category_id    TEXT,
     category_name  TEXT,
     inspector_name TEXT    NOT NULL,
@@ -61,6 +62,7 @@ export const INIT_STATEMENTS = [
   'PRAGMA journal_mode = WAL;',
   'PRAGMA foreign_keys = ON;',
   CREATE_SURVEYS_TABLE,
+  'ALTER TABLE surveys ADD COLUMN project_id TEXT;',
   CREATE_CHECKLIST_TABLE,
   CREATE_PHOTOS_TABLE,
 ];

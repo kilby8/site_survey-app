@@ -44,7 +44,7 @@ export function setDb(db: SQLite.SQLiteDatabase): void {
 // Row types (raw SQLite rows — nullables come back as null)
 // ----------------------------------------------------------------
 interface SurveyRow {
-  id: string; project_name: string; category_id: string | null;
+  id: string; project_name: string; project_id: string | null; category_id: string | null;
   category_name: string | null; inspector_name: string;
   site_name: string; site_address: string;
   latitude: number | null; longitude: number | null; gps_accuracy: number | null;
@@ -73,6 +73,7 @@ function rowToSurvey(r: SurveyRow): Omit<Survey, 'checklist' | 'photos'> {
   return {
     id:             r.id,
     project_name:   r.project_name,
+    project_id:     r.project_id,
     category_id:    r.category_id,
     category_name:  r.category_name,
     inspector_name: r.inspector_name,
@@ -114,14 +115,15 @@ export async function createSurvey(data: SurveyFormData, deviceId: string): Prom
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `INSERT INTO surveys
-         (id, project_name, category_id, category_name, inspector_name,
+         (id, project_name, project_id, category_id, category_name, inspector_name,
           site_name, site_address, latitude, longitude, gps_accuracy,
           survey_date, notes, status, sync_status, device_id, metadata,
           created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id,
         data.project_name,
+        data.project_id ?? null,
         data.category_id   ?? null,
         data.category_name ?? null,
         data.inspector_name,
@@ -183,6 +185,7 @@ export async function updateSurvey(
     await db.runAsync(
       `UPDATE surveys SET
          project_name   = COALESCE(?, project_name),
+         project_id     = COALESCE(?, project_id),
          category_id    = COALESCE(?, category_id),
          category_name  = COALESCE(?, category_name),
          inspector_name = COALESCE(?, inspector_name),
@@ -201,6 +204,7 @@ export async function updateSurvey(
        WHERE id = ?`,
       [
         patch.project_name   ?? null,
+        patch.project_id     ?? null,
         patch.category_id    ?? null,
         patch.category_name  ?? null,
         patch.inspector_name ?? null,
@@ -396,14 +400,15 @@ export async function ensureSurveyUuid(surveyId: string): Promise<string> {
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `INSERT INTO surveys
-         (id, project_name, category_id, category_name, inspector_name,
+         (id, project_name, project_id, category_id, category_name, inspector_name,
           site_name, site_address, latitude, longitude, gps_accuracy,
           survey_date, notes, status, sync_status, sync_error, device_id, metadata,
           created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         newId,
         row.project_name,
+        row.project_id,
         row.category_id,
         row.category_name,
         row.inspector_name,

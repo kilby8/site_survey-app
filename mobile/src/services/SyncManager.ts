@@ -43,6 +43,12 @@ let _isOnline         = false;
 let _subscription:     EventSubscription | null = null;
 let _statusCallbacks: SyncStatusCallback[] = [];
 let _deviceId         = '';
+let _telemetryListener: ((event: {
+  type: 'sync_start' | 'sync_success' | 'sync_error';
+  surveyId: string;
+  durationMs: number;
+  error?: string;
+}) => void) | null = null;
 
 // ----------------------------------------------------------------
 // Public API
@@ -122,11 +128,24 @@ export async function syncPending(): Promise<void> {
   }
 }
 
+/** Optional telemetry listener for sync events. */
+export function onSyncTelemetry(
+  listener: ((event: {
+    type: 'sync_start' | 'sync_success' | 'sync_error';
+    surveyId: string;
+    durationMs: number;
+    error?: string;
+  }) => void) | null,
+): void {
+  _telemetryListener = listener;
+}
+
 // ----------------------------------------------------------------
 // Internal helpers
 // ----------------------------------------------------------------
 
 async function _syncOneSurvey(survey: Survey): Promise<void> {
+  const startedAt = Date.now();
   let workingSurvey = survey;
 
   const migratedId = await ensureSurveyUuid(survey.id);
@@ -137,6 +156,12 @@ async function _syncOneSurvey(survey: Survey): Promise<void> {
     }
     workingSurvey = migrated;
   }
+
+  _telemetryListener?.({
+    type: 'sync_start',
+    surveyId: workingSurvey.id,
+    durationMs: 0,
+  });
 
   // Mark as syncing so the UI shows a spinner for this record
   await setSyncStatus(workingSurvey.id, 'syncing');
@@ -149,6 +174,7 @@ async function _syncOneSurvey(survey: Survey): Promise<void> {
     await postSurvey({
       id:             workingSurvey.id,
       project_name:   workingSurvey.project_name,
+      project_id:     workingSurvey.project_id,
       category_id:    workingSurvey.category_id,
       category_name:  workingSurvey.category_name,
       inspector_name: workingSurvey.inspector_name,
@@ -186,10 +212,22 @@ async function _syncOneSurvey(survey: Survey): Promise<void> {
     // 3. Mark the local record as synced
     await setSyncStatus(workingSurvey.id, 'synced');
 
+    _telemetryListener?.({
+      type: 'sync_success',
+      surveyId: workingSurvey.id,
+      durationMs: Date.now() - startedAt,
+    });
+
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await setSyncStatus(workingSurvey.id, 'error', message);
     console.warn(`[SyncManager] Failed to sync survey ${workingSurvey.id}:`, message);
+    _telemetryListener?.({
+      type: 'sync_error',
+      surveyId: workingSurvey.id,
+      durationMs: Date.now() - startedAt,
+      error: message,
+    });
   }
 }
 

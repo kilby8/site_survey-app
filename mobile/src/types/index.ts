@@ -76,6 +76,7 @@ export interface SurveyPhoto {
 export interface Survey {
   id: string;
   project_name: string;
+  project_id: string | null;
   category_id: string | null;
   category_name: string | null;
   inspector_name: string;

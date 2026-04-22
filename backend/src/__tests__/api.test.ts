@@ -1,4 +1,5 @@
 import request from "supertest";
+import jwt from "jsonwebtoken";
 import app from "../index";
 import { pool } from "../database";
 import {
@@ -352,6 +353,59 @@ describe("POST /api/surveys", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBeDefined();
   });
+
+  it("returns 422 when client-provided survey id is not a UUID", async () => {
+    const res = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        id: "local-not-uuid",
+        project_name: "Invalid ID Survey",
+        inspector_name: "Inspector",
+        site_name: "Site",
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error?.code).toBe("VALIDATION_FAILED");
+    expect(res.body.error?.field).toBe("id");
+  });
+
+  it("upserts when posting same survey id twice", async () => {
+    const fixedId = "22222222-2222-4222-8222-222222222222";
+    createdIds.push(fixedId);
+
+    const first = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        id: fixedId,
+        project_name: "Idempotent Survey",
+        inspector_name: "First Inspector",
+        site_name: "First Site",
+        notes: "first",
+      });
+
+    expect(first.status).toBe(201);
+    expect(first.body.id).toBe(fixedId);
+    expect(first.body.inspector_name).toBe("First Inspector");
+
+    const second = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        id: fixedId,
+        project_name: "Idempotent Survey",
+        inspector_name: "Second Inspector",
+        site_name: "Second Site",
+        notes: "second",
+      });
+
+    expect(second.status).toBe(201);
+    expect(second.body.id).toBe(fixedId);
+    expect(second.body.inspector_name).toBe("Second Inspector");
+    expect(second.body.site_name).toBe("Second Site");
+    expect(second.body.notes).toBe("second");
+  });
 });
 
 describe("POST /api/surveys/validate/solar", () => {
@@ -428,6 +482,13 @@ describe("GET /api/surveys", () => {
 });
 
 describe("GET /api/surveys/:id", () => {
+  it("returns 422 for non-UUID id", async () => {
+    const res = await getAuth("/api/surveys/not-a-uuid");
+    expect(res.status).toBe(422);
+    expect(res.body.error?.code).toBe("VALIDATION_FAILED");
+    expect(res.body.error?.field).toBe("id");
+  });
+
   it("returns 404 for unknown id", async () => {
     const res = await getAuth(
       "/api/surveys/00000000-0000-0000-0000-000000000000",
@@ -452,6 +513,32 @@ describe("GET /api/surveys/:id", () => {
     expect(res.body.id).toBe(create.body.id);
     expect(Array.isArray(res.body.checklist)).toBe(true);
     expect(Array.isArray(res.body.photos)).toBe(true);
+  });
+
+  it("returns photo remote_url in survey detail payload", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Fetch Photo URL Test",
+        inspector_name: "Bob",
+        site_name: "Site X",
+      });
+    createdIds.push(create.body.id);
+
+    const surveyId = create.body.id as string;
+
+    await pool.query(
+      `INSERT INTO survey_photos (survey_id, filename, label, file_path, mime_type)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [surveyId, "photo.jpg", "Roof", "/uploads/photo.jpg", "image/jpeg"],
+    );
+
+    const res = await getAuth(`/api/surveys/${surveyId}`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.photos)).toBe(true);
+    expect(res.body.photos.length).toBeGreaterThanOrEqual(1);
+    expect(typeof res.body.photos[0].remote_url).toBe("string");
   });
 });
 
@@ -490,6 +577,30 @@ describe("PUT /api/surveys/:id", () => {
 // Batch Sync
 // ----------------------------------------------------------------
 describe("POST /api/surveys/sync", () => {
+  it("returns 422 when a survey id in batch is not UUID", async () => {
+    const res = await request(app)
+      .post("/api/surveys/sync")
+      .set("Authorization", authHeader)
+      .send({
+        device_id: "test-device-001",
+        surveys: [
+          {
+            action: "create",
+            survey: {
+              id: "legacy-local-id",
+              project_name: "Offline Sync Project",
+              inspector_name: "Sync Tester",
+              site_name: "Offline Site",
+            },
+          },
+        ],
+      });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error?.code).toBe("VALIDATION_FAILED");
+    expect(res.body.error?.field).toBe("id");
+  });
+
   it("syncs a batch of offline surveys", async () => {
     const offlineId = "11111111-1111-1111-1111-111111111111";
     createdIds.push(offlineId);
@@ -627,6 +738,13 @@ describe("GET /api/surveys/export/csv", () => {
 // Engineering Assessment Report
 // ----------------------------------------------------------------
 describe("GET /api/surveys/:id/report", () => {
+  it("returns 422 for non-UUID survey id", async () => {
+    const res = await getAuth("/api/surveys/not-a-uuid/report");
+    expect(res.status).toBe(422);
+    expect(res.body.error?.code).toBe("VALIDATION_FAILED");
+    expect(res.body.error?.field).toBe("id");
+  });
+
   it("returns 404 for unknown survey id", async () => {
     const res = await getAuth(
       "/api/surveys/00000000-0000-0000-0000-000000000099/report",
@@ -894,6 +1012,29 @@ describe("GET /api/surveys/:id/report", () => {
 });
 
 describe("POST /api/surveys/:id/photos/:photoId/infer", () => {
+  it("returns 422 when photoId is not UUID", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Infer Invalid Photo ID",
+        inspector_name: "Ivy",
+        site_name: "Inference Site",
+      });
+    createdIds.push(create.body.id);
+
+    const surveyId = create.body.id as string;
+
+    const res = await request(app)
+      .post(`/api/surveys/${surveyId}/photos/not-a-uuid/infer`)
+      .set("Authorization", authHeader)
+      .send({ model_id: "electrical-inspection/1" });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error?.code).toBe("VALIDATION_FAILED");
+    expect(res.body.error?.field).toBe("photoId");
+  });
+
   it("returns Roboflow inference for a survey photo using data_url", async () => {
     const create = await request(app)
       .post("/api/surveys")
@@ -1061,5 +1202,243 @@ describe("GET /api/surveys/inference-logs/recent", () => {
     expect(telemetryRes.body.logs[0].photo_id).toBe(photoId);
     expect(telemetryRes.body.logs[0].model_id).toBe("electrical-inspection/1");
     expect(telemetryRes.body.logs[0].prediction_count).toBe(1);
+  });
+});
+
+// ----------------------------------------------------------------
+// Handoff Prefill Token
+// ----------------------------------------------------------------
+describe("GET /api/handoff/:token", () => {
+  it("returns prefill payload for valid token", async () => {
+    const token = jwt.sign(
+      {
+        jti: `handoff-${Date.now()}`,
+        project_id: "33333333-3333-4333-8333-333333333333",
+        project_name: "SolarPro Project Alpha",
+        site_name: "123 Grid Street",
+        site_address: "123 Grid Street, Austin, TX",
+        inspector_name: "Field Inspector",
+        category_id: "roof_mount",
+        notes: "Prefilled from SolarPro",
+      },
+      process.env.SOLARPRO_HANDOFF_SECRET as string,
+      { expiresIn: "10m" },
+    );
+
+    const res = await request(app).get(`/api/handoff/${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.project_id).toBe("33333333-3333-4333-8333-333333333333");
+    expect(res.body.project_name).toBe("SolarPro Project Alpha");
+    expect(res.body.site_name).toBe("123 Grid Street");
+  });
+
+  it("returns 401 for invalid token", async () => {
+    const res = await request(app).get("/api/handoff/not-a-real-token");
+    expect(res.status).toBe(401);
+    expect(res.body.error?.code).toBe("INVALID_HANDOFF_TOKEN");
+  });
+
+  it("returns 422 when token misses jti", async () => {
+    const token = jwt.sign(
+      {
+        project_id: "33333333-3333-4333-8333-333333333333",
+      },
+      process.env.SOLARPRO_HANDOFF_SECRET as string,
+      { expiresIn: "10m" },
+    );
+
+    const res = await request(app).get(`/api/handoff/${token}`);
+    expect(res.status).toBe(422);
+    expect(res.body.error?.field).toBe("jti");
+  });
+
+  it("returns 409 when token is replayed", async () => {
+    const token = jwt.sign(
+      {
+        jti: `handoff-replay-${Date.now()}`,
+        project_id: "33333333-3333-4333-8333-333333333333",
+      },
+      process.env.SOLARPRO_HANDOFF_SECRET as string,
+      { expiresIn: "10m" },
+    );
+
+    const first = await request(app).get(`/api/handoff/${token}`);
+    expect(first.status).toBe(200);
+
+    const second = await request(app).get(`/api/handoff/${token}`);
+    expect(second.status).toBe(409);
+    expect(second.body.error?.code).toBe("HANDOFF_TOKEN_REPLAYED");
+  });
+});
+
+describe("POST /api/surveys/:id/complete", () => {
+  it("marks survey submitted and returns stable event id on repeated calls", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Completion Test",
+        inspector_name: "Completer",
+        site_name: "Complete Site",
+      });
+
+    expect(create.status).toBe(201);
+    createdIds.push(create.body.id);
+
+    const surveyId = create.body.id as string;
+
+    const first = await request(app)
+      .post(`/api/surveys/${surveyId}/complete`)
+      .set("Authorization", authHeader)
+      .send({});
+
+    expect(first.status).toBe(200);
+    expect(first.body.status).toBe("submitted");
+    expect(first.body.survey_id).toBe(surveyId);
+    expect(typeof first.body.event_id).toBe("string");
+
+    const second = await request(app)
+      .post(`/api/surveys/${surveyId}/complete`)
+      .set("Authorization", authHeader)
+      .send({});
+
+    expect(second.status).toBe(200);
+    expect(second.body.event_id).toBe(first.body.event_id);
+  });
+
+  it("returns 422 for invalid UUID id", async () => {
+    const res = await request(app)
+      .post("/api/surveys/not-a-uuid/complete")
+      .set("Authorization", authHeader)
+      .send({});
+
+    expect(res.status).toBe(422);
+    expect(res.body.error?.code).toBe("VALIDATION_FAILED");
+    expect(res.body.error?.field).toBe("id");
+  });
+});
+
+describe("GET /api/surveys/admin/webhook-deliveries", () => {
+  it("returns 403 for non-admin users", async () => {
+    const res = await request(app)
+      .get("/api/surveys/admin/webhook-deliveries")
+      .set("Authorization", authHeader);
+
+    expect(res.status).toBe(403);
+  });
+
+  it("returns deliveries for admin users", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Webhook List Test",
+        inspector_name: "Auditor",
+        site_name: "Webhook Site",
+      });
+
+    expect(create.status).toBe(201);
+    createdIds.push(create.body.id);
+
+    const surveyId = create.body.id as string;
+
+    const complete = await request(app)
+      .post(`/api/surveys/${surveyId}/complete`)
+      .set("Authorization", authHeader)
+      .send({});
+
+    expect(complete.status).toBe(200);
+
+    const adminSignin = await request(app)
+      .post("/api/users/signin")
+      .send({ identifier: "admin", password: "admin123!" });
+
+    expect(adminSignin.status).toBe(200);
+
+    const res = await request(app)
+      .get(`/api/surveys/admin/webhook-deliveries?survey_id=${surveyId}`)
+      .set("Authorization", `Bearer ${adminSignin.body.token as string}`);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.deliveries)).toBe(true);
+    expect(res.body.total).toBeGreaterThanOrEqual(1);
+    expect(res.body.deliveries[0].survey_id).toBe(surveyId);
+    expect(res.body.deliveries[0].event_type).toBe("survey.completed");
+  });
+});
+
+// ----------------------------------------------------------------
+// OpenAPI
+// ----------------------------------------------------------------
+describe("GET /api/openapi.json", () => {
+  it("returns OpenAPI document", async () => {
+    const res = await request(app).get("/api/openapi.json");
+
+    expect(res.status).toBe(200);
+    expect(res.body.openapi).toBe("3.0.3");
+    expect(res.body.paths).toBeDefined();
+    expect(res.body.paths["/surveys"]).toBeDefined();
+  });
+});
+
+// ----------------------------------------------------------------
+// Surveys soft-delete
+// ----------------------------------------------------------------
+describe("DELETE /api/surveys/:id", () => {
+  it("soft-deletes survey and hides it from list and detail endpoints", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Soft Delete Test",
+        inspector_name: "Del Tester",
+        site_name: "Delete Site",
+      });
+
+    expect(create.status).toBe(201);
+    const surveyId = create.body.id as string;
+
+    const del = await request(app)
+      .delete(`/api/surveys/${surveyId}`)
+      .set("Authorization", authHeader);
+
+    expect(del.status).toBe(204);
+
+    const byId = await getAuth(`/api/surveys/${surveyId}`);
+    expect(byId.status).toBe(404);
+
+    const list = await getAuth("/api/surveys");
+    expect(list.status).toBe(200);
+    const ids = list.body.surveys.map((s: { id: string }) => s.id);
+    expect(ids).not.toContain(surveyId);
+  });
+});
+
+describe("GET /api/metrics", () => {
+  it("returns 403 for non-admin users", async () => {
+    const res = await request(app)
+      .get("/api/metrics")
+      .set("Authorization", authHeader);
+
+    expect(res.status).toBe(403);
+  });
+
+  it("returns metrics snapshot for admin users", async () => {
+    const adminSignin = await request(app)
+      .post("/api/users/signin")
+      .send({ identifier: "admin", password: "admin123!" });
+
+    expect(adminSignin.status).toBe(200);
+
+    const res = await request(app)
+      .get("/api/metrics")
+      .set("Authorization", `Bearer ${adminSignin.body.token as string}`);
+
+    expect(res.status).toBe(200);
+    expect(typeof res.body.uptime_seconds).toBe("number");
+    expect(res.body.counters).toBeDefined();
+    expect(typeof res.body.counters.api_requests_total).toBe("number");
+    expect(res.body.timings?.http_request_duration_ms).toBeDefined();
   });
 });

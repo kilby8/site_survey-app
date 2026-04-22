@@ -556,3 +556,29 @@ export async function logout(refreshToken: string | null): Promise<void> {
     // Best-effort — local session cleared regardless
   }
 }
+
+/**
+ * GET /api/handoff/:token
+ * Retrieves prefill data for a handoff token.
+ */
+export interface HandoffPayload {
+  project_id: string;
+  project_name: string | null;
+  site_name: string | null;
+  site_address: string | null;
+  inspector_name: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  notes: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  gps_accuracy: number | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export async function fetchHandoffToken(
+  token: string,
+): Promise<HandoffPayload> {
+  const res = await fetchWithFallback(`/api/handoff/${encodeURIComponent(token)}`, {});
+  return handleResponse<HandoffPayload>(res);
+}

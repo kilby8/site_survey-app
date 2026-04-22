@@ -11,6 +11,8 @@ import {
   revokeRefreshTokenById,
   revokeRefreshTokensByUserId,
   revokeRefreshTokenByHash,
+  deleteRefreshTokensByUserId,
+  deleteUserById,
 } from '../services/sqliteAuthStore';
 import {
   signAuthToken,
@@ -22,6 +24,7 @@ import { requireAuth } from '../middleware/auth';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { authAudit } from '../utils/authAudit';
 import { sendPasswordResetEmail } from '../utils/passwordResetMailer';
+import { pool } from '../database';
 
 const router = Router();
 
@@ -137,7 +140,7 @@ const meRateLimit = createRateLimiter({
   maxRequests: ME_MAX_REQUESTS,
   windowMs: ME_WINDOW_MS,
   keyFn: (req) => `me:${getClientIp(req)}:${req.authUser?.userId || 'anonymous'}`,
-  message: 'Too many profile requests. Please try again later.',
+  message: 'Too many profile requests. Please try again later.'
 });
 
 function cleanEmail(email?: string): string {
@@ -517,6 +520,44 @@ router.post('/logout', async (req: Request, res: Response) => {
   }
 
   res.json({ message: 'Logged out' });
+});
+
+// DELETE /api/users/me
+router.delete('/me', requireAuth, async (req: Request, res: Response) => {
+  const userId = req.authUser?.userId;
+
+  if (!userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  if (userId === ADMIN_USER.id || req.authUser?.role === 'admin') {
+    res.status(403).json({ error: 'Admin account cannot be deleted via this endpoint' });
+    return;
+  }
+
+  try {
+    const user = await getUserById(userId);
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    await pool.query('DELETE FROM surveys WHERE inspector_name = $1', [user.full_name]);
+
+    await deleteRefreshTokensByUserId(userId);
+    const deleted = await deleteUserById(userId);
+
+    if (!deleted) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    res.status(204).send();
+  } catch (err) {
+    console.error('DELETE /api/users/me error:', err);
+    res.status(500).json({ error: 'Failed to delete user account' });
+  }
 });
 
 export default router;
