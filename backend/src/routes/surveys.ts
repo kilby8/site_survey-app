@@ -53,6 +53,26 @@ function isValidUuid(value: string): boolean {
   return uuidV4Schema.safeParse(value).success;
 }
 
+function normalizeOptionalUuid(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return isValidUuid(trimmed) ? trimmed : null;
+}
+
+function normalizeCategoryName(
+  categoryId: unknown,
+  categoryName: unknown,
+): string | null {
+  if (typeof categoryName === "string" && categoryName.trim()) {
+    return categoryName.trim();
+  }
+  if (typeof categoryId === "string" && categoryId.trim() && !isValidUuid(categoryId.trim())) {
+    return categoryId.trim();
+  }
+  return null;
+}
+
 function respondValidationError(
   res: Response,
   message: string,
@@ -829,12 +849,19 @@ router.post("/sync", async (req: Request, res: Response) => {
           const surveyId: string =
             (survey.id as string) || (idRows[0].id as string);
 
+          const normalizedProjectId = normalizeOptionalUuid(survey.project_id);
+          const normalizedCategoryId = normalizeOptionalUuid(survey.category_id);
+          const normalizedCategoryName = normalizeCategoryName(
+            survey.category_id,
+            survey.category_name,
+          );
+
           const insertParams: unknown[] = [
             surveyId,
             survey.project_name,
-            survey.project_id ?? null,
-            survey.category_id ?? null,
-            survey.category_name ?? null,
+            normalizedProjectId,
+            normalizedCategoryId,
+            normalizedCategoryName,
             survey.inspector_name,
             survey.site_name,
             survey.site_address ?? null,
@@ -903,12 +930,19 @@ router.post("/sync", async (req: Request, res: Response) => {
           results.push({ id: surveyId, action: "created", success: true });
         } else if (action === "update" && survey.id) {
           const coords = extractCoords(survey);
+          const normalizedProjectId = normalizeOptionalUuid(survey.project_id);
+          const normalizedCategoryId = normalizeOptionalUuid(survey.category_id);
+          const normalizedCategoryName = normalizeCategoryName(
+            survey.category_id,
+            survey.category_name,
+          );
+
           const updateParams: unknown[] = [
             survey.id,
             survey.project_name ?? null,
-            survey.project_id ?? null,
-            survey.category_id ?? null,
-            survey.category_name ?? null,
+            normalizedProjectId,
+            normalizedCategoryId,
+            normalizedCategoryName,
             survey.inspector_name ?? null,
             survey.site_name ?? null,
             survey.site_address ?? null,
@@ -1372,6 +1406,13 @@ router.post("/", async (req: Request, res: Response) => {
     return;
   }
 
+  const normalizedProjectId = normalizeOptionalUuid(body.project_id);
+  const normalizedCategoryId = normalizeOptionalUuid(body.category_id);
+  const normalizedCategoryName = normalizeCategoryName(
+    body.category_id,
+    body.category_name,
+  );
+
   if (
     !body.project_name?.trim() ||
     !body.inspector_name?.trim() ||
@@ -1399,9 +1440,9 @@ router.post("/", async (req: Request, res: Response) => {
     const insertParams: unknown[] = [
       surveyId,
       body.project_name.trim(),
-      body.project_id ?? null,
-      body.category_id ?? null,
-      body.category_name ?? null,
+      normalizedProjectId,
+      normalizedCategoryId,
+      normalizedCategoryName,
       body.inspector_name.trim(),
       body.site_name.trim(),
       body.site_address ?? null,
@@ -1506,12 +1547,19 @@ router.put("/:id", async (req: Request, res: Response) => {
     }
 
     const coords = extractCoords(body as SurveyInput);
+    const normalizedProjectId = normalizeOptionalUuid(body.project_id);
+    const normalizedCategoryId = normalizeOptionalUuid(body.category_id);
+    const normalizedCategoryName = normalizeCategoryName(
+      body.category_id,
+      body.category_name,
+    );
+
     const updateParams: unknown[] = [
       id,
       body.project_name ?? null,
-      body.project_id ?? null,
-      body.category_id ?? null,
-      body.category_name ?? null,
+      normalizedProjectId,
+      normalizedCategoryId,
+      normalizedCategoryName,
       body.inspector_name ?? null,
       body.site_name ?? null,
       body.site_address ?? null,

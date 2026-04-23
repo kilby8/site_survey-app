@@ -172,6 +172,7 @@ function withTimeoutSignal(init: RequestInit, timeoutMs = 5_000): RequestInit {
 async function fetchWithFallback(
   path: string,
   init: RequestInit,
+  options?: { timeoutMs?: number },
 ): Promise<Response> {
   if (API_CANDIDATES.length === 0) {
     throw new Error(API_NETWORK_ERROR);
@@ -179,7 +180,10 @@ async function fetchWithFallback(
 
   for (const baseUrl of API_CANDIDATES) {
     try {
-      return await fetch(`${baseUrl}${path}`, withTimeoutSignal(init));
+      return await fetch(
+        `${baseUrl}${path}`,
+        withTimeoutSignal(init, options?.timeoutMs ?? 5_000),
+      );
     } catch {
       // Try next candidate URL.
     }
@@ -378,12 +382,16 @@ export async function uploadPhotos(
   form.append("labels", JSON.stringify(labels));
 
   const authHeaders = await getAuthHeaders();
-  const res = await fetchWithFallback(`/api/surveys/${surveyId}/photos`, {
-    method: "POST",
-    headers: authHeaders,
-    body: form,
-    // Do NOT manually set Content-Type — fetch sets it with the boundary
-  });
+  const res = await fetchWithFallback(
+    `/api/surveys/${surveyId}/photos`,
+    {
+      method: "POST",
+      headers: authHeaders,
+      body: form,
+      // Do NOT manually set Content-Type — fetch sets it with the boundary
+    },
+    { timeoutMs: 120_000 },
+  );
   return handleResponse<ApiPhotoUploadResponse>(res);
 }
 

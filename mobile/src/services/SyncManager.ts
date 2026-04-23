@@ -171,42 +171,52 @@ async function _syncOneSurvey(survey: Survey): Promise<void> {
     // 1. POST survey JSON to the backend
     //    The local UUID is sent as `id` so the server stores the same ID,
     //    enabling idempotent re-sync if the app crashes mid-upload.
-    await postSurvey({
-      id:             workingSurvey.id,
-      project_name:   workingSurvey.project_name,
-      project_id:     workingSurvey.project_id,
-      category_id:    workingSurvey.category_id,
-      category_name:  workingSurvey.category_name,
-      inspector_name: workingSurvey.inspector_name,
-      site_name:      workingSurvey.site_name,
-      site_address:   workingSurvey.site_address,
-      latitude:       workingSurvey.latitude,
-      longitude:      workingSurvey.longitude,
-      gps_accuracy:   workingSurvey.gps_accuracy,
-      survey_date:    workingSurvey.survey_date,
-      notes:          workingSurvey.notes,
-      status:         'submitted',
-      device_id:      _deviceId,
-      metadata:       workingSurvey.metadata ?? null,
-      checklist: (workingSurvey.checklist ?? []).map(c => ({
-        label:      c.label,
-        status:     c.status,
-        notes:      c.notes,
-        sort_order: c.sort_order,
-      })),
-      photos: [],   // photos uploaded separately below
-    });
+    try {
+      await postSurvey({
+        id:             workingSurvey.id,
+        project_name:   workingSurvey.project_name,
+        project_id:     workingSurvey.project_id,
+        category_id:    workingSurvey.category_id,
+        category_name:  workingSurvey.category_name,
+        inspector_name: workingSurvey.inspector_name,
+        site_name:      workingSurvey.site_name,
+        site_address:   workingSurvey.site_address,
+        latitude:       workingSurvey.latitude,
+        longitude:      workingSurvey.longitude,
+        gps_accuracy:   workingSurvey.gps_accuracy,
+        survey_date:    workingSurvey.survey_date,
+        notes:          workingSurvey.notes,
+        status:         'submitted',
+        device_id:      _deviceId,
+        metadata:       workingSurvey.metadata ?? null,
+        checklist: (workingSurvey.checklist ?? []).map(c => ({
+          label:      c.label,
+          status:     c.status,
+          notes:      c.notes,
+          sort_order: c.sort_order,
+        })),
+        photos: [],   // photos uploaded separately below
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Survey post failed: ${message}`);
+    }
 
     // 2. Upload photos as multipart/form-data (one batch per survey)
     if (workingSurvey.photos && workingSurvey.photos.length > 0) {
-      await uploadPhotos(
-        workingSurvey.id,
-        workingSurvey.photos.map(p => ({
-          uri:      p.file_path,       // local file:// URI
-          label:    p.label,
-          mimeType: p.mime_type,
-        }))
-      );
+      try {
+        await uploadPhotos(
+          workingSurvey.id,
+          workingSurvey.photos.map(p => ({
+            uri:      p.file_path,       // local file:// URI
+            label:    p.label,
+            mimeType: p.mime_type,
+          }))
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Photo upload failed (${workingSurvey.photos.length}): ${message}`);
+      }
     }
 
     // 3. Mark the local record as synced
