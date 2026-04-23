@@ -54,7 +54,6 @@ const STATUS_OPTIONS: {
 export default function ChecklistEditor({ items, onChange }: Props) {
   const [newLabel, setNewLabel] = useState("");
   const [loadingItemIdx, setLoadingItemIdx] = useState<number | null>(null);
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
   function setStatus(idx: number, status: ChecklistStatus) {
     const next = [...items];
@@ -155,17 +154,10 @@ export default function ChecklistEditor({ items, onChange }: Props) {
           STATUS_OPTIONS.find((o) => o.value === item.status) ??
           STATUS_OPTIONS[3];
         const itemPhotos = item.photos ?? [];
-        const isExpanded = expandedIdx === idx;
         return (
           <View key={idx} style={styles.item}>
             {/* Label + remove */}
             <View style={styles.itemHeader}>
-              <TouchableOpacity
-                style={styles.expandBtn}
-                onPress={() => setExpandedIdx(isExpanded ? null : idx)}
-              >
-                <Text style={styles.expandIcon}>{isExpanded ? "▼" : "▶"}</Text>
-              </TouchableOpacity>
               <Text style={styles.itemLabel}>{item.label}</Text>
               <TouchableOpacity onPress={() => removeItem(idx)} hitSlop={8}>
                 <Text style={styles.removeBtn}>✕</Text>
@@ -205,6 +197,81 @@ export default function ChecklistEditor({ items, onChange }: Props) {
               <Text style={styles.statusIndicatorText}>{opt.label}</Text>
             </View>
 
+            {/* Per-item photos section (above notes) */}
+            <View style={styles.inlinePhotoSection}>
+              {itemPhotos.length > 0 && (
+                <View style={styles.photosGallery}>
+                  <Text style={styles.photosTitle}>Item Photos ({itemPhotos.length})</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.photoRow}
+                  >
+                    {itemPhotos.map((photo, photoIdx) => (
+                      <View key={photoIdx} style={styles.photoCard}>
+                        <Image source={{ uri: photo.uri }} style={styles.thumbnail} />
+                        <TouchableOpacity
+                          style={styles.photoRemoveBtn}
+                          onPress={() => removePhoto(idx, photoIdx)}
+                          hitSlop={6}
+                        >
+                          <Text style={styles.photoRemoveBtnText}>✕</Text>
+                        </TouchableOpacity>
+                        <TextInput
+                          style={styles.photoLabelInput}
+                          placeholder="Label…"
+                          placeholderTextColor={colors.textMuted}
+                          value={photo.label}
+                          onChangeText={(t) => setPhotoLabel(idx, photoIdx, t)}
+                        />
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              <View style={styles.cameraRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.cameraBtn,
+                    loadingItemIdx === idx && styles.cameraBtnDisabled,
+                  ]}
+                  onPress={() => capturePhotoForItem(idx)}
+                  disabled={loadingItemIdx === idx}
+                >
+                  {loadingItemIdx === idx ? (
+                    <ActivityIndicator size="small" color={colors.white} />
+                  ) : (
+                    <Text style={styles.cameraBtnText}>📷 Camera</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={
+                    [
+                      styles.cameraBtn,
+                      styles.cameraBtnSecondary,
+                      loadingItemIdx === idx && styles.cameraBtnDisabled,
+                    ]
+                  }
+                  onPress={() => pickPhotoForItem(idx)}
+                  disabled={loadingItemIdx === idx}
+                >
+                  {loadingItemIdx === idx ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Text
+                      style={[
+                        styles.cameraBtnText,
+                        styles.cameraBtnTextSecondary,
+                      ]}
+                    >
+                      🖼 Library
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+
             {/* Notes input */}
             <TextInput
               style={styles.notesInput}
@@ -214,90 +281,6 @@ export default function ChecklistEditor({ items, onChange }: Props) {
               onChangeText={(t) => setNotes(idx, t)}
               multiline
             />
-
-            {/* Expanded section with photos and camera */}
-            {isExpanded && (
-              <View style={styles.expandedSection}>
-                {/* Photos gallery */}
-                {itemPhotos.length > 0 && (
-                  <View style={styles.photosGallery}>
-                    <Text style={styles.photosTitle}>
-                      Photos ({itemPhotos.length})
-                    </Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={styles.photoRow}
-                    >
-                      {itemPhotos.map((photo, photoIdx) => (
-                        <View key={photoIdx} style={styles.photoCard}>
-                          <Image
-                            source={{ uri: photo.uri }}
-                            style={styles.thumbnail}
-                          />
-                          <TouchableOpacity
-                            style={styles.photoRemoveBtn}
-                            onPress={() => removePhoto(idx, photoIdx)}
-                            hitSlop={6}
-                          >
-                            <Text style={styles.photoRemoveBtnText}>✕</Text>
-                          </TouchableOpacity>
-                          <TextInput
-                            style={styles.photoLabelInput}
-                            placeholder="Label…"
-                            placeholderTextColor={colors.textMuted}
-                            value={photo.label}
-                            onChangeText={(t) =>
-                              setPhotoLabel(idx, photoIdx, t)
-                            }
-                          />
-                        </View>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-
-                {/* Camera controls */}
-                <View style={styles.cameraRow}>
-                  <TouchableOpacity
-                    style={[
-                      styles.cameraBtn,
-                      loadingItemIdx === idx && styles.cameraBtnDisabled,
-                    ]}
-                    onPress={() => capturePhotoForItem(idx)}
-                    disabled={loadingItemIdx === idx}
-                  >
-                    {loadingItemIdx === idx ? (
-                      <ActivityIndicator size="small" color={colors.white} />
-                    ) : (
-                      <Text style={styles.cameraBtnText}>📷 Camera</Text>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.cameraBtn,
-                      styles.cameraBtnSecondary,
-                      loadingItemIdx === idx && styles.cameraBtnDisabled,
-                    ]}
-                    onPress={() => pickPhotoForItem(idx)}
-                    disabled={loadingItemIdx === idx}
-                  >
-                    {loadingItemIdx === idx ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
-                    ) : (
-                      <Text
-                        style={[
-                          styles.cameraBtnText,
-                          styles.cameraBtnTextSecondary,
-                        ]}
-                      >
-                        🖼 Library
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
           </View>
         );
       })}
@@ -372,9 +355,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 12,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   statusIndicatorText: { color: "#ffffff", fontSize: 11, fontWeight: "700" },
+  inlinePhotoSection: {
+    marginBottom: 8,
+  },
   notesInput: {
     borderWidth: 1,
     borderColor: colors.inputBorder,
@@ -411,21 +397,8 @@ const styles = StyleSheet.create({
   },
   addBtnDisabled: { backgroundColor: colors.primaryDark },
   addBtnText: { color: colors.background, fontWeight: "700", fontSize: 14 },
-  expandBtn: {
-    paddingRight: 8,
-  },
-  expandIcon: {
-    fontSize: 12,
-    color: colors.textMuted,
-  },
-  expandedSection: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
   photosGallery: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   photosTitle: {
     fontSize: 13,
@@ -434,7 +407,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   photoRow: {
-    marginBottom: 10,
+    marginBottom: 6,
   },
   photoCard: {
     width: 120,
