@@ -35,21 +35,13 @@ async function ensureSurveySoftDeleteColumn(): Promise<void> {
   if (!surveysSoftDeleteReady) {
     surveysSoftDeleteReady = (async () => {
       try {
-        const { rows } = await pool.query<{ exists: boolean }>(
-          `SELECT EXISTS (
-             SELECT 1
-               FROM information_schema.columns
-              WHERE table_schema = 'public'
-                AND table_name = 'surveys'
-                AND column_name = 'deleted_at'
-           ) AS exists`,
-        );
-
-        if (rows[0]?.exists) return;
-
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS project_id UUID`);
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS category_id UUID`);
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS category_name VARCHAR(100)`);
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS metadata JSONB`);
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
       } catch (error) {
-        console.warn("soft-delete column migration skipped:", error);
+        console.warn("survey schema migration skipped:", error);
       }
     })().catch((error) => {
       surveysSoftDeleteReady = null;
@@ -1631,7 +1623,11 @@ router.post("/", async (req: Request, res: Response) => {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("POST /api/surveys error:", err);
-    res.status(500).json({ error: "Failed to create survey" });
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({
+      error: "Failed to create survey",
+      details: message,
+    });
   } finally {
     client.release();
   }
@@ -2331,6 +2327,41 @@ router.delete("/:id", async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to delete survey" });
   } finally {
     client.release();
+  }
+});
+
+/**
+ * GET /api/surveys/diagnostics/schema
+ *
+ * Returns the health status of the surveys route and schema readiness
+ * for production. Checks essential columns exist in the surveys table.
+ */
+router.get("/diagnostics/schema", async (_req: Request, res: Response) => {
+  try {
+    await ensureSurveySoftDeleteColumn();
+
+    const { rows } = await pool.query<{
+      column_name: string;
+      data_type: string;
+    }>(
+      `SELECT column_name, data_type
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'surveys'
+          AND column_name IN ('project_id', 'category_id', 'category_name', 'metadata', 'deleted_at')
+        ORDER BY column_name`,
+    );
+
+    res.json({
+      ok: true,
+      columns: rows,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({
+      ok: false,
+      error: message,
+    });
   }
 });
 
