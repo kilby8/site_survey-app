@@ -11,7 +11,7 @@ if (process.env.NODE_ENV !== "production") {
   }
 }
 
-import express from "express";
+import express, { type Request } from "express";
 import cors from "cors";
 import multer from "multer";
 import surveysRouter from "./routes/surveys";
@@ -21,6 +21,7 @@ import roboflowProxyRouter from "./routes/roboflowProxy";
 import handoffRouter from "./routes/handoff";
 import openApiRouter from "./routes/openapi";
 import bugReportsRouter from "./routes/bugReports";
+import webhooksRouter from "./routes/webhooks";
 import { requireAuth } from "./middleware/auth";
 import { pool } from "./database";
 import { uploadFile, isS3Mode } from "./utils/storageClient";
@@ -80,7 +81,12 @@ app.use(
 // ----------------------------------------------------------------
 // Body parsing
 // ----------------------------------------------------------------
-app.use(express.json({ limit: "50mb" }));
+app.use(express.json({
+  limit: "50mb",
+  verify: (req, _res, buffer) => {
+    (req as Request & { rawBody?: string }).rawBody = buffer.toString("utf8");
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 app.use((req, res, next) => {
@@ -218,6 +224,7 @@ app.get("/api/metrics", requireAuth, (req, res) => {
 // ----------------------------------------------------------------
 // API routes
 // ----------------------------------------------------------------
+app.use("/api/webhooks", webhooksRouter);
 app.use("/api/surveys", requireAuth, surveysRouter);
 app.use("/api/categories", requireAuth, categoriesRouter);
 app.use("/api/users", usersRouter);

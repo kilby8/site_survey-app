@@ -86,6 +86,18 @@ router.get("/openapi.json", (_req: Request, res: Response) => {
           },
         },
       },
+      "/webhooks/survey-complete": {
+        post: {
+          summary: "Inbound survey.completed webhook receiver",
+          responses: {
+            "200": { description: "Accepted or duplicate" },
+            "202": { description: "Accepted pre-ingest mode" },
+            "400": { description: "Invalid payload" },
+            "401": { description: "Signature validation failed" },
+            "501": { description: "Validated but ingest not implemented" },
+          },
+        },
+      },
       "/surveys": {
         get: {
           summary: "List surveys",

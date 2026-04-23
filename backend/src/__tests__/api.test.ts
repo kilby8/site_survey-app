@@ -1,5 +1,6 @@
 import request from "supertest";
 import jwt from "jsonwebtoken";
+import { createHmac } from "crypto";
 import app from "../index";
 import { pool } from "../database";
 import {
@@ -1349,5 +1350,78 @@ describe("GET /api/metrics", () => {
     expect(res.body.counters).toBeDefined();
     expect(typeof res.body.counters.api_requests_total).toBe("number");
     expect(res.body.timings?.http_request_duration_ms).toBeDefined();
+  });
+});
+
+// ----------------------------------------------------------------
+// Webhook Inbound Receiver
+// ----------------------------------------------------------------
+describe("POST /api/webhooks/survey-complete", () => {
+  const originalSecret = process.env.SURVEY_WEBHOOK_SECRET;
+  const originalPreIngest = process.env.WEBHOOK_PRE_INGEST_ACCEPT_202;
+
+  const payload = {
+    event: "survey.completed",
+    event_id: "evt-test-1001",
+    occurred_at: "2026-04-23T18:25:43.000Z",
+    survey_id: "4f2a587d-4d18-4f8c-8f88-9ed6d26ff7c0",
+    status: "submitted",
+    completed_at: "2026-04-23T18:25:41.382Z",
+  };
+
+  function signatureFor(timestamp: string, rawBody: string, secret: string): string {
+    const digest = createHmac("sha256", secret)
+      .update(`${timestamp}.${rawBody}`)
+      .digest("hex");
+    return `sha256=${digest}`;
+  }
+
+  beforeEach(() => {
+    process.env.SURVEY_WEBHOOK_SECRET = "whsec_test_suite_secret";
+    process.env.WEBHOOK_PRE_INGEST_ACCEPT_202 = "true";
+  });
+
+  afterEach(async () => {
+    process.env.SURVEY_WEBHOOK_SECRET = originalSecret;
+    process.env.WEBHOOK_PRE_INGEST_ACCEPT_202 = originalPreIngest;
+    try {
+      await pool.query("DELETE FROM webhook_inbound_events WHERE event_id LIKE 'evt-test-%'");
+    } catch {
+      // table may not exist when a test exits before first valid insert
+    }
+  });
+
+  it("returns 401 on invalid signature", async () => {
+    const rawBody = JSON.stringify(payload);
+    const timestamp = new Date().toISOString();
+
+    const res = await request(app)
+      .post("/api/webhooks/survey-complete")
+      .set("X-Survey-Timestamp", timestamp)
+      .set("X-Survey-Event-Id", payload.event_id)
+      .set("X-Survey-Signature", "sha256=deadbeef")
+      .set("Content-Type", "application/json")
+      .send(rawBody);
+
+    expect(res.status).toBe(401);
+    expect(res.body.error?.code).toBe("SIGNATURE_MISMATCH");
+  });
+
+  it("returns 202 for valid signature in pre-ingest mode", async () => {
+    const rawBody = JSON.stringify(payload);
+    const timestamp = new Date().toISOString();
+    const signature = signatureFor(timestamp, rawBody, process.env.SURVEY_WEBHOOK_SECRET as string);
+
+    const res = await request(app)
+      .post("/api/webhooks/survey-complete")
+      .set("X-Survey-Timestamp", timestamp)
+      .set("X-Survey-Event-Id", payload.event_id)
+      .set("X-Survey-Signature", signature)
+      .set("Content-Type", "application/json")
+      .send(rawBody);
+
+    expect(res.status).toBe(202);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.code).toBe("ACCEPTED_PRE_INGEST");
   });
 });
