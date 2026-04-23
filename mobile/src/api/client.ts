@@ -211,6 +211,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 const AUTH_TOKEN_KEY = "site-survey.auth.token.v2";
+const REFRESH_TOKEN_KEY = "site-survey.auth.refresh-token.v1";
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   try {
@@ -219,6 +220,48 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     return { Authorization: `Bearer ${token}` };
   } catch {
     return {};
+  }
+}
+
+async function fetchWithAuthRetry(
+  path: string,
+  init: RequestInit,
+  options?: { timeoutMs?: number },
+): Promise<Response> {
+  const firstResponse = await fetchWithFallback(path, init, options);
+  if (firstResponse.status !== 401) {
+    return firstResponse;
+  }
+
+  let refreshToken: string | null = null;
+  try {
+    refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+  } catch {
+    refreshToken = null;
+  }
+
+  if (!refreshToken) {
+    return firstResponse;
+  }
+
+  try {
+    const refreshed = await refreshAccessToken(refreshToken);
+    await AsyncStorage.setItem(AUTH_TOKEN_KEY, refreshed.token);
+    await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshed.refreshToken);
+
+    const retryHeaders = new Headers(init.headers as HeadersInit | undefined);
+    retryHeaders.set("Authorization", `Bearer ${refreshed.token}`);
+
+    return fetchWithFallback(
+      path,
+      {
+        ...init,
+        headers: retryHeaders,
+      },
+      options,
+    );
+  } catch {
+    return firstResponse;
   }
 }
 
@@ -325,7 +368,7 @@ export async function postSurvey(
   survey: SurveyFormData & { id: string },
 ): Promise<Survey> {
   const authHeaders = await getAuthHeaders();
-  const res = await fetchWithFallback("/api/surveys", {
+  const res = await fetchWithAuthRetry("/api/surveys", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -382,7 +425,7 @@ export async function uploadPhotos(
   form.append("labels", JSON.stringify(labels));
 
   const authHeaders = await getAuthHeaders();
-  const res = await fetchWithFallback(
+  const res = await fetchWithAuthRetry(
     `/api/surveys/${surveyId}/photos`,
     {
       method: "POST",
@@ -401,7 +444,7 @@ export async function batchSync(payload: {
   surveys: Array<{ action: "create" | "update"; survey: Survey }>;
 }): Promise<ApiSyncResponse> {
   const authHeaders = await getAuthHeaders();
-  const res = await fetchWithFallback("/api/surveys/sync", {
+  const res = await fetchWithAuthRetry("/api/surveys/sync", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders },
     body: JSON.stringify(payload),
