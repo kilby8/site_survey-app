@@ -72,6 +72,25 @@ function verifyPassword(password: string, stored: string): boolean {
   return timingSafeEqual(actual, expected);
 }
 
+async function verifyLegacyBcryptPasswordInDb(
+  email: string,
+  password: string,
+): Promise<boolean> {
+  try {
+    const { rows } = await pool.query<{ valid: boolean }>(
+      `SELECT (password_hash = crypt($2, password_hash)) AS valid
+         FROM users
+        WHERE email = $1
+        LIMIT 1`,
+      [email, password],
+    );
+
+    return Boolean(rows[0]?.valid);
+  } catch {
+    return false;
+  }
+}
+
 export async function getUserById(userId: string): Promise<AuthUserRecord | null> {
   await ensureAuthTables();
 
@@ -140,7 +159,27 @@ export async function verifyUserCredentials(
 
   const row = rows[0];
   if (!row) return null;
-  if (!verifyPassword(password, row.password_hash)) return null;
+
+  const storedHash = row.password_hash;
+  let isValid = false;
+
+  if (storedHash.includes(':')) {
+    isValid = verifyPassword(password, storedHash);
+  } else if (storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$') || storedHash.startsWith('$2y$')) {
+    isValid = await verifyLegacyBcryptPasswordInDb(email, password);
+
+    if (isValid) {
+      await pool.query(
+        `UPDATE users
+            SET password_hash = $2,
+                updated_at = NOW()
+          WHERE id = $1`,
+        [row.id, hashPassword(password)],
+      );
+    }
+  }
+
+  if (!isValid) return null;
 
   return {
     id: row.id,
