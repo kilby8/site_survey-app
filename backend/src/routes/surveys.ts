@@ -73,6 +73,43 @@ function normalizeCategoryName(
   return null;
 }
 
+interface Queryable {
+  query: (
+    text: string,
+    params?: unknown[],
+  ) => Promise<{ rows: Array<Record<string, unknown>> }>;
+}
+
+async function resolveExistingProjectId(
+  db: Queryable,
+  value: unknown,
+): Promise<string | null> {
+  const candidate = normalizeOptionalUuid(value);
+  if (!candidate) return null;
+
+  const { rows } = await db.query(
+    `SELECT 1 FROM projects WHERE id = $1 LIMIT 1`,
+    [candidate],
+  );
+
+  return rows.length > 0 ? candidate : null;
+}
+
+async function resolveExistingCategoryId(
+  db: Queryable,
+  value: unknown,
+): Promise<string | null> {
+  const candidate = normalizeOptionalUuid(value);
+  if (!candidate) return null;
+
+  const { rows } = await db.query(
+    `SELECT 1 FROM categories WHERE id = $1 LIMIT 1`,
+    [candidate],
+  );
+
+  return rows.length > 0 ? candidate : null;
+}
+
 function respondValidationError(
   res: Response,
   message: string,
@@ -849,8 +886,14 @@ router.post("/sync", async (req: Request, res: Response) => {
           const surveyId: string =
             (survey.id as string) || (idRows[0].id as string);
 
-          const normalizedProjectId = normalizeOptionalUuid(survey.project_id);
-          const normalizedCategoryId = normalizeOptionalUuid(survey.category_id);
+          const normalizedProjectId = await resolveExistingProjectId(
+            client,
+            survey.project_id,
+          );
+          const normalizedCategoryId = await resolveExistingCategoryId(
+            client,
+            survey.category_id,
+          );
           const normalizedCategoryName = normalizeCategoryName(
             survey.category_id,
             survey.category_name,
@@ -930,8 +973,14 @@ router.post("/sync", async (req: Request, res: Response) => {
           results.push({ id: surveyId, action: "created", success: true });
         } else if (action === "update" && survey.id) {
           const coords = extractCoords(survey);
-          const normalizedProjectId = normalizeOptionalUuid(survey.project_id);
-          const normalizedCategoryId = normalizeOptionalUuid(survey.category_id);
+          const normalizedProjectId = await resolveExistingProjectId(
+            client,
+            survey.project_id,
+          );
+          const normalizedCategoryId = await resolveExistingCategoryId(
+            client,
+            survey.category_id,
+          );
           const normalizedCategoryName = normalizeCategoryName(
             survey.category_id,
             survey.category_name,
@@ -1406,13 +1455,6 @@ router.post("/", async (req: Request, res: Response) => {
     return;
   }
 
-  const normalizedProjectId = normalizeOptionalUuid(body.project_id);
-  const normalizedCategoryId = normalizeOptionalUuid(body.category_id);
-  const normalizedCategoryName = normalizeCategoryName(
-    body.category_id,
-    body.category_name,
-  );
-
   if (
     !body.project_name?.trim() ||
     !body.inspector_name?.trim() ||
@@ -1427,6 +1469,19 @@ router.post("/", async (req: Request, res: Response) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    const normalizedProjectId = await resolveExistingProjectId(
+      client,
+      body.project_id,
+    );
+    const normalizedCategoryId = await resolveExistingCategoryId(
+      client,
+      body.category_id,
+    );
+    const normalizedCategoryName = normalizeCategoryName(
+      body.category_id,
+      body.category_name,
+    );
 
     // Allow the client to supply an ID (for offline-first mobile sync)
     const { rows: idRows } = await client.query(
@@ -1547,8 +1602,14 @@ router.put("/:id", async (req: Request, res: Response) => {
     }
 
     const coords = extractCoords(body as SurveyInput);
-    const normalizedProjectId = normalizeOptionalUuid(body.project_id);
-    const normalizedCategoryId = normalizeOptionalUuid(body.category_id);
+    const normalizedProjectId = await resolveExistingProjectId(
+      client,
+      body.project_id,
+    );
+    const normalizedCategoryId = await resolveExistingCategoryId(
+      client,
+      body.category_id,
+    );
     const normalizedCategoryName = normalizeCategoryName(
       body.category_id,
       body.category_name,
