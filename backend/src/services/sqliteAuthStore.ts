@@ -1,6 +1,5 @@
-import path from 'path';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'crypto';
-import Database from 'better-sqlite3';
+import { pool } from '../database';
 
 export interface AuthUserRecord {
   id: string;
@@ -18,44 +17,43 @@ export interface RefreshTokenWithUserRecord {
   full_name: string;
 }
 
-let dbReady = false;
-const dbPath = process.env.SQLITE_AUTH_DB_PATH || path.join(__dirname, '..', '..', 'auth.sqlite');
-const db = new Database(dbPath);
+let authTablesReady: Promise<void> | null = null;
 
-db.pragma('journal_mode = WAL');
+function ensureAuthTables(): Promise<void> {
+  if (!authTablesReady) {
+    authTablesReady = (async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          email VARCHAR(255) NOT NULL UNIQUE,
+          password_hash TEXT NOT NULL,
+          full_name VARCHAR(255) NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
 
-actionEnsureReady();
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS refresh_tokens (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          token_hash TEXT NOT NULL UNIQUE,
+          expires_at TIMESTAMPTZ NOT NULL,
+          revoked BOOLEAN NOT NULL DEFAULT FALSE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
 
-function actionEnsureReady(): void {
-  if (dbReady) return;
+      await pool.query('CREATE INDEX IF NOT EXISTS users_email_idx ON users(email)');
+      await pool.query('CREATE INDEX IF NOT EXISTS refresh_tokens_hash_idx ON refresh_tokens(token_hash)');
+      await pool.query('CREATE INDEX IF NOT EXISTS refresh_tokens_user_idx ON refresh_tokens(user_id)');
+    })().catch((error) => {
+      authTablesReady = null;
+      throw error;
+    });
+  }
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id            TEXT PRIMARY KEY,
-      email         TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      full_name     TEXT NOT NULL,
-      created_at    TEXT NOT NULL,
-      updated_at    TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS users_email_idx ON users(email);
-
-    CREATE TABLE IF NOT EXISTS refresh_tokens (
-      id          TEXT PRIMARY KEY,
-      user_id     TEXT NOT NULL,
-      token_hash  TEXT NOT NULL UNIQUE,
-      expires_at  TEXT NOT NULL,
-      revoked     INTEGER NOT NULL DEFAULT 0,
-      created_at  TEXT NOT NULL,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS refresh_tokens_hash_idx ON refresh_tokens(token_hash);
-    CREATE INDEX IF NOT EXISTS refresh_tokens_user_idx ON refresh_tokens(user_id);
-  `);
-
-  dbReady = true;
+  return authTablesReady;
 }
 
 function hashPassword(password: string): string {
@@ -75,31 +73,31 @@ function verifyPassword(password: string, stored: string): boolean {
 }
 
 export async function getUserById(userId: string): Promise<AuthUserRecord | null> {
-  actionEnsureReady();
-  const row = db
-    .prepare(
-      `SELECT id, email, full_name, created_at
-       FROM users
-       WHERE id = ?
-       LIMIT 1`,
-    )
-    .get(userId) as AuthUserRecord | undefined;
+  await ensureAuthTables();
 
-  return row || null;
+  const { rows } = await pool.query<AuthUserRecord>(
+    `SELECT id::text, email, full_name, created_at::text
+     FROM users
+     WHERE id = $1
+     LIMIT 1`,
+    [userId],
+  );
+
+  return rows[0] || null;
 }
 
 export async function getUserByEmail(email: string): Promise<AuthUserRecord | null> {
-  actionEnsureReady();
-  const row = db
-    .prepare(
-      `SELECT id, email, full_name, created_at
-       FROM users
-       WHERE email = ?
-       LIMIT 1`,
-    )
-    .get(email) as AuthUserRecord | undefined;
+  await ensureAuthTables();
 
-  return row || null;
+  const { rows } = await pool.query<AuthUserRecord>(
+    `SELECT id::text, email, full_name, created_at::text
+     FROM users
+     WHERE email = $1
+     LIMIT 1`,
+    [email],
+  );
+
+  return rows[0] || null;
 }
 
 export async function createUser(
@@ -107,44 +105,40 @@ export async function createUser(
   password: string,
   fullName: string,
 ): Promise<AuthUserRecord> {
-  actionEnsureReady();
+  await ensureAuthTables();
 
-  const now = new Date().toISOString();
   const id = randomUUID();
   const passwordHash = hashPassword(password);
 
-  db.prepare(
-    `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(id, email, passwordHash, fullName, now, now);
+  const { rows } = await pool.query<AuthUserRecord>(
+    `INSERT INTO users (id, email, password_hash, full_name)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id::text, email, full_name, created_at::text`,
+    [id, email, passwordHash, fullName],
+  );
 
-  return {
-    id,
-    email,
-    full_name: fullName,
-    created_at: now,
-  };
+  return rows[0];
 }
 
 export async function verifyUserCredentials(
   email: string,
   password: string,
 ): Promise<AuthUserRecord | null> {
-  actionEnsureReady();
+  await ensureAuthTables();
 
-  const row = db
-    .prepare(
-      `SELECT id, email, full_name, created_at, password_hash
-       FROM users
-       WHERE email = ?
-       LIMIT 1`,
-    )
-    .get(email) as
-    | (AuthUserRecord & {
-        password_hash: string;
-      })
-    | undefined;
+  const { rows } = await pool.query<
+    AuthUserRecord & {
+      password_hash: string;
+    }
+  >(
+    `SELECT id::text, email, full_name, created_at::text, password_hash
+     FROM users
+     WHERE email = $1
+     LIMIT 1`,
+    [email],
+  );
 
+  const row = rows[0];
   if (!row) return null;
   if (!verifyPassword(password, row.password_hash)) return null;
 
@@ -160,21 +154,17 @@ export async function updateUserPasswordByEmail(
   email: string,
   newPassword: string,
 ): Promise<{ id: string } | null> {
-  actionEnsureReady();
+  await ensureAuthTables();
 
-  const user = db
-    .prepare('SELECT id FROM users WHERE email = ? LIMIT 1')
-    .get(email) as { id: string } | undefined;
-
-  if (!user) return null;
-
-  db.prepare(
+  const { rows } = await pool.query<{ id: string }>(
     `UPDATE users
-     SET password_hash = ?, updated_at = ?
-     WHERE email = ?`,
-  ).run(hashPassword(newPassword), new Date().toISOString(), email);
+     SET password_hash = $2, updated_at = NOW()
+     WHERE email = $1
+     RETURNING id::text`,
+    [email, hashPassword(newPassword)],
+  );
 
-  return user;
+  return rows[0] || null;
 }
 
 export async function insertRefreshToken(
@@ -182,55 +172,59 @@ export async function insertRefreshToken(
   tokenHash: string,
   expiresAt: Date,
 ): Promise<void> {
-  actionEnsureReady();
+  await ensureAuthTables();
 
-  db.prepare(
-    `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, revoked, created_at)
-     VALUES (?, ?, ?, ?, 0, ?)`,
-  ).run(randomUUID(), userId, tokenHash, expiresAt.toISOString(), new Date().toISOString());
+  await pool.query(
+    `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, revoked)
+     VALUES ($1, $2, $3, $4, FALSE)`,
+    [randomUUID(), userId, tokenHash, expiresAt.toISOString()],
+  );
 }
 
 export async function getRefreshTokenWithUserByHash(
   tokenHash: string,
 ): Promise<RefreshTokenWithUserRecord | null> {
-  actionEnsureReady();
+  await ensureAuthTables();
 
-  const row = db
-    .prepare(
-      `SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked,
-              u.email, u.full_name
-       FROM refresh_tokens rt
-       JOIN users u ON u.id = rt.user_id
-       WHERE rt.token_hash = ?
-       LIMIT 1`,
-    )
-    .get(tokenHash) as RefreshTokenWithUserRecord | undefined;
+  const { rows } = await pool.query<RefreshTokenWithUserRecord>(
+    `SELECT rt.id::text,
+            rt.user_id::text,
+            rt.expires_at::text,
+            CASE WHEN rt.revoked THEN 1 ELSE 0 END AS revoked,
+            u.email,
+            u.full_name
+     FROM refresh_tokens rt
+     JOIN users u ON u.id = rt.user_id
+     WHERE rt.token_hash = $1
+     LIMIT 1`,
+    [tokenHash],
+  );
 
-  return row || null;
+  return rows[0] || null;
 }
 
 export async function revokeRefreshTokenById(tokenId: string): Promise<void> {
-  actionEnsureReady();
-  db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE id = ?').run(tokenId);
+  await ensureAuthTables();
+  await pool.query('UPDATE refresh_tokens SET revoked = TRUE WHERE id = $1', [tokenId]);
 }
 
 export async function revokeRefreshTokensByUserId(userId: string): Promise<void> {
-  actionEnsureReady();
-  db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?').run(userId);
+  await ensureAuthTables();
+  await pool.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [userId]);
 }
 
 export async function revokeRefreshTokenByHash(tokenHash: string): Promise<void> {
-  actionEnsureReady();
-  db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ?').run(tokenHash);
+  await ensureAuthTables();
+  await pool.query('UPDATE refresh_tokens SET revoked = TRUE WHERE token_hash = $1', [tokenHash]);
 }
 
 export async function deleteRefreshTokensByUserId(userId: string): Promise<void> {
-  actionEnsureReady();
-  db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(userId);
+  await ensureAuthTables();
+  await pool.query('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
 }
 
 export async function deleteUserById(userId: string): Promise<boolean> {
-  actionEnsureReady();
-  const result = db.prepare('DELETE FROM users WHERE id = ?').run(userId);
-  return result.changes > 0;
+  await ensureAuthTables();
+  const result = await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+  return (result.rowCount ?? 0) > 0;
 }
