@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { Survey, ChecklistItem, Photo, SurveyStatus } from '../types/survey';
+import type { Survey, ChecklistItem, Photo, SurveyStatus, FallbackProjectTemplate } from '../types/survey';
 import { DEFAULT_CHECKLIST_ITEMS } from '../types/survey';
-import { createSurvey, fetchSurvey, updateSurvey } from '../api/surveyApi';
+import { createSurvey, fetchFallbackProjectTemplates, fetchSurvey, updateSurvey } from '../api/surveyApi';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import ChecklistItemComponent from './ChecklistItem';
@@ -38,9 +38,26 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ surveyId, onSaved, onCancel }) 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [projectTemplates, setProjectTemplates] = useState<FallbackProjectTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
 
   const geo = useGeolocation();
   const { isOnline, enqueue } = useOfflineSync();
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchFallbackProjectTemplates()
+      .then((templates) => {
+        if (!cancelled) setProjectTemplates(templates);
+      })
+      .catch(() => {
+        if (!cancelled) setProjectTemplates([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!surveyId) return;
@@ -117,6 +134,39 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ surveyId, onSaved, onCancel }) 
     setFormData(prev => ({ ...prev, photos: prev.photos.filter(p => p.id !== id) }));
   }, []);
 
+  const handleTemplateSelection = useCallback((templateId: string) => {
+    setSelectedTemplateId(templateId);
+
+    if (!templateId) {
+      return;
+    }
+
+    const template = projectTemplates.find((p) => p.id === templateId);
+    if (!template) {
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      title: template.project_name || prev.title,
+      siteName: template.site_name || prev.siteName,
+      siteAddress: template.site_address || prev.siteAddress,
+      inspectorName: template.inspector_name || prev.inspectorName,
+      notes: template.notes || prev.notes,
+      gpsCoordinates:
+        typeof template.latitude === 'number' && typeof template.longitude === 'number'
+          ? {
+              latitude: template.latitude,
+              longitude: template.longitude,
+              accuracy:
+                typeof template.gps_accuracy === 'number'
+                  ? template.gps_accuracy
+                  : undefined,
+            }
+          : prev.gpsCoordinates,
+    }));
+  }, [projectTemplates]);
+
   const handleSave = useCallback(async (status: SurveyStatus) => {
     setSaving(true);
     setError(null);
@@ -167,6 +217,21 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ surveyId, onSaved, onCancel }) 
       {/* Basic Info */}
       <section className="form-section">
         <h2 className="section-title">Survey Information</h2>
+        <div className="form-group">
+          <label htmlFor="projectTemplate">Project Template</label>
+          <select
+            id="projectTemplate"
+            value={selectedTemplateId}
+            onChange={e => handleTemplateSelection(e.target.value)}
+          >
+            <option value="">Select existing project...</option>
+            {projectTemplates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.project_name || '(Unnamed Project)'}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="form-group">
           <label htmlFor="title">Survey Title *</label>
           <input

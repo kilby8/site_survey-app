@@ -1,6 +1,24 @@
 export type SurveyStatus = 'draft' | 'submitted';
 export type ChecklistStatus = 'pass' | 'fail' | 'n/a' | 'pending';
 
+export interface FallbackProjectTemplate {
+  id: string;
+  project_id: string;
+  project_name: string | null;
+  site_name: string | null;
+  site_address: string | null;
+  inspector_name: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  notes: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  gps_accuracy: number | null;
+  metadata: unknown;
+  status: string;
+  created_at: string;
+}
+
 export interface ChecklistItem {
   id: string;
   label: string;

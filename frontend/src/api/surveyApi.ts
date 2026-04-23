@@ -1,4 +1,4 @@
-import type { Survey } from '../types/survey';
+import type { Survey, FallbackProjectTemplate } from '../types/survey';
 import { apiFetch } from './apiClient';
 
 function handleApiError(res: Response, fallback: string): never {
@@ -40,6 +40,13 @@ export async function updateSurvey(id: string, survey: Partial<Survey>): Promise
   });
   if (!res.ok) handleApiError(res, `Failed to update survey: ${res.statusText}`);
   return res.json() as Promise<Survey>;
+}
+
+export async function fetchFallbackProjectTemplates(): Promise<FallbackProjectTemplate[]> {
+  const res = await apiFetch('/fallback-surveys/projects');
+  if (!res.ok) handleApiError(res, `Failed to fetch project templates: ${res.statusText}`);
+  const data = await res.json();
+  return (data.projects ?? []) as FallbackProjectTemplate[];
 }
 
 export async function checkHealth(): Promise<boolean> {

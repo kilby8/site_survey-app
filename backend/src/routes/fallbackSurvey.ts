@@ -340,4 +340,45 @@ router.post("/api/fallback-surveys/submit", async (req: Request, res: Response) 
   }
 });
 
+router.get("/api/fallback-surveys/projects", async (_req: Request, res: Response) => {
+  try {
+    await ensureFallbackSurveysTable();
+
+    const { rows } = await pool.query(
+      `SELECT
+         id::text,
+         project_id,
+         project_name,
+         site_name,
+         site_address,
+         inspector_name,
+         category_id,
+         category_name,
+         notes,
+         latitude,
+         longitude,
+         gps_accuracy,
+         metadata,
+         status,
+         created_at::text
+       FROM fallback_surveys
+       ORDER BY created_at DESC
+       LIMIT 500`,
+    );
+
+    res.json({
+      projects: rows,
+      total: rows.length,
+    });
+  } catch (error) {
+    console.error("GET /api/fallback-surveys/projects error:", error);
+    res.status(500).json({
+      error: {
+        code: "FALLBACK_PROJECTS_FAILED",
+        message: "Failed to load fallback project templates",
+      },
+    });
+  }
+});
+
 export default router;

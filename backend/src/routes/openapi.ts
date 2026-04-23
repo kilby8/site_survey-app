@@ -108,6 +108,15 @@ router.get("/openapi.json", (_req: Request, res: Response) => {
           },
         },
       },
+      "/fallback-surveys/projects": {
+        get: {
+          summary: "List fallback project templates for survey prefill",
+          responses: {
+            "200": { description: "Template list" },
+            "500": { description: "Failed to load templates" },
+          },
+        },
+      },
       "/surveys": {
         get: {
           summary: "List surveys",
