@@ -897,6 +897,8 @@ router.post("/sync", async (req: Request, res: Response) => {
     }>;
   };
 
+  await ensureSurveySoftDeleteColumn();
+
   if (!Array.isArray(surveys) || surveys.length === 0) {
     res.status(400).json({ error: "surveys array is required" });
     return;
