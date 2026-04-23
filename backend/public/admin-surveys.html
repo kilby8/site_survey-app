@@ -3,117 +3,173 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Synced Site Surveys</title>
+    <title>SolarPro Admin • Synced Site Surveys</title>
     <style>
       :root {
-        --bg: #f3f6fb;
-        --card: #ffffff;
-        --text: #0f172a;
-        --muted: #64748b;
-        --line: #e2e8f0;
-        --primary: #0f766e;
-        --primary-2: #0d9488;
-        --danger: #b91c1c;
-        --ok: #166534;
-        --shadow: 0 10px 26px rgba(15, 23, 42, 0.07);
+        --bg: #070b14;
+        --bg-soft: #0f172a;
+        --card: #101a2e;
+        --card-2: #0f1f3d;
+        --line: rgba(148, 163, 184, 0.25);
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --primary: #22d3ee;
+        --primary-2: #06b6d4;
+        --violet: #a78bfa;
+        --danger: #ef4444;
+        --ok: #22c55e;
+        --glow: 0 0 0 1px rgba(34, 211, 238, 0.2), 0 14px 45px rgba(2, 8, 23, 0.55);
       }
 
       * { box-sizing: border-box; }
 
       body {
         margin: 0;
-        background: radial-gradient(circle at top left, #ffffff 0%, var(--bg) 55%);
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 15% -10%, rgba(34, 211, 238, 0.22), transparent 42%),
+          radial-gradient(circle at 90% 0%, rgba(167, 139, 250, 0.2), transparent 40%),
+          linear-gradient(180deg, #060a13 0%, #090f1f 45%, #070b14 100%);
         color: var(--text);
         font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
 
       .wrap {
-        max-width: 1320px;
+        max-width: 1380px;
         margin: 0 auto;
-        padding: 24px 16px 32px;
+        padding: 24px 18px 34px;
       }
 
       .hero {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
         margin-bottom: 14px;
       }
 
       .hero h1 {
         margin: 0;
-        font-size: clamp(1.35rem, 3.5vw, 2rem);
+        letter-spacing: 0.2px;
+        font-size: clamp(1.4rem, 2.8vw, 2.15rem);
+        background: linear-gradient(90deg, #dbeafe, #67e8f9 40%, #c4b5fd 90%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
       }
 
       .hero p {
-        margin: 8px 0 0;
+        margin: 6px 0 0;
         color: var(--muted);
       }
 
+      .badge {
+        border: 1px solid rgba(34, 211, 238, 0.35);
+        background: rgba(8, 47, 73, 0.5);
+        color: #67e8f9;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
       .card {
-        background: var(--card);
+        background: linear-gradient(180deg, rgba(16, 26, 46, 0.96), rgba(15, 32, 62, 0.94));
         border: 1px solid var(--line);
         border-radius: 14px;
-        box-shadow: var(--shadow);
+        box-shadow: var(--glow);
         padding: 14px;
         margin-bottom: 14px;
       }
 
+      .auth-card {
+        max-width: 720px;
+        margin-inline: auto;
+        padding: 20px;
+      }
+
+      .auth-title {
+        margin: 0;
+        font-size: 1.2rem;
+      }
+
+      .auth-sub {
+        margin: 8px 0 14px;
+        color: var(--muted);
+      }
+
       .row {
         display: flex;
-        gap: 8px;
+        gap: 9px;
         flex-wrap: wrap;
         align-items: center;
       }
 
-      input,
-      button,
-      select {
+      input, select, button {
         border-radius: 10px;
-        border: 1px solid var(--line);
+        border: 1px solid rgba(148, 163, 184, 0.4);
         padding: 10px 12px;
         font-size: 14px;
       }
 
-      input,
-      select {
-        background: #fff;
+      input, select {
+        background: rgba(15, 23, 42, 0.75);
         color: var(--text);
+        min-height: 42px;
       }
+
+      input { flex: 1; min-width: 200px; }
 
       button {
-        cursor: pointer;
         border: none;
-        background: var(--primary);
-        color: #fff;
-        font-weight: 600;
+        background: linear-gradient(90deg, var(--primary), var(--primary-2));
+        color: #022c3a;
+        font-weight: 800;
+        min-height: 42px;
+        cursor: pointer;
       }
 
-      button:hover { background: var(--primary-2); }
+      button:hover { filter: brightness(1.05); }
       button:disabled { opacity: 0.6; cursor: not-allowed; }
 
-      .btn-danger { background: var(--danger); }
-      .btn-danger:hover { background: #991b1b; }
+      .btn-danger {
+        background: linear-gradient(90deg, #f87171, var(--danger));
+        color: #fff;
+      }
 
       .pill {
-        display: inline-flex;
-        align-items: center;
-        border: 1px solid var(--line);
+        border: 1px solid rgba(167, 139, 250, 0.45);
+        background: rgba(88, 28, 135, 0.35);
+        color: #ddd6fe;
         border-radius: 999px;
         padding: 4px 10px;
         font-size: 12px;
-        color: var(--muted);
-        background: #f8fafc;
+        font-weight: 600;
       }
 
-      .msg {
-        min-height: 20px;
-        margin-top: 8px;
-        font-size: 13px;
+      .msg { min-height: 22px; margin-top: 8px; font-size: 13px; }
+      .msg.error { color: #fca5a5; }
+      .msg.ok { color: #86efac; }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 8px;
+        margin: 10px 0;
       }
 
-      .msg.error { color: var(--danger); }
-      .msg.ok { color: var(--ok); }
+      .stat {
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 10px;
+        background: rgba(2, 6, 23, 0.35);
+        padding: 9px 10px;
+      }
+
+      .stat .k { color: var(--muted); font-size: 12px; }
+      .stat .v { font-size: 18px; font-weight: 800; margin-top: 3px; }
 
       .table-shell {
-        border: 1px solid var(--line);
+        border: 1px solid rgba(148, 163, 184, 0.25);
         border-radius: 12px;
         overflow: auto;
       }
@@ -121,77 +177,80 @@
       table {
         width: 100%;
         border-collapse: collapse;
+        min-width: 1040px;
         font-size: 13px;
-        min-width: 980px;
       }
 
-      th,
-      td {
+      th, td {
         text-align: left;
-        border-bottom: 1px solid var(--line);
-        padding: 10px 10px;
+        padding: 10px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
         vertical-align: top;
       }
 
       th {
         position: sticky;
         top: 0;
+        background: #0a1224;
+        color: #cbd5e1;
         z-index: 1;
-        background: #f8fafc;
-        color: #334155;
       }
 
-      tr:hover td { background: #fafcfe; }
-
+      tr:hover td { background: rgba(148, 163, 184, 0.07); }
       .num { text-align: right; }
 
       .project-link {
-        color: #0f766e;
+        color: #67e8f9;
         background: transparent;
         border: none;
         padding: 0;
         margin: 0;
         font-size: 13px;
-        font-weight: 600;
+        font-weight: 700;
         text-decoration: underline;
       }
 
-      .project-link:hover { color: #0d9488; }
+      .project-link:hover { color: #a5f3fc; }
 
       .status {
         display: inline-flex;
         border-radius: 999px;
-        padding: 3px 8px;
-        font-size: 12px;
-        font-weight: 700;
-        text-transform: lowercase;
+        padding: 4px 9px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.3px;
       }
 
-      .status.draft { background: #e2e8f0; color: #334155; }
-      .status.submitted { background: #dcfce7; color: #166534; }
-      .status.synced { background: #dbeafe; color: #1d4ed8; }
+      .status.draft { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
+      .status.submitted { background: rgba(34, 197, 94, 0.22); color: #86efac; }
+      .status.synced { background: rgba(34, 211, 238, 0.22); color: #67e8f9; }
+      .status.fail { background: rgba(239, 68, 68, 0.25); color: #fca5a5; }
+      .status.pass { background: rgba(34, 197, 94, 0.22); color: #86efac; }
+      .status.pending { background: rgba(245, 158, 11, 0.22); color: #fde68a; }
+      .status.n\/a { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
 
       .details-modal {
         position: fixed;
         inset: 0;
-        background: rgba(15, 23, 42, 0.5);
+        background: rgba(2, 6, 23, 0.68);
         display: none;
         align-items: center;
         justify-content: center;
-        padding: 14px;
-        z-index: 50;
+        padding: 16px;
+        z-index: 55;
+        backdrop-filter: blur(4px);
       }
 
       .details-modal.open { display: flex; }
 
       .details-panel {
-        width: min(1060px, 100%);
-        max-height: 90vh;
+        width: min(1120px, 100%);
+        max-height: 92vh;
         overflow: auto;
-        background: #fff;
+        background: linear-gradient(180deg, #0c1528, #0c1a34);
+        border: 1px solid rgba(148, 163, 184, 0.28);
         border-radius: 14px;
-        border: 1px solid var(--line);
-        box-shadow: var(--shadow);
+        box-shadow: var(--glow);
         padding: 14px;
       }
 
@@ -199,13 +258,13 @@
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        gap: 8px;
+        gap: 12px;
         margin-bottom: 12px;
       }
 
       .details-title {
         margin: 0;
-        font-size: 1.2rem;
+        font-size: 1.22rem;
       }
 
       .details-sub {
@@ -217,38 +276,24 @@
       .grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
+        gap: 8px;
       }
 
       .kv {
-        border: 1px solid var(--line);
+        border: 1px solid rgba(148, 163, 184, 0.24);
         border-radius: 10px;
-        padding: 10px;
-        background: #fafcff;
+        background: rgba(2, 6, 23, 0.32);
+        padding: 9px;
       }
 
-      .kv .k {
-        font-size: 12px;
-        color: var(--muted);
-        margin-bottom: 4px;
-      }
+      .kv .k { font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+      .kv .v { font-size: 14px; word-break: break-word; }
 
-      .kv .v {
-        font-size: 14px;
-        word-break: break-word;
-      }
-
-      .section {
-        margin-top: 12px;
-      }
-
-      .section h3 {
-        margin: 0 0 8px;
-        font-size: 14px;
-      }
+      .section { margin-top: 12px; }
+      .section h3 { margin: 0 0 8px; font-size: 13px; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.5px; }
 
       .list {
-        border: 1px solid var(--line);
+        border: 1px solid rgba(148, 163, 184, 0.23);
         border-radius: 10px;
         overflow: hidden;
       }
@@ -258,25 +303,29 @@
         grid-template-columns: 1fr auto;
         gap: 10px;
         padding: 10px;
-        border-bottom: 1px solid var(--line);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.16);
         font-size: 13px;
       }
 
       .list-item:last-child { border-bottom: none; }
 
+      a { color: #67e8f9; }
+
       pre {
         margin: 0;
-        background: #0f172a;
-        color: #e2e8f0;
+        background: #020617;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        color: #dbeafe;
         border-radius: 10px;
         padding: 10px;
         font-size: 12px;
         overflow: auto;
       }
 
+      .muted { color: var(--muted); }
       .hidden { display: none !important; }
 
-      @media (max-width: 800px) {
+      @media (max-width: 900px) {
         .grid { grid-template-columns: 1fr; }
       }
     </style>
@@ -284,15 +333,20 @@
   <body>
     <div class="wrap">
       <section class="hero">
-        <h1>Synced Site Surveys</h1>
-        <p>Standalone admin portal for production survey records.</p>
+        <div>
+          <h1>SolarPro Admin Intelligence Console</h1>
+          <p>Deep-dive synced survey visibility with production drill-down.</p>
+        </div>
+        <span class="badge">Admin Only</span>
       </section>
 
-      <section class="card" id="authCard">
+      <section class="card auth-card" id="authCard">
+        <h2 class="auth-title">Admin Sign In</h2>
+        <p class="auth-sub">Authenticate to inspect synced field data and project-level evidence.</p>
         <div class="row">
           <input id="identifier" placeholder="Email or username" autocomplete="username" />
           <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
-          <button id="signInBtn">Sign in</button>
+          <button id="signInBtn">Enter Console</button>
         </div>
         <div class="msg" id="authMsg"></div>
       </section>
@@ -314,16 +368,24 @@
             <option value="250">250</option>
             <option value="500">500</option>
           </select>
-          <button id="refreshBtn">Refresh</button>
+          <button id="refreshBtn">Refresh Data</button>
           <button id="signOutBtn" class="btn-danger">Sign out</button>
         </div>
+
+        <div class="stats">
+          <div class="stat"><div class="k">Total</div><div class="v" id="statTotal">0</div></div>
+          <div class="stat"><div class="k">Submitted</div><div class="v" id="statSubmitted">0</div></div>
+          <div class="stat"><div class="k">Draft</div><div class="v" id="statDraft">0</div></div>
+          <div class="stat"><div class="k">Synced</div><div class="v" id="statSynced">0</div></div>
+        </div>
+
         <div class="msg" id="dataMsg"></div>
       </section>
 
       <section class="card hidden" id="tableCard">
         <div class="row" style="justify-content:space-between; margin-bottom: 8px;">
           <strong id="totalLabel">0 surveys</strong>
-          <span class="pill">Click project name to view full synced data</span>
+          <span class="pill">Click project to open full dossier</span>
         </div>
 
         <div class="table-shell">
@@ -350,7 +412,7 @@
       <div class="details-panel">
         <div class="details-head">
           <div>
-            <h2 class="details-title" id="detailsTitle">Survey</h2>
+            <h2 class="details-title" id="detailsTitle">Survey dossier</h2>
             <p class="details-sub" id="detailsSubtitle"></p>
           </div>
           <button id="closeDetailsBtn" class="btn-danger">Close</button>
@@ -359,12 +421,12 @@
         <div class="grid" id="detailsGrid"></div>
 
         <div class="section">
-          <h3>Checklist</h3>
+          <h3>Checklist Evidence</h3>
           <div class="list" id="checklistList"></div>
         </div>
 
         <div class="section">
-          <h3>Photos</h3>
+          <h3>Photo Evidence</h3>
           <div class="list" id="photosList"></div>
         </div>
 
@@ -384,6 +446,10 @@
       const rowsEl = document.getElementById('rows');
       const totalLabel = document.getElementById('totalLabel');
       const whoamiEl = document.getElementById('whoami');
+      const statTotal = document.getElementById('statTotal');
+      const statSubmitted = document.getElementById('statSubmitted');
+      const statDraft = document.getElementById('statDraft');
+      const statSynced = document.getElementById('statSynced');
 
       const modalEl = document.getElementById('detailsModal');
       const detailsTitle = document.getElementById('detailsTitle');
@@ -398,17 +464,9 @@
         el.className = 'msg ' + (text ? (isError ? 'error' : 'ok') : '');
       }
 
-      function getToken() {
-        return localStorage.getItem('admin_surveys_token');
-      }
-
-      function setToken(token) {
-        localStorage.setItem('admin_surveys_token', token);
-      }
-
-      function clearToken() {
-        localStorage.removeItem('admin_surveys_token');
-      }
+      function getToken() { return localStorage.getItem('admin_surveys_token'); }
+      function setToken(token) { localStorage.setItem('admin_surveys_token', token); }
+      function clearToken() { localStorage.removeItem('admin_surveys_token'); }
 
       function escapeHtml(value) {
         return String(value ?? '')
@@ -421,11 +479,11 @@
 
       function formatDate(value) {
         if (!value) return '-';
-        try {
-          return new Date(value).toLocaleString();
-        } catch {
-          return String(value);
-        }
+        try { return new Date(value).toLocaleString(); } catch { return String(value); }
+      }
+
+      function statusClass(status) {
+        return String(status || 'draft').replace('/', '\\/');
       }
 
       function showDataUI() {
@@ -441,7 +499,7 @@
       }
 
       async function signIn() {
-        setMsg(authMsg, 'Signing in...');
+        setMsg(authMsg, 'Authenticating...');
         const identifier = document.getElementById('identifier').value.trim();
         const password = document.getElementById('password').value;
 
@@ -457,16 +515,27 @@
 
         setToken(body.token);
         whoamiEl.textContent = body.user.email || body.user.fullName || 'Admin';
-        setMsg(authMsg, 'Signed in');
+        setMsg(authMsg, 'Access granted');
         showDataUI();
         await loadSurveys();
+      }
+
+      function renderStats(surveys, total) {
+        const submitted = surveys.filter((s) => s.status === 'submitted').length;
+        const draft = surveys.filter((s) => s.status === 'draft').length;
+        const synced = surveys.filter((s) => s.status === 'synced').length;
+
+        statTotal.textContent = String(total ?? surveys.length);
+        statSubmitted.textContent = String(submitted);
+        statDraft.textContent = String(draft);
+        statSynced.textContent = String(synced);
       }
 
       async function loadSurveys() {
         const token = getToken();
         if (!token) return;
 
-        setMsg(dataMsg, 'Loading surveys...');
+        setMsg(dataMsg, 'Loading synced surveys...');
         const status = document.getElementById('statusFilter').value;
         const limit = document.getElementById('limitFilter').value;
 
@@ -478,47 +547,39 @@
         });
 
         const body = await res.json().catch(() => ({}));
-
         if (res.status === 401 || res.status === 403) {
           clearToken();
           showAuthUI();
           throw new Error('Session expired or not authorized');
         }
-
         if (!res.ok) throw new Error(body.error || 'Failed to load surveys');
 
         const surveys = Array.isArray(body.surveys) ? body.surveys : [];
         totalLabel.textContent = `${body.total ?? surveys.length} surveys`;
+        renderStats(surveys, body.total);
 
-        rowsEl.innerHTML = surveys
-          .map((s) => {
-            const statusClass = escapeHtml(s.status || 'draft');
-            return `
-              <tr>
-                <td>${formatDate(s.updated_at || s.created_at)}</td>
-                <td>
-                  <button class="project-link" data-survey-id="${escapeHtml(s.id)}" title="Open full survey details">
-                    ${escapeHtml(s.project_name || '(Untitled project)')}
-                  </button>
-                </td>
-                <td>${escapeHtml(s.inspector_name || '-')}</td>
-                <td>${escapeHtml(s.site_name || '-')}</td>
-                <td><span class="status ${statusClass}">${escapeHtml(s.status || '-')}</span></td>
-                <td class="num">${Number(s.checklist_count || 0)}</td>
-                <td class="num">${Number(s.photo_count || 0)}</td>
-                <td><code>${escapeHtml(s.id || '')}</code></td>
-              </tr>
-            `;
-          })
-          .join('');
+        rowsEl.innerHTML = surveys.map((s) => `
+          <tr>
+            <td>${formatDate(s.updated_at || s.created_at)}</td>
+            <td>
+              <button class="project-link" data-survey-id="${escapeHtml(s.id)}" title="Open full survey details">
+                ${escapeHtml(s.project_name || '(Untitled project)')}
+              </button>
+            </td>
+            <td>${escapeHtml(s.inspector_name || '-')}</td>
+            <td>${escapeHtml(s.site_name || '-')}</td>
+            <td><span class="status ${statusClass(s.status)}">${escapeHtml(s.status || '-')}</span></td>
+            <td class="num">${Number(s.checklist_count || 0)}</td>
+            <td class="num">${Number(s.photo_count || 0)}</td>
+            <td><code>${escapeHtml(s.id || '')}</code></td>
+          </tr>
+        `).join('');
 
         document.querySelectorAll('.project-link').forEach((el) => {
           el.addEventListener('click', () => {
             const surveyId = el.getAttribute('data-survey-id');
             if (surveyId) {
-              loadSurveyDetails(surveyId).catch((err) => {
-                setMsg(dataMsg, err.message || 'Failed to load details', true);
-              });
+              loadSurveyDetails(surveyId).catch((err) => setMsg(dataMsg, err.message || 'Failed to load details', true));
             }
           });
         });
@@ -546,14 +607,12 @@
           ['Notes', survey.notes || '-'],
         ];
 
-        detailsGrid.innerHTML = fields
-          .map(([k, v]) => `
-            <div class="kv">
-              <div class="k">${escapeHtml(k)}</div>
-              <div class="v">${escapeHtml(v ?? '-')}</div>
-            </div>
-          `)
-          .join('');
+        detailsGrid.innerHTML = fields.map(([k, v]) => `
+          <div class="kv">
+            <div class="k">${escapeHtml(k)}</div>
+            <div class="v">${escapeHtml(v ?? '-')}</div>
+          </div>
+        `).join('');
       }
 
       function renderChecklist(survey) {
@@ -563,17 +622,15 @@
           return;
         }
 
-        checklistList.innerHTML = list
-          .map((item) => `
-            <div class="list-item">
-              <div>
-                <div><strong>${escapeHtml(item.label || '(Unnamed item)')}</strong></div>
-                <div class="muted">${escapeHtml(item.notes || '')}</div>
-              </div>
-              <div><span class="status ${escapeHtml(item.status || 'draft')}">${escapeHtml(item.status || '-')}</span></div>
+        checklistList.innerHTML = list.map((item) => `
+          <div class="list-item">
+            <div>
+              <div><strong>${escapeHtml(item.label || '(Unnamed item)')}</strong></div>
+              <div class="muted">${escapeHtml(item.notes || '')}</div>
             </div>
-          `)
-          .join('');
+            <div><span class="status ${statusClass(item.status)}">${escapeHtml(item.status || '-')}</span></div>
+          </div>
+        `).join('');
       }
 
       function renderPhotos(survey) {
@@ -583,80 +640,67 @@
           return;
         }
 
-        photosList.innerHTML = list
-          .map((photo) => {
-            const preview = photo.remote_url || photo.file_path || '';
-            return `
-              <div class="list-item">
-                <div>
-                  <div><strong>${escapeHtml(photo.label || '(No label)')}</strong></div>
-                  <div class="muted">${escapeHtml(photo.mime_type || '')}</div>
-                  <div class="muted">Captured: ${escapeHtml(formatDate(photo.captured_at))}</div>
-                  <div class="muted">Path: ${escapeHtml(photo.file_path || '')}</div>
-                  ${preview ? `<div><a href="${escapeHtml(preview)}" target="_blank" rel="noopener noreferrer">Open image</a></div>` : ''}
-                </div>
-                <div><code>${escapeHtml(photo.id || '')}</code></div>
+        photosList.innerHTML = list.map((photo) => {
+          const preview = photo.remote_url || photo.file_path || '';
+          return `
+            <div class="list-item">
+              <div>
+                <div><strong>${escapeHtml(photo.label || '(No label)')}</strong></div>
+                <div class="muted">${escapeHtml(photo.mime_type || '')}</div>
+                <div class="muted">Captured: ${escapeHtml(formatDate(photo.captured_at))}</div>
+                <div class="muted">Path: ${escapeHtml(photo.file_path || '')}</div>
+                ${preview ? `<div><a href="${escapeHtml(preview)}" target="_blank" rel="noopener noreferrer">Open image</a></div>` : ''}
               </div>
-            `;
-          })
-          .join('');
+              <div><code>${escapeHtml(photo.id || '')}</code></div>
+            </div>
+          `;
+        }).join('');
       }
 
       async function loadSurveyDetails(surveyId) {
         const token = getToken();
         if (!token) throw new Error('No auth token');
 
-        setMsg(dataMsg, 'Loading survey details...');
-
+        setMsg(dataMsg, 'Loading survey dossier...');
         const res = await fetch('/api/surveys/' + encodeURIComponent(surveyId), {
           headers: { Authorization: `Bearer ${token}` },
         });
 
         const body = await res.json().catch(() => ({}));
-
         if (res.status === 401 || res.status === 403) {
           clearToken();
           showAuthUI();
           throw new Error('Session expired or unauthorized');
         }
-
         if (!res.ok) throw new Error(body.error || 'Failed to load survey details');
 
-        detailsTitle.textContent = body.project_name || 'Survey details';
+        detailsTitle.textContent = body.project_name || 'Survey dossier';
         detailsSubtitle.textContent = `${body.site_name || '-'} • ${body.inspector_name || '-'} • ${body.id || '-'}`;
 
         renderFieldGrid(body);
         renderChecklist(body);
         renderPhotos(body);
-
         metadataJson.textContent = JSON.stringify(body.metadata ?? null, null, 2);
 
         modalEl.classList.add('open');
-        setMsg(dataMsg, 'Loaded survey details');
+        setMsg(dataMsg, 'Survey dossier loaded');
       }
 
-      function closeDetails() {
-        modalEl.classList.remove('open');
-      }
+      function closeDetails() { modalEl.classList.remove('open'); }
 
       document.getElementById('signInBtn').addEventListener('click', () => {
         signIn().catch((err) => setMsg(authMsg, err.message || 'Sign in failed', true));
       });
-
       document.getElementById('refreshBtn').addEventListener('click', () => {
         loadSurveys().catch((err) => setMsg(dataMsg, err.message || 'Load failed', true));
       });
-
       document.getElementById('signOutBtn').addEventListener('click', () => {
         clearToken();
         showAuthUI();
         setMsg(authMsg, 'Signed out');
       });
-
       document.getElementById('closeDetailsBtn').addEventListener('click', closeDetails);
-      modalEl.addEventListener('click', (event) => {
-        if (event.target === modalEl) closeDetails();
-      });
+      modalEl.addEventListener('click', (event) => { if (event.target === modalEl) closeDetails(); });
 
       if (getToken()) {
         showDataUI();
