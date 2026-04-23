@@ -1,4 +1,5 @@
 /**
+
  * screens/ViewSurveyScreen.tsx
  *
  * Read-only view of a saved survey.
@@ -469,9 +470,9 @@ const styles = StyleSheet.create({
     padding:         16,
     marginBottom:    12,
     shadowColor:     '#000',
-    shadowOffset:    { width: 0, height: 1 },
-    shadowOpacity:   0.08,
-    shadowRadius:    4,
+    shadowOffset:    { width: 0, height: 2 },
+    shadowOpacity:   0.06,
+    shadowRadius:    6,
     elevation:       2,
   },
   headerTop: {
@@ -480,7 +481,7 @@ const styles = StyleSheet.create({
     alignItems:      'flex-start',
     marginBottom:     8,
   },
-  projectName:   { fontSize: 20, fontWeight: '800', color: colors.textPrimary, flex: 1, marginRight: 8 },
+  projectName:   { fontSize: 21, fontWeight: '800', color: colors.textPrimary, flex: 1, marginRight: 8 },
   syncBadge:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   syncBadgeText: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
   categoryTag: {
@@ -494,19 +495,19 @@ const styles = StyleSheet.create({
     marginBottom:        10,
   },
   categoryTagText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
-  row:       { flexDirection: 'row', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: colors.border },
-  rowLabel:  { width: 80, fontSize: 13, color: colors.textMuted, fontWeight: '600' },
+  row:       { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.border },
+  rowLabel:  { width: 82, fontSize: 13, color: colors.textMuted, fontWeight: '700' },
   rowValue:  { flex: 1, fontSize: 13, color: colors.textSecondary },
   gpsBox: {
     backgroundColor: colors.successBg,
-    borderRadius:     8,
+    borderRadius:     10,
     padding:          10,
     marginTop:        10,
     borderWidth:      1,
     borderColor:      colors.successBorder,
   },
   gpsTitle:     { fontSize: 13, fontWeight: '700', color: colors.successText, marginBottom: 4 },
-  gpsCoords:    { fontSize: 14, color: colors.successText, fontFamily: 'monospace', fontWeight: '600' },
+  gpsCoords:    { fontSize: 14, color: colors.successText, fontFamily: 'monospace', fontWeight: '700' },
   gpsAccuracy:  { fontSize: 11, color: colors.successText, marginTop: 2 },
   noGps:        { fontSize: 12, color: colors.textMuted, marginTop: 10, fontStyle: 'italic' },
 
@@ -517,8 +518,13 @@ const styles = StyleSheet.create({
     borderRadius:    12,
     padding:         14,
     marginBottom:    12,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginBottom: 10 },
   notes:        { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
 
   checkRow: {
@@ -530,7 +536,7 @@ const styles = StyleSheet.create({
     gap:             8,
   },
   statusDot:    { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
-  checkLabel:   { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
+  checkLabel:   { fontSize: 14, color: colors.textSecondary, fontWeight: '700' },
   checkNotes:   { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   checkStatus:  { fontSize: 11, fontWeight: '800', marginTop: 3 },
 
@@ -540,7 +546,7 @@ const styles = StyleSheet.create({
 
   errorBox: {
     backgroundColor: colors.errorBg,
-    borderRadius:    8,
+    borderRadius:    10,
     padding:         12,
     borderWidth:     1,
     borderColor:     colors.errorBorder,
@@ -559,7 +565,7 @@ const styles = StyleSheet.create({
     justifyContent:  'center',
   },
   syncBtnDisabled: { backgroundColor: colors.primaryDark },
-  syncBtnText:     { color: colors.background, fontWeight: '700', fontSize: 16 },
+  syncBtnText:     { color: colors.white, fontWeight: '700', fontSize: 16 },
 
   reportBtn: {
     backgroundColor: colors.primary,
@@ -571,7 +577,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   reportBtnDisabled: { backgroundColor: colors.primaryDark },
-  reportBtnText: { color: colors.background, fontWeight: '700', fontSize: 16 },
+  reportBtnText: { color: colors.white, fontWeight: '700', fontSize: 16 },
 });
 
 const reportStyles = StyleSheet.create({
