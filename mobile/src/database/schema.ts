@@ -62,7 +62,6 @@ export const INIT_STATEMENTS = [
   'PRAGMA journal_mode = WAL;',
   'PRAGMA foreign_keys = ON;',
   CREATE_SURVEYS_TABLE,
-  'ALTER TABLE surveys ADD COLUMN project_id TEXT;',
   CREATE_CHECKLIST_TABLE,
   CREATE_PHOTOS_TABLE,
 ];

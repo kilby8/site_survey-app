@@ -36,7 +36,36 @@ export function useDatabase(): UseDatabaseResult {
 
         // Run all schema creation statements sequentially
         for (const sql of INIT_STATEMENTS) {
-          await db.execAsync(sql);
+          try {
+            await db.execAsync(sql);
+          } catch (statementError) {
+            const message =
+              statementError instanceof Error
+                ? statementError.message
+                : String(statementError);
+
+            // Ignore duplicate-column migration races on existing installs.
+            if (/duplicate column name/i.test(message)) {
+              continue;
+            }
+
+            throw new Error(
+              `SQLite init failed for statement: ${sql.trim().slice(0, 120)} :: ${message}`,
+            );
+          }
+        }
+
+        // Backward-compat migration guard for older DBs missing project_id
+        try {
+          await db.execAsync('ALTER TABLE surveys ADD COLUMN project_id TEXT;');
+        } catch (migrationError) {
+          const message =
+            migrationError instanceof Error
+              ? migrationError.message
+              : String(migrationError);
+          if (!/duplicate column name/i.test(message)) {
+            throw new Error(`SQLite migration failed: ${message}`);
+          }
         }
 
         // Register db globally so surveyDb helpers can use it
