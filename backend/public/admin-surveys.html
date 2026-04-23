@@ -6,71 +6,287 @@
     <title>Synced Site Surveys</title>
     <style>
       :root {
-        --bg: #f4f7f6;
-        --text: #1f2937;
+        --bg: #f3f6fb;
         --card: #ffffff;
-        --line: #d1d5db;
+        --text: #0f172a;
+        --muted: #64748b;
+        --line: #e2e8f0;
         --primary: #0f766e;
+        --primary-2: #0d9488;
         --danger: #b91c1c;
+        --ok: #166534;
+        --shadow: 0 10px 26px rgba(15, 23, 42, 0.07);
       }
+
       * { box-sizing: border-box; }
+
       body {
         margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: var(--bg);
+        background: radial-gradient(circle at top left, #ffffff 0%, var(--bg) 55%);
         color: var(--text);
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
+
       .wrap {
-        max-width: 1200px;
+        max-width: 1320px;
         margin: 0 auto;
-        padding: 24px;
+        padding: 24px 16px 32px;
       }
+
+      .hero {
+        margin-bottom: 14px;
+      }
+
+      .hero h1 {
+        margin: 0;
+        font-size: clamp(1.35rem, 3.5vw, 2rem);
+      }
+
+      .hero p {
+        margin: 8px 0 0;
+        color: var(--muted);
+      }
+
       .card {
         background: var(--card);
         border: 1px solid var(--line);
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 16px;
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        padding: 14px;
+        margin-bottom: 14px;
       }
-      h1 { margin: 0 0 8px; }
-      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-      input, button, select {
-        padding: 10px 12px;
-        border-radius: 8px;
+
+      .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      input,
+      button,
+      select {
+        border-radius: 10px;
         border: 1px solid var(--line);
+        padding: 10px 12px;
         font-size: 14px;
       }
+
+      input,
+      select {
+        background: #fff;
+        color: var(--text);
+      }
+
       button {
+        cursor: pointer;
+        border: none;
         background: var(--primary);
         color: #fff;
-        border: none;
-        cursor: pointer;
+        font-weight: 600;
       }
+
+      button:hover { background: var(--primary-2); }
       button:disabled { opacity: 0.6; cursor: not-allowed; }
-      .danger { background: var(--danger); }
-      .msg { margin-top: 8px; min-height: 20px; }
-      .error { color: var(--danger); }
-      .ok { color: #166534; }
+
+      .btn-danger { background: var(--danger); }
+      .btn-danger:hover { background: #991b1b; }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 12px;
+        color: var(--muted);
+        background: #f8fafc;
+      }
+
+      .msg {
+        min-height: 20px;
+        margin-top: 8px;
+        font-size: 13px;
+      }
+
+      .msg.error { color: var(--danger); }
+      .msg.ok { color: var(--ok); }
+
+      .table-shell {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: auto;
+      }
+
       table {
         width: 100%;
         border-collapse: collapse;
         font-size: 13px;
+        min-width: 980px;
       }
-      th, td {
-        border-bottom: 1px solid var(--line);
+
+      th,
+      td {
         text-align: left;
-        padding: 8px;
+        border-bottom: 1px solid var(--line);
+        padding: 10px 10px;
         vertical-align: top;
       }
-      th { background: #f9fafb; }
-      .right { text-align: right; }
-      .muted { color: #6b7280; }
+
+      th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #f8fafc;
+        color: #334155;
+      }
+
+      tr:hover td { background: #fafcfe; }
+
+      .num { text-align: right; }
+
+      .project-link {
+        color: #0f766e;
+        background: transparent;
+        border: none;
+        padding: 0;
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: underline;
+      }
+
+      .project-link:hover { color: #0d9488; }
+
+      .status {
+        display: inline-flex;
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: lowercase;
+      }
+
+      .status.draft { background: #e2e8f0; color: #334155; }
+      .status.submitted { background: #dcfce7; color: #166534; }
+      .status.synced { background: #dbeafe; color: #1d4ed8; }
+
+      .details-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.5);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 14px;
+        z-index: 50;
+      }
+
+      .details-modal.open { display: flex; }
+
+      .details-panel {
+        width: min(1060px, 100%);
+        max-height: 90vh;
+        overflow: auto;
+        background: #fff;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow);
+        padding: 14px;
+      }
+
+      .details-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .details-title {
+        margin: 0;
+        font-size: 1.2rem;
+      }
+
+      .details-sub {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .kv {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+        background: #fafcff;
+      }
+
+      .kv .k {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+
+      .kv .v {
+        font-size: 14px;
+        word-break: break-word;
+      }
+
+      .section {
+        margin-top: 12px;
+      }
+
+      .section h3 {
+        margin: 0 0 8px;
+        font-size: 14px;
+      }
+
+      .list {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .list-item {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+      }
+
+      .list-item:last-child { border-bottom: none; }
+
+      pre {
+        margin: 0;
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 10px;
+        padding: 10px;
+        font-size: 12px;
+        overflow: auto;
+      }
+
+      .hidden { display: none !important; }
+
+      @media (max-width: 800px) {
+        .grid { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
-      <h1>Synced Site Surveys (Admin)</h1>
-      <p class="muted">Read-only web view for surveys synced to the backend.</p>
+      <section class="hero">
+        <h1>Synced Site Surveys</h1>
+        <p>Standalone admin portal for production survey records.</p>
+      </section>
 
       <section class="card" id="authCard">
         <div class="row">
@@ -81,8 +297,9 @@
         <div class="msg" id="authMsg"></div>
       </section>
 
-      <section class="card" id="controls" style="display:none">
+      <section class="card hidden" id="controls">
         <div class="row">
+          <span class="pill" id="whoami">Admin</span>
           <label>Status</label>
           <select id="statusFilter">
             <option value="">All</option>
@@ -98,16 +315,18 @@
             <option value="500">500</option>
           </select>
           <button id="refreshBtn">Refresh</button>
-          <button id="signOutBtn" class="danger">Sign out</button>
+          <button id="signOutBtn" class="btn-danger">Sign out</button>
         </div>
         <div class="msg" id="dataMsg"></div>
       </section>
 
-      <section class="card" id="tableCard" style="display:none">
-        <div class="row" style="justify-content:space-between">
+      <section class="card hidden" id="tableCard">
+        <div class="row" style="justify-content:space-between; margin-bottom: 8px;">
           <strong id="totalLabel">0 surveys</strong>
+          <span class="pill">Click project name to view full synced data</span>
         </div>
-        <div style="overflow:auto; margin-top:10px;">
+
+        <div class="table-shell">
           <table>
             <thead>
               <tr>
@@ -116,8 +335,8 @@
                 <th>Inspector</th>
                 <th>Site</th>
                 <th>Status</th>
-                <th class="right">Checklist</th>
-                <th class="right">Photos</th>
+                <th class="num">Checklist</th>
+                <th class="num">Photos</th>
                 <th>ID</th>
               </tr>
             </thead>
@@ -125,6 +344,35 @@
           </table>
         </div>
       </section>
+    </div>
+
+    <div class="details-modal" id="detailsModal" role="dialog" aria-modal="true" aria-label="Survey details">
+      <div class="details-panel">
+        <div class="details-head">
+          <div>
+            <h2 class="details-title" id="detailsTitle">Survey</h2>
+            <p class="details-sub" id="detailsSubtitle"></p>
+          </div>
+          <button id="closeDetailsBtn" class="btn-danger">Close</button>
+        </div>
+
+        <div class="grid" id="detailsGrid"></div>
+
+        <div class="section">
+          <h3>Checklist</h3>
+          <div class="list" id="checklistList"></div>
+        </div>
+
+        <div class="section">
+          <h3>Photos</h3>
+          <div class="list" id="photosList"></div>
+        </div>
+
+        <div class="section">
+          <h3>Metadata JSON</h3>
+          <pre id="metadataJson">null</pre>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -135,6 +383,15 @@
       const tableCard = document.getElementById('tableCard');
       const rowsEl = document.getElementById('rows');
       const totalLabel = document.getElementById('totalLabel');
+      const whoamiEl = document.getElementById('whoami');
+
+      const modalEl = document.getElementById('detailsModal');
+      const detailsTitle = document.getElementById('detailsTitle');
+      const detailsSubtitle = document.getElementById('detailsSubtitle');
+      const detailsGrid = document.getElementById('detailsGrid');
+      const checklistList = document.getElementById('checklistList');
+      const photosList = document.getElementById('photosList');
+      const metadataJson = document.getElementById('metadataJson');
 
       function setMsg(el, text, isError = false) {
         el.textContent = text || '';
@@ -153,6 +410,36 @@
         localStorage.removeItem('admin_surveys_token');
       }
 
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+      }
+
+      function formatDate(value) {
+        if (!value) return '-';
+        try {
+          return new Date(value).toLocaleString();
+        } catch {
+          return String(value);
+        }
+      }
+
+      function showDataUI() {
+        authCard.classList.add('hidden');
+        controls.classList.remove('hidden');
+        tableCard.classList.remove('hidden');
+      }
+
+      function showAuthUI() {
+        authCard.classList.remove('hidden');
+        controls.classList.add('hidden');
+        tableCard.classList.add('hidden');
+      }
+
       async function signIn() {
         setMsg(authMsg, 'Signing in...');
         const identifier = document.getElementById('identifier').value.trim();
@@ -165,15 +452,11 @@
         });
 
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(body.error || 'Sign in failed');
-        }
-
-        if (body.user?.role !== 'admin') {
-          throw new Error('Admin account required');
-        }
+        if (!res.ok) throw new Error(body.error || 'Sign in failed');
+        if (body.user?.role !== 'admin') throw new Error('Admin account required');
 
         setToken(body.token);
+        whoamiEl.textContent = body.user.email || body.user.fullName || 'Admin';
         setMsg(authMsg, 'Signed in');
         showDataUI();
         await loadSurveys();
@@ -186,71 +469,193 @@
         setMsg(dataMsg, 'Loading surveys...');
         const status = document.getElementById('statusFilter').value;
         const limit = document.getElementById('limitFilter').value;
-        const params = new URLSearchParams({ limit });
-        if (status) params.set('status', status);
 
-        const res = await fetch('/api/surveys/admin/surveys?' + params.toString(), {
+        const qs = new URLSearchParams({ limit, offset: '0' });
+        if (status) qs.set('status', status);
+
+        const res = await fetch('/api/surveys/admin/surveys?' + qs.toString(), {
           headers: { Authorization: `Bearer ${token}` },
         });
 
         const body = await res.json().catch(() => ({}));
+
         if (res.status === 401 || res.status === 403) {
           clearToken();
           showAuthUI();
           throw new Error('Session expired or not authorized');
         }
+
         if (!res.ok) throw new Error(body.error || 'Failed to load surveys');
 
         const surveys = Array.isArray(body.surveys) ? body.surveys : [];
         totalLabel.textContent = `${body.total ?? surveys.length} surveys`;
 
-        rowsEl.innerHTML = surveys.map((s) => `
-          <tr>
-            <td>${new Date(s.updated_at || s.created_at).toLocaleString()}</td>
-            <td>${escapeHtml(s.project_name || '')}</td>
-            <td>${escapeHtml(s.inspector_name || '')}</td>
-            <td>${escapeHtml(s.site_name || '')}</td>
-            <td>${escapeHtml(s.status || '')}</td>
-            <td class="right">${Number(s.checklist_count || 0)}</td>
-            <td class="right">${Number(s.photo_count || 0)}</td>
-            <td><code>${escapeHtml(s.id || '')}</code></td>
-          </tr>
-        `).join('');
+        rowsEl.innerHTML = surveys
+          .map((s) => {
+            const statusClass = escapeHtml(s.status || 'draft');
+            return `
+              <tr>
+                <td>${formatDate(s.updated_at || s.created_at)}</td>
+                <td>
+                  <button class="project-link" data-survey-id="${escapeHtml(s.id)}" title="Open full survey details">
+                    ${escapeHtml(s.project_name || '(Untitled project)')}
+                  </button>
+                </td>
+                <td>${escapeHtml(s.inspector_name || '-')}</td>
+                <td>${escapeHtml(s.site_name || '-')}</td>
+                <td><span class="status ${statusClass}">${escapeHtml(s.status || '-')}</span></td>
+                <td class="num">${Number(s.checklist_count || 0)}</td>
+                <td class="num">${Number(s.photo_count || 0)}</td>
+                <td><code>${escapeHtml(s.id || '')}</code></td>
+              </tr>
+            `;
+          })
+          .join('');
+
+        document.querySelectorAll('.project-link').forEach((el) => {
+          el.addEventListener('click', () => {
+            const surveyId = el.getAttribute('data-survey-id');
+            if (surveyId) {
+              loadSurveyDetails(surveyId).catch((err) => {
+                setMsg(dataMsg, err.message || 'Failed to load details', true);
+              });
+            }
+          });
+        });
 
         setMsg(dataMsg, `Loaded ${surveys.length} rows`);
       }
 
-      function escapeHtml(value) {
-        return String(value)
-          .replaceAll('&', '&amp;')
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;')
-          .replaceAll('"', '&quot;')
-          .replaceAll("'", '&#039;');
+      function renderFieldGrid(survey) {
+        const fields = [
+          ['Survey ID', survey.id],
+          ['Project Name', survey.project_name],
+          ['Project ID', survey.project_id],
+          ['Category ID', survey.category_id],
+          ['Category Name', survey.category_name],
+          ['Inspector', survey.inspector_name],
+          ['Site Name', survey.site_name],
+          ['Site Address', survey.site_address],
+          ['Status', survey.status],
+          ['Survey Date', formatDate(survey.survey_date)],
+          ['Latitude', survey.latitude],
+          ['Longitude', survey.longitude],
+          ['GPS Accuracy', survey.gps_accuracy],
+          ['Created', formatDate(survey.created_at)],
+          ['Updated', formatDate(survey.updated_at)],
+          ['Notes', survey.notes || '-'],
+        ];
+
+        detailsGrid.innerHTML = fields
+          .map(([k, v]) => `
+            <div class="kv">
+              <div class="k">${escapeHtml(k)}</div>
+              <div class="v">${escapeHtml(v ?? '-')}</div>
+            </div>
+          `)
+          .join('');
       }
 
-      function showDataUI() {
-        authCard.style.display = 'none';
-        controls.style.display = '';
-        tableCard.style.display = '';
+      function renderChecklist(survey) {
+        const list = Array.isArray(survey.checklist) ? survey.checklist : [];
+        if (list.length === 0) {
+          checklistList.innerHTML = '<div class="list-item"><span>No checklist items</span><span>-</span></div>';
+          return;
+        }
+
+        checklistList.innerHTML = list
+          .map((item) => `
+            <div class="list-item">
+              <div>
+                <div><strong>${escapeHtml(item.label || '(Unnamed item)')}</strong></div>
+                <div class="muted">${escapeHtml(item.notes || '')}</div>
+              </div>
+              <div><span class="status ${escapeHtml(item.status || 'draft')}">${escapeHtml(item.status || '-')}</span></div>
+            </div>
+          `)
+          .join('');
       }
 
-      function showAuthUI() {
-        authCard.style.display = '';
-        controls.style.display = 'none';
-        tableCard.style.display = 'none';
+      function renderPhotos(survey) {
+        const list = Array.isArray(survey.photos) ? survey.photos : [];
+        if (list.length === 0) {
+          photosList.innerHTML = '<div class="list-item"><span>No photos</span><span>-</span></div>';
+          return;
+        }
+
+        photosList.innerHTML = list
+          .map((photo) => {
+            const preview = photo.remote_url || photo.file_path || '';
+            return `
+              <div class="list-item">
+                <div>
+                  <div><strong>${escapeHtml(photo.label || '(No label)')}</strong></div>
+                  <div class="muted">${escapeHtml(photo.mime_type || '')}</div>
+                  <div class="muted">Captured: ${escapeHtml(formatDate(photo.captured_at))}</div>
+                  <div class="muted">Path: ${escapeHtml(photo.file_path || '')}</div>
+                  ${preview ? `<div><a href="${escapeHtml(preview)}" target="_blank" rel="noopener noreferrer">Open image</a></div>` : ''}
+                </div>
+                <div><code>${escapeHtml(photo.id || '')}</code></div>
+              </div>
+            `;
+          })
+          .join('');
+      }
+
+      async function loadSurveyDetails(surveyId) {
+        const token = getToken();
+        if (!token) throw new Error('No auth token');
+
+        setMsg(dataMsg, 'Loading survey details...');
+
+        const res = await fetch('/api/surveys/' + encodeURIComponent(surveyId), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const body = await res.json().catch(() => ({}));
+
+        if (res.status === 401 || res.status === 403) {
+          clearToken();
+          showAuthUI();
+          throw new Error('Session expired or unauthorized');
+        }
+
+        if (!res.ok) throw new Error(body.error || 'Failed to load survey details');
+
+        detailsTitle.textContent = body.project_name || 'Survey details';
+        detailsSubtitle.textContent = `${body.site_name || '-'} • ${body.inspector_name || '-'} • ${body.id || '-'}`;
+
+        renderFieldGrid(body);
+        renderChecklist(body);
+        renderPhotos(body);
+
+        metadataJson.textContent = JSON.stringify(body.metadata ?? null, null, 2);
+
+        modalEl.classList.add('open');
+        setMsg(dataMsg, 'Loaded survey details');
+      }
+
+      function closeDetails() {
+        modalEl.classList.remove('open');
       }
 
       document.getElementById('signInBtn').addEventListener('click', () => {
         signIn().catch((err) => setMsg(authMsg, err.message || 'Sign in failed', true));
       });
+
       document.getElementById('refreshBtn').addEventListener('click', () => {
         loadSurveys().catch((err) => setMsg(dataMsg, err.message || 'Load failed', true));
       });
+
       document.getElementById('signOutBtn').addEventListener('click', () => {
         clearToken();
         showAuthUI();
         setMsg(authMsg, 'Signed out');
+      });
+
+      document.getElementById('closeDetailsBtn').addEventListener('click', closeDetails);
+      modalEl.addEventListener('click', (event) => {
+        if (event.target === modalEl) closeDetails();
       });
 
       if (getToken()) {
