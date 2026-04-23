@@ -16,6 +16,7 @@
         --cloud: #c084fc;
         --db: #fbbf24;
         --web: #34d399;
+        --integration: #f472b6;
       }
       * { box-sizing: border-box; }
       body {
@@ -26,7 +27,7 @@
           radial-gradient(1000px 500px at 90% 20%, #3b0764 0%, transparent 60%),
           var(--bg);
       }
-      .wrap { max-width: 1240px; margin: 0 auto; padding: 32px 20px 56px; }
+      .wrap { max-width: 1280px; margin: 0 auto; padding: 32px 20px 56px; }
       h1 {
         margin: 0;
         font-size: clamp(26px, 4vw, 42px);
@@ -67,10 +68,11 @@
         border-radius: 16px;
         padding: 18px;
       }
-      @media (min-width: 980px) {
-        .panel.mobile { grid-column: span 4; }
-        .panel.backend { grid-column: span 4; }
-        .panel.cloud { grid-column: span 4; }
+      @media (min-width: 1080px) {
+        .panel.mobile { grid-column: span 3; }
+        .panel.backend { grid-column: span 3; }
+        .panel.cloud { grid-column: span 3; }
+        .panel.integration { grid-column: span 3; }
         .panel.flow { grid-column: span 12; }
       }
       .panel h2 { margin: 0 0 12px; font-size: 16px; letter-spacing: 0.2px; }
@@ -90,6 +92,25 @@
         font-family: Consolas, Monaco, monospace;
         font-size: 12px;
       }
+      .path a,
+      .cmd a {
+        color: #c7d2fe;
+        text-decoration: underline;
+      }
+      .path a:hover,
+      .cmd a:hover {
+        color: #e8eeff;
+      }
+      .pill {
+        display: inline-flex;
+        margin-top: 8px;
+        background: #ffffff12;
+        border: 1px solid #ffffff2a;
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 11px;
+        color: #dbe7ff;
+      }
 
       .flowline {
         margin-top: 8px;
@@ -97,25 +118,25 @@
         padding-bottom: 6px;
       }
       .steps {
-        min-width: 940px;
+        min-width: 1240px;
         display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        gap: 12px;
+        grid-template-columns: repeat(13, 1fr);
+        gap: 10px;
         align-items: center;
       }
       .step {
         background: #111a3a;
         border: 1px solid #ffffff2a;
         border-radius: 12px;
-        padding: 14px;
-        min-height: 92px;
+        padding: 12px;
+        min-height: 106px;
       }
       .step strong { display: block; margin-bottom: 6px; font-size: 14px; }
       .step small { color: var(--muted); font-size: 12px; line-height: 1.45; }
       .arrow {
         position: relative;
         height: 2px;
-        background: linear-gradient(90deg, #5eead4, #60a5fa, #c084fc);
+        background: linear-gradient(90deg, #5eead4, #60a5fa, #c084fc, #f472b6);
         margin: 0 2px;
       }
       .arrow::after {
@@ -123,7 +144,7 @@
         position: absolute;
         right: -2px;
         top: -4px;
-        border-left: 8px solid #c084fc;
+        border-left: 8px solid #f472b6;
         border-top: 5px solid transparent;
         border-bottom: 5px solid transparent;
       }
@@ -131,7 +152,7 @@
       .health {
         margin-top: 18px;
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
         gap: 10px;
       }
       .health .item {
@@ -147,107 +168,150 @@
   </head>
   <body>
     <div class="wrap">
-      <h1>Site Survey App — Pipeline Topology</h1>
-      <div class="subtitle">Mobile UI → Backend API → Roboflow Cloud → Database → Website Rendering</div>
+      <h1>Site Survey App — Pipeline Topology (Updated)</h1>
+      <div class="subtitle">Mobile Sync → Backend Survey Complete Trigger → Inbound Webhook Receiver → Partner Pipeline + Admin Visibility</div>
 
       <div class="legend">
         <div class="chip"><span class="dot" style="background: var(--mobile)"></span>Mobile Layer</div>
         <div class="chip"><span class="dot" style="background: var(--backend)"></span>Backend Layer</div>
-        <div class="chip"><span class="dot" style="background: var(--cloud)"></span>Cloud AI Layer</div>
-        <div class="chip"><span class="dot" style="background: var(--db)"></span>Database</div>
-        <div class="chip"><span class="dot" style="background: var(--web)"></span>Website/UI</div>
+        <div class="chip"><span class="dot" style="background: var(--cloud)"></span>Cloud / External</div>
+        <div class="chip"><span class="dot" style="background: var(--db)"></span>Persistence</div>
+        <div class="chip"><span class="dot" style="background: var(--web)"></span>Website / Admin UI</div>
+        <div class="chip"><span class="dot" style="background: var(--integration)"></span>Integration / Webhooks</div>
       </div>
 
       <div class="grid">
         <section class="panel mobile">
           <h2>📱 Mobile</h2>
           <div class="card">
-            <div class="title">Capture & Submit</div>
-            <div class="path">`mobile/src/screens/NewSurveyScreen.tsx`</div>
+            <div class="title">Survey Create + Local Queue</div>
+            <div class="path">mobile/src/screens/NewSurveyScreen.tsx</div>
           </div>
           <div class="card">
-            <div class="title">API Routing + Fallback URLs</div>
-            <div class="path">`mobile/src/api/client.ts`</div>
+            <div class="title">Sync Worker</div>
+            <div class="path">mobile/src/services/SyncManager.ts</div>
+            <span class="pill">Now auto-calls /api/surveys/:id/complete</span>
           </div>
           <div class="card">
-            <div class="title">Photo Inference Pipeline</div>
-            <div class="path">`mobile/src/services/photoInferencePipeline.ts`</div>
+            <div class="title">API Client</div>
+            <div class="path">mobile/src/api/client.ts</div>
+            <span class="pill">completeSurvey() helper</span>
           </div>
         </section>
 
         <section class="panel backend">
           <h2>🛠️ Backend</h2>
           <div class="card">
-            <div class="title">API Entry / Routes</div>
-            <div class="path">`backend/src/index.ts`</div>
+            <div class="title">API Entry / Routing</div>
+            <div class="path">backend/src/index.ts</div>
           </div>
           <div class="card">
-            <div class="title">Roboflow Proxy Endpoint</div>
-            <div class="path">`backend/src/routes/roboflowProxy.ts`</div>
+            <div class="title">Survey Complete + Outbound Queue</div>
+            <div class="path">backend/src/routes/surveys.ts</div>
+            <span class="pill">POST /api/surveys/:id/complete</span>
           </div>
           <div class="card">
-            <div class="title">Roboflow HTTP Client</div>
-            <div class="path">`backend/src/utils/roboflowClient.ts`</div>
+            <div class="title">Outbound Delivery Worker</div>
+            <div class="path">backend/src/services/webhookService.ts</div>
+          </div>
+          <div class="card">
+            <div class="title">Inbound Receiver</div>
+            <div class="path">backend/src/routes/webhooks.ts</div>
+            <span class="pill">POST /api/webhooks/survey-complete</span>
           </div>
         </section>
 
         <section class="panel cloud">
-          <h2>☁️ Cloud / Storage</h2>
+          <h2>☁️ External / Cloud</h2>
           <div class="card">
-            <div class="title">Roboflow Hosted Model Inference</div>
-            <div class="path">`https://detect.roboflow.com`</div>
+            <div class="title">Partner Receiver</div>
+            <div class="path">${SOLARPRO_WEBHOOK_URL}/api/webhooks/survey-complete</div>
           </div>
           <div class="card">
-            <div class="title">PostgreSQL + PostGIS</div>
-            <div class="path">`docker compose` service `db`</div>
+            <div class="title">Roboflow Inference</div>
+            <div class="path"><a href="https://detect.roboflow.com" target="_blank" rel="noopener noreferrer">https://detect.roboflow.com</a></div>
           </div>
           <div class="card">
-            <div class="title">Website Consumption</div>
-            <div class="path">`frontend/src/api/apiClient.ts`</div>
+            <div class="title">Render Runtime</div>
+            <div class="path"><a href="https://site-survey-api-bpyz.onrender.com" target="_blank" rel="noopener noreferrer">https://site-survey-api-bpyz.onrender.com</a></div>
+            <span class="pill">WEBHOOK_PRE_INGEST_ACCEPT_202=true</span>
+          </div>
+        </section>
+
+        <section class="panel integration">
+          <h2>🔗 Integration + Admin</h2>
+          <div class="card">
+            <div class="title">Webhook Spec</div>
+            <div class="path">docs/SURVEY_WEBHOOK_IMPLEMENTER_GUIDE_v1.md</div>
+          </div>
+          <div class="card">
+            <div class="title">Partner Handoff Pack</div>
+            <div class="path">docs/PARTNER_COPY_PASTE_READY.txt</div>
+          </div>
+          <div class="card">
+            <div class="title">Admin Synced Surveys Portal</div>
+            <div class="path"><a href="https://solar-pro.app/admin/surveys" target="_blank" rel="noopener noreferrer">https://solar-pro.app/admin/surveys</a></div>
+            <span class="pill">/admin/surveys</span>
+          </div>
+          <div class="card">
+            <div class="title">Handoff Token Consumer</div>
+            <div class="path">backend/src/routes/handoff.ts</div>
           </div>
         </section>
 
         <section class="panel flow">
-          <h2>🔄 End-to-End Data Flow</h2>
+          <h2>🔄 End-to-End Data Flow (Current State)</h2>
           <div class="flowline">
             <div class="steps">
               <div class="step">
-                <strong>1) Mobile Upload</strong>
-                <small>User captures photo and submits survey payload from mobile UI.</small>
+                <strong>1) Mobile Sync Starts</strong>
+                <small>Pending local survey is posted to backend from SyncManager.</small>
               </div>
               <div class="arrow"></div>
               <div class="step">
-                <strong>2) Backend Intake</strong>
-                <small>Photo + metadata received by survey routes and stored.</small>
+                <strong>2) Survey + Photos Persist</strong>
+                <small>/api/surveys and /api/surveys/:id/photos complete with auth retry on 401.</small>
               </div>
               <div class="arrow"></div>
               <div class="step">
-                <strong>3) Cloud Inference</strong>
-                <small>Backend proxy sends image bytes to Roboflow hosted model.</small>
+                <strong>3) Auto Complete Trigger</strong>
+                <small>Mobile now calls POST /api/surveys/:id/complete after successful sync.</small>
               </div>
               <div class="arrow"></div>
               <div class="step">
-                <strong>4) Normalize & Persist</strong>
-                <small>Predictions are adapted and written to DB records.</small>
+                <strong>4) Outbound Queue Enqueue</strong>
+                <small>Backend creates survey.completed event and stores in delivery queue.</small>
               </div>
               <div class="arrow"></div>
               <div class="step">
-                <strong>5) Website Visuals</strong>
-                <small>Frontend reads processed results and displays project insights.</small>
+                <strong>5) Outbound Signed Delivery</strong>
+                <small>Worker signs payload using HMAC-SHA256(timestamp.rawBody) and posts to partner.</small>
+              </div>
+              <div class="arrow"></div>
+              <div class="step">
+                <strong>6) Inbound Receiver (SolarPro Side)</strong>
+                <small>Our new endpoint validates headers/signature and enforces idempotency by event_id.</small>
+              </div>
+              <div class="arrow"></div>
+              <div class="step">
+                <strong>7) Pre-Ingest Handshake Mode</strong>
+                <small>Returns 202 ACCEPTED_PRE_INGEST for valid signed payloads to avoid retry churn.</small>
               </div>
             </div>
           </div>
 
           <div class="health">
-            <div class="item"><div><strong>Backend health</strong></div><div class="cmd">curl http://localhost:3001/api/health</div></div>
-            <div class="item"><div><strong>ADB device check</strong></div><div class="cmd">cd mobile; npm run android:test-device</div></div>
-            <div class="item"><div><strong>Start Android flow</strong></div><div class="cmd">cd mobile; npm run android:emulator</div></div>
-            <div class="item"><div><strong>Full stack start</strong></div><div class="cmd">node quick-start.js</div></div>
+            <div class="item"><div><strong>Backend health</strong></div><div class="cmd"><a href="https://solar-pro.app/api/health" target="_blank" rel="noopener noreferrer">https://solar-pro.app/api/health</a></div></div>
+            <div class="item"><div><strong>Admin portal</strong></div><div class="cmd"><a href="https://solar-pro.app/admin/surveys" target="_blank" rel="noopener noreferrer">https://solar-pro.app/admin/surveys</a></div></div>
+            <div class="item"><div><strong>Webhook smoke (unsigned)</strong></div><div class="cmd">POST /api/webhooks/survey-complete -&gt; 401/400</div></div>
+            <div class="item"><div><strong>Webhook smoke (signed)</strong></div><div class="cmd">POST /api/webhooks/survey-complete -&gt; 202</div></div>
+            <div class="item"><div><strong>Duplicate idempotency</strong></div><div class="cmd">Same event_id again -&gt; 200 duplicate</div></div>
+            <div class="item"><div><strong>Mobile release path</strong></div><div class="cmd">EAS update branch main (runtime 1.0.0)</div></div>
           </div>
         </section>
       </div>
 
-      <footer>Generated topology for current `main` branch architecture. Open this file directly in a browser.</footer>
+      <footer>Topology refreshed for current main branch integration state (webhook receiver + auto-complete sync + admin portal).</footer>
     </div>
   </body>
 </html>
