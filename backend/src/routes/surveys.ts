@@ -22,6 +22,7 @@ import { uploadFile } from "../utils/storageClient";
 import {
   enqueueSurveyCompleteWebhook,
   ensureWebhookDeliveriesTable,
+  processWebhookQueue,
   softDeleteSurveyAndQueueCleanup,
 } from "../services/webhookService";
 import {
@@ -1201,13 +1202,20 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
 
     const eventId = await enqueueSurveyCompleteWebhook({
       survey_id: survey.id,
-      status: survey.status,
-      project_id: survey.project_id,
+      status: "submitted",
+      project_id:
+        typeof survey.project_id === "string"
+          ? survey.project_id
+          : survey.project_id === null
+            ? null
+            : null,
       project_name: survey.project_name,
       inspector_name: survey.inspector_name,
       site_name: survey.site_name,
       completed_at: completedAt,
     });
+
+    await processWebhookQueue(10);
 
     incrementMetric("webhook_enqueued_total");
 
@@ -2264,16 +2272,15 @@ router.post("/:id/ar-detection", async (req: Request, res: Response) => {
     return;
   }
 
-  if (body.track_ids !== undefined) {
-    if (
-      !Array.isArray(body.track_ids) ||
-      body.track_ids.some((t) => typeof t !== "number" || !Number.isInteger(t))
-    ) {
-      res
-        .status(400)
-        .json({ error: "`track_ids` must be an array of integers" });
-      return;
-    }
+  if (
+    body.track_ids !== undefined &&
+    (!Array.isArray(body.track_ids) ||
+      body.track_ids.some((t) => typeof t !== "number" || !Number.isInteger(t)))
+  ) {
+    res
+      .status(400)
+      .json({ error: "`track_ids` must be an array of integers" });
+    return;
   }
 
   // validate optional ISO timestamp

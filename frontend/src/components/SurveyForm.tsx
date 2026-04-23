@@ -167,6 +167,11 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ surveyId, onSaved, onCancel }) 
     }));
   }, [projectTemplates]);
 
+  const clearTemplateAutofill = useCallback(() => {
+    setSelectedTemplateId('');
+    setFormData(createDefaultSurvey());
+  }, []);
+
   const handleSave = useCallback(async (status: SurveyStatus) => {
     setSaving(true);
     setError(null);
@@ -231,6 +236,16 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ surveyId, onSaved, onCancel }) 
               </option>
             ))}
           </select>
+          {selectedTemplateId && (
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              style={{ marginTop: 8 }}
+              onClick={clearTemplateAutofill}
+            >
+              Clear template autofill
+            </button>
+          )}
         </div>
         <div className="form-group">
           <label htmlFor="title">Survey Title *</label>
