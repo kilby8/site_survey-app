@@ -37,21 +37,17 @@ Body contract (thin event)
 Replay/idempotency behavior
 - event_id is idempotent; duplicate deliveries are accepted and reported as duplicate.
 
-Required secrets to confirm/exchange
-1) SURVEY_WEBHOOK_SECRET (used to sign outbound webhook from Site Survey / verify on SolarPro)
-2) SOLARPRO_HANDOFF_SECRET (used for handoff JWT signing flow)
+Selected integration decisions (locked)
+1) Full survey fetch auth: Bearer token
+2) Photo format: /uploads/... URLs with bearer auth
+3) Handoff launch URL: /new-survey?token=...
 
-Open decisions we need from your side
-1) GET /api/surveys/{id} auth method
-   - Option A (recommended): Bearer token
-   - Option B: Service JWT
-2) Photo access format in full survey payload
-   - Signed URLs vs bearer-protected URLs
-3) Handoff launch URL shape
-   - /launch?token=... vs /new-survey?token=... vs custom
+Required secrets (out-of-band exchange)
+1) SURVEY_WEBHOOK_SECRET
+2) SOLARPRO_HANDOFF_SECRET
 
 Working test pattern
-- Use the signing and curl examples in:
+- Use signing + curl examples from:
   docs/SURVEY_WEBHOOK_IMPLEMENTER_GUIDE_v1.md
 
 Status summary
@@ -59,5 +55,3 @@ Status summary
 - Signature verification: passing
 - Pre-ingest handshake: live (202)
 - Ingest pipeline (fetch + transform): next phase
-
-If you want, we can schedule a live staging validation where you send one signed event and we confirm receipt + idempotency in real time.

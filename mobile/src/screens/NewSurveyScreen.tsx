@@ -48,8 +48,13 @@ interface NewSurveyDraft {
 
 export default function NewSurveyScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ t?: string }>();
-  const handoffToken = typeof params.t === "string" ? params.t : null;
+  const params = useLocalSearchParams<{ t?: string; token?: string }>();
+  const handoffToken =
+    typeof params.token === "string"
+      ? params.token
+      : typeof params.t === "string"
+        ? params.t
+        : null;
   const { user } = useAuth();
   const { deviceId } = useAppBootstrap();
   const location = useLocation();
