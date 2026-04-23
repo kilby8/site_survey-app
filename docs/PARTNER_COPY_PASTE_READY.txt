@@ -1,0 +1,63 @@
+SolarPro ⇄ Site Survey Partner Integration Handoff (Copy/Paste)
+
+Team,
+
+We are ready for staging webhook traffic.
+
+Webhook receiver endpoint
+- Method: POST
+- URL: https://solar-pro.app/api/webhooks/survey-complete
+
+Current receiver mode
+- Pre-ingest accept mode is enabled.
+- Valid signed events return HTTP 202 with:
+  {"ok":true,"code":"ACCEPTED_PRE_INGEST","event_id":"..."}
+- Duplicate event IDs return HTTP 200 with:
+  {"ok":true,"duplicate":true,"event_id":"..."}
+
+Headers required
+- X-Survey-Signature
+- X-Survey-Timestamp
+- X-Survey-Event-Id
+
+Signature algorithm (exact)
+- HMAC-SHA256 over: ${timestamp}.${rawBody}
+- Signature header format: sha256=<lowercase_hex_digest>
+
+Body contract (thin event)
+{
+  "event": "survey.completed",
+  "event_id": "uuid",
+  "occurred_at": "ISO-8601 timestamp",
+  "survey_id": "uuid",
+  "status": "submitted",
+  "completed_at": "ISO-8601 timestamp"
+}
+
+Replay/idempotency behavior
+- event_id is idempotent; duplicate deliveries are accepted and reported as duplicate.
+
+Required secrets to confirm/exchange
+1) SURVEY_WEBHOOK_SECRET (used to sign outbound webhook from Site Survey / verify on SolarPro)
+2) SOLARPRO_HANDOFF_SECRET (used for handoff JWT signing flow)
+
+Open decisions we need from your side
+1) GET /api/surveys/{id} auth method
+   - Option A (recommended): Bearer token
+   - Option B: Service JWT
+2) Photo access format in full survey payload
+   - Signed URLs vs bearer-protected URLs
+3) Handoff launch URL shape
+   - /launch?token=... vs /new-survey?token=... vs custom
+
+Working test pattern
+- Use the signing and curl examples in:
+  docs/SURVEY_WEBHOOK_IMPLEMENTER_GUIDE_v1.md
+
+Status summary
+- Webhook wire format: aligned
+- Signature verification: passing
+- Pre-ingest handshake: live (202)
+- Ingest pipeline (fetch + transform): next phase
+
+If you want, we can schedule a live staging validation where you send one signed event and we confirm receipt + idempotency in real time.
