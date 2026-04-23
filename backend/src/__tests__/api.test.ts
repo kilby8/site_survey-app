@@ -1238,6 +1238,45 @@ describe("GET /api/surveys/admin/webhook-deliveries", () => {
   });
 });
 
+describe("GET /api/surveys/admin/surveys", () => {
+  it("returns 403 for non-admin users", async () => {
+    const res = await request(app)
+      .get("/api/surveys/admin/surveys")
+      .set("Authorization", authHeader);
+
+    expect(res.status).toBe(403);
+  });
+
+  it("returns survey info list for admin users", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Admin Survey View",
+        inspector_name: "Admin Inspector",
+        site_name: "Admin Site",
+      });
+
+    expect(create.status).toBe(201);
+    createdIds.push(create.body.id);
+
+    const adminSignin = await request(app)
+      .post("/api/users/signin")
+      .send({ identifier: "admin", password: "admin123!" });
+
+    expect(adminSignin.status).toBe(200);
+
+    const res = await request(app)
+      .get("/api/surveys/admin/surveys?limit=10")
+      .set("Authorization", `Bearer ${adminSignin.body.token as string}`);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.surveys)).toBe(true);
+    expect(res.body.total).toBeGreaterThanOrEqual(1);
+    expect(res.body.surveys.some((s: { id: string }) => s.id === create.body.id)).toBe(true);
+  });
+});
+
 // ----------------------------------------------------------------
 // OpenAPI
 // ----------------------------------------------------------------

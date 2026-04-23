@@ -162,6 +162,13 @@ router.get("/openapi.json", (_req: Request, res: Response) => {
           responses: { "200": { description: "Delivery list" } },
         },
       },
+      "/surveys/admin/surveys": {
+        get: {
+          summary: "Admin survey info list",
+          security: [{ bearerAuth: [] }],
+          responses: { "200": { description: "Survey info list" } },
+        },
+      },
       "/metrics": {
         get: {
           summary: "Admin metrics snapshot",

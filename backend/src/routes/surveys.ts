@@ -1305,6 +1305,86 @@ router.get("/admin/webhook-deliveries", async (req: Request, res: Response) => {
   }
 });
 
+router.get("/admin/surveys", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    await ensureSurveySoftDeleteColumn();
+
+    const { status, project_id, limit = "100", offset = "0" } = req.query as Record<
+      string,
+      string
+    >;
+
+    const conditions: string[] = ["s.deleted_at IS NULL"];
+    const params: unknown[] = [];
+
+    if (status) {
+      conditions.push(`s.status = $${params.push(status)}`);
+    }
+
+    if (project_id) {
+      if (!isValidUuid(project_id)) {
+        respondValidationError(res, "project_id must be a valid UUID", "project_id");
+        return;
+      }
+      conditions.push(`s.project_id = $${params.push(project_id)}`);
+    }
+
+    const where = `WHERE ${conditions.join(" AND ")}`;
+
+    const parsedLimit = Number.parseInt(limit, 10);
+    const parsedOffset = Number.parseInt(offset, 10);
+    const safeLimit = Number.isFinite(parsedLimit)
+      ? Math.min(Math.max(parsedLimit, 1), 500)
+      : 100;
+    const safeOffset = Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0;
+
+    const { rows: countRows } = await pool.query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total FROM surveys s ${where}`,
+      params,
+    );
+
+    params.push(safeLimit, safeOffset);
+
+    const { rows } = await pool.query(
+      `SELECT
+         s.id::text,
+         s.project_name,
+         s.project_id::text,
+         s.category_id::text,
+         s.category_name,
+         s.inspector_name,
+         s.site_name,
+         s.site_address,
+         s.latitude,
+         s.longitude,
+         s.gps_accuracy,
+         s.survey_date,
+         s.status,
+         s.notes,
+         s.created_at,
+         s.updated_at,
+         (SELECT COUNT(*)::int FROM checklist_items c WHERE c.survey_id = s.id) AS checklist_count,
+         (SELECT COUNT(*)::int FROM survey_photos p WHERE p.survey_id = s.id) AS photo_count
+       FROM surveys s
+       ${where}
+       ORDER BY s.updated_at DESC
+       LIMIT $${params.length - 1}
+       OFFSET $${params.length}`,
+      params,
+    );
+
+    res.json({
+      surveys: rows,
+      total: countRows[0]?.total ?? 0,
+    });
+  } catch (err) {
+    console.error("GET /api/surveys/admin/surveys error:", err);
+    res.status(500).json({ error: "Failed to retrieve admin survey list" });
+  }
+});
+
 router.get("/", async (req: Request, res: Response) => {
   try {
     await ensureSurveySoftDeleteColumn();
@@ -1486,10 +1566,6 @@ router.get("/:id", async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to retrieve survey" });
   }
 });
-
-// ================================================================
-// CREATE SURVEY
-// ================================================================
 
 /**
  * POST /api/surveys
