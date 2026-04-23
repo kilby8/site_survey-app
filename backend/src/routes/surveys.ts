@@ -1014,7 +1014,6 @@ router.post("/sync", async (req: Request, res: Response) => {
                device_id = EXCLUDED.device_id,
                metadata = EXCLUDED.metadata,
                synced_at = NOW(),
-               deleted_at = NULL,
                updated_at = NOW()`,
 
             insertParams,
