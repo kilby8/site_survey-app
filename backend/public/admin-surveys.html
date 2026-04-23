@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Synced Site Surveys</title>
+    <style>
+      :root {
+        --bg: #f4f7f6;
+        --text: #1f2937;
+        --card: #ffffff;
+        --line: #d1d5db;
+        --primary: #0f766e;
+        --danger: #b91c1c;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .wrap {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      h1 { margin: 0 0 8px; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      input, button, select {
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        font-size: 14px;
+      }
+      button {
+        background: var(--primary);
+        color: #fff;
+        border: none;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.6; cursor: not-allowed; }
+      .danger { background: var(--danger); }
+      .msg { margin-top: 8px; min-height: 20px; }
+      .error { color: var(--danger); }
+      .ok { color: #166534; }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th, td {
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        padding: 8px;
+        vertical-align: top;
+      }
+      th { background: #f9fafb; }
+      .right { text-align: right; }
+      .muted { color: #6b7280; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Synced Site Surveys (Admin)</h1>
+      <p class="muted">Read-only web view for surveys synced to the backend.</p>
+
+      <section class="card" id="authCard">
+        <div class="row">
+          <input id="identifier" placeholder="Email or username" autocomplete="username" />
+          <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
+          <button id="signInBtn">Sign in</button>
+        </div>
+        <div class="msg" id="authMsg"></div>
+      </section>
+
+      <section class="card" id="controls" style="display:none">
+        <div class="row">
+          <label>Status</label>
+          <select id="statusFilter">
+            <option value="">All</option>
+            <option value="draft">draft</option>
+            <option value="submitted">submitted</option>
+            <option value="synced">synced</option>
+          </select>
+          <label>Limit</label>
+          <select id="limitFilter">
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="250">250</option>
+            <option value="500">500</option>
+          </select>
+          <button id="refreshBtn">Refresh</button>
+          <button id="signOutBtn" class="danger">Sign out</button>
+        </div>
+        <div class="msg" id="dataMsg"></div>
+      </section>
+
+      <section class="card" id="tableCard" style="display:none">
+        <div class="row" style="justify-content:space-between">
+          <strong id="totalLabel">0 surveys</strong>
+        </div>
+        <div style="overflow:auto; margin-top:10px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Updated</th>
+                <th>Project</th>
+                <th>Inspector</th>
+                <th>Site</th>
+                <th>Status</th>
+                <th class="right">Checklist</th>
+                <th class="right">Photos</th>
+                <th>ID</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const authMsg = document.getElementById('authMsg');
+      const dataMsg = document.getElementById('dataMsg');
+      const authCard = document.getElementById('authCard');
+      const controls = document.getElementById('controls');
+      const tableCard = document.getElementById('tableCard');
+      const rowsEl = document.getElementById('rows');
+      const totalLabel = document.getElementById('totalLabel');
+
+      function setMsg(el, text, isError = false) {
+        el.textContent = text || '';
+        el.className = 'msg ' + (text ? (isError ? 'error' : 'ok') : '');
+      }
+
+      function getToken() {
+        return localStorage.getItem('admin_surveys_token');
+      }
+
+      function setToken(token) {
+        localStorage.setItem('admin_surveys_token', token);
+      }
+
+      function clearToken() {
+        localStorage.removeItem('admin_surveys_token');
+      }
+
+      async function signIn() {
+        setMsg(authMsg, 'Signing in...');
+        const identifier = document.getElementById('identifier').value.trim();
+        const password = document.getElementById('password').value;
+
+        const res = await fetch('/api/users/signin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier, password }),
+        });
+
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(body.error || 'Sign in failed');
+        }
+
+        if (body.user?.role !== 'admin') {
+          throw new Error('Admin account required');
+        }
+
+        setToken(body.token);
+        setMsg(authMsg, 'Signed in');
+        showDataUI();
+        await loadSurveys();
+      }
+
+      async function loadSurveys() {
+        const token = getToken();
+        if (!token) return;
+
+        setMsg(dataMsg, 'Loading surveys...');
+        const status = document.getElementById('statusFilter').value;
+        const limit = document.getElementById('limitFilter').value;
+        const params = new URLSearchParams({ limit });
+        if (status) params.set('status', status);
+
+        const res = await fetch('/api/surveys/admin/surveys?' + params.toString(), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401 || res.status === 403) {
+          clearToken();
+          showAuthUI();
+          throw new Error('Session expired or not authorized');
+        }
+        if (!res.ok) throw new Error(body.error || 'Failed to load surveys');
+
+        const surveys = Array.isArray(body.surveys) ? body.surveys : [];
+        totalLabel.textContent = `${body.total ?? surveys.length} surveys`;
+
+        rowsEl.innerHTML = surveys.map((s) => `
+          <tr>
+            <td>${new Date(s.updated_at || s.created_at).toLocaleString()}</td>
+            <td>${escapeHtml(s.project_name || '')}</td>
+            <td>${escapeHtml(s.inspector_name || '')}</td>
+            <td>${escapeHtml(s.site_name || '')}</td>
+            <td>${escapeHtml(s.status || '')}</td>
+            <td class="right">${Number(s.checklist_count || 0)}</td>
+            <td class="right">${Number(s.photo_count || 0)}</td>
+            <td><code>${escapeHtml(s.id || '')}</code></td>
+          </tr>
+        `).join('');
+
+        setMsg(dataMsg, `Loaded ${surveys.length} rows`);
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+      }
+
+      function showDataUI() {
+        authCard.style.display = 'none';
+        controls.style.display = '';
+        tableCard.style.display = '';
+      }
+
+      function showAuthUI() {
+        authCard.style.display = '';
+        controls.style.display = 'none';
+        tableCard.style.display = 'none';
+      }
+
+      document.getElementById('signInBtn').addEventListener('click', () => {
+        signIn().catch((err) => setMsg(authMsg, err.message || 'Sign in failed', true));
+      });
+      document.getElementById('refreshBtn').addEventListener('click', () => {
+        loadSurveys().catch((err) => setMsg(dataMsg, err.message || 'Load failed', true));
+      });
+      document.getElementById('signOutBtn').addEventListener('click', () => {
+        clearToken();
+        showAuthUI();
+        setMsg(authMsg, 'Signed out');
+      });
+
+      if (getToken()) {
+        showDataUI();
+        loadSurveys().catch((err) => {
+          showAuthUI();
+          setMsg(authMsg, err.message || 'Session invalid', true);
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -136,6 +136,10 @@ app.get("/view/:surveyId", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "index.html"));
 });
 
+app.get("/admin/surveys", (_req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, "admin-surveys.html"));
+});
+
 // ----------------------------------------------------------------
 // Serve uploaded photos statically
 // ----------------------------------------------------------------
