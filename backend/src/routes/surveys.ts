@@ -102,12 +102,21 @@ async function resolveExistingProjectId(
   const candidate = normalizeOptionalUuid(value);
   if (!candidate) return null;
 
-  const { rows } = await db.query(
-    `SELECT 1 FROM projects WHERE id = $1 LIMIT 1`,
-    [candidate],
-  );
+  try {
+    const { rows } = await db.query(
+      `SELECT 1 FROM projects WHERE id = $1 LIMIT 1`,
+      [candidate],
+    );
 
-  return rows.length > 0 ? candidate : null;
+    return rows.length > 0 ? candidate : null;
+  } catch (error) {
+    const pgError = error as { code?: string };
+    if (pgError.code === "42P01" || pgError.code === "42501") {
+      // projects table missing or inaccessible in this environment
+      return null;
+    }
+    throw error;
+  }
 }
 
 async function resolveExistingCategoryId(
@@ -117,12 +126,21 @@ async function resolveExistingCategoryId(
   const candidate = normalizeOptionalUuid(value);
   if (!candidate) return null;
 
-  const { rows } = await db.query(
-    `SELECT 1 FROM categories WHERE id = $1 LIMIT 1`,
-    [candidate],
-  );
+  try {
+    const { rows } = await db.query(
+      `SELECT 1 FROM categories WHERE id = $1 LIMIT 1`,
+      [candidate],
+    );
 
-  return rows.length > 0 ? candidate : null;
+    return rows.length > 0 ? candidate : null;
+  } catch (error) {
+    const pgError = error as { code?: string };
+    if (pgError.code === "42P01" || pgError.code === "42501") {
+      // categories table missing or inaccessible in this environment
+      return null;
+    }
+    throw error;
+  }
 }
 
 function respondValidationError(

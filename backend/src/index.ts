@@ -20,6 +20,7 @@ import usersRouter from "./routes/users";
 import roboflowProxyRouter from "./routes/roboflowProxy";
 import handoffRouter from "./routes/handoff";
 import openApiRouter from "./routes/openapi";
+import bugReportsRouter from "./routes/bugReports";
 import { requireAuth } from "./middleware/auth";
 import { pool } from "./database";
 import { uploadFile, isS3Mode } from "./utils/storageClient";
@@ -218,6 +219,7 @@ app.use("/api/categories", requireAuth, categoriesRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/handoff", handoffRouter);
 app.use("/api", openApiRouter);
+app.use("/api/bug-reports", requireAuth, bugReportsRouter);
 app.use("/api/roboflow", requireAuth, roboflowProxyRouter);
 
 // ----------------------------------------------------------------

@@ -22,6 +22,9 @@ import SurveyCard          from '../components/SurveyCard';
 import { useAppBootstrap } from '../context/AppBootstrapContext';
 import { useAuth }         from '../context/AuthContext';
 import { solarProTheme }   from '../theme/solarProTheme';
+import { captureScreen } from 'react-native-view-shot';
+import * as Device from 'expo-device';
+import { submitBugReport } from '../api/client';
 
 const { colors } = solarProTheme;
 
@@ -33,6 +36,7 @@ export default function HomeScreen() {
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
   const [deleting,     setDeleting]     = useState(false);
+  const [reportingBug, setReportingBug] = useState(false);
 
   const sync = useSyncManager(dbReady);
 
@@ -93,6 +97,100 @@ export default function HomeScreen() {
     );
   }, [deleting, loadSurveys, surveys]);
 
+  const handleReportBug = useCallback(() => {
+    if (reportingBug) return;
+
+    Alert.prompt?.(
+      'Bug Report',
+      'Optional note to include with screenshot:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send',
+          onPress: async (note?: string) => {
+            setReportingBug(true);
+            try {
+              const screenshotUri = await captureScreen({
+                format: 'jpg',
+                quality: 0.8,
+              });
+
+              const result = await submitBugReport({
+                screenshotUri,
+                title: 'Mobile Bug Report',
+                description: (note || '').trim(),
+                metadata: {
+                  screen: 'HomeScreen',
+                  appVersion: '1.0.0',
+                  deviceName: Device.modelName ?? null,
+                  osName: Device.osName ?? null,
+                  osVersion: Device.osVersion ?? null,
+                  totalSurveys: surveys.length,
+                  pendingSync: sync.pending,
+                  isOnline: sync.isOnline,
+                  reportedAt: new Date().toISOString(),
+                },
+              });
+
+              Alert.alert(
+                'Bug report sent',
+                `Report ${result.id} uploaded successfully.`,
+              );
+            } catch (err) {
+              Alert.alert(
+                'Bug report failed',
+                err instanceof Error ? err.message : 'Unable to send bug report.',
+              );
+            } finally {
+              setReportingBug(false);
+            }
+          },
+        },
+      ],
+      'plain-text',
+    );
+
+    if (!Alert.prompt) {
+      (async () => {
+        setReportingBug(true);
+        try {
+          const screenshotUri = await captureScreen({
+            format: 'jpg',
+            quality: 0.8,
+          });
+
+          const result = await submitBugReport({
+            screenshotUri,
+            title: 'Mobile Bug Report',
+            metadata: {
+              screen: 'HomeScreen',
+              appVersion: '1.0.0',
+              deviceName: Device.modelName ?? null,
+              osName: Device.osName ?? null,
+              osVersion: Device.osVersion ?? null,
+              totalSurveys: surveys.length,
+              pendingSync: sync.pending,
+              isOnline: sync.isOnline,
+              reportedAt: new Date().toISOString(),
+            },
+          });
+
+          Alert.alert(
+            'Bug report sent',
+            `Report ${result.id} uploaded successfully.`,
+          );
+        } catch (err) {
+          Alert.alert(
+            'Bug report failed',
+            err instanceof Error ? err.message : 'Unable to send bug report.',
+          );
+        } finally {
+          setReportingBug(false);
+        }
+      })().catch(console.error);
+    }
+  }, [reportingBug, surveys.length, sync.isOnline, sync.pending]);
+
   // ----------------------------------------------------------------
   // Render
   // ----------------------------------------------------------------
@@ -120,6 +218,16 @@ export default function HomeScreen() {
       <View style={styles.toolbar}>
         <Text style={styles.title}>Site Surveys</Text>
         <View style={styles.toolbarActions}>
+          <TouchableOpacity
+            style={[styles.bugBtn, reportingBug && styles.bugBtnDisabled]}
+            onPress={handleReportBug}
+            disabled={reportingBug}
+          >
+            {reportingBug
+              ? <ActivityIndicator size="small" color={colors.white} />
+              : <Text style={styles.bugBtnText}>🐞 Report</Text>
+            }
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.deleteBtn, (deleting || surveys.length === 0) && styles.deleteBtnDisabled]}
             onPress={handleDeleteAllSurveys}
@@ -205,6 +313,18 @@ const styles = StyleSheet.create({
     minWidth: 90,
     alignItems: 'center',
   },
+  bugBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    minHeight: 36,
+    justifyContent: 'center',
+    minWidth: 90,
+    alignItems: 'center',
+  },
+  bugBtnDisabled: { opacity: 0.6 },
+  bugBtnText: { color: colors.white, fontWeight: '700', fontSize: 13 },
   deleteBtnDisabled: { opacity: 0.6 },
   deleteBtnText: { color: colors.white, fontWeight: '700', fontSize: 13 },
   logoutBtn: {

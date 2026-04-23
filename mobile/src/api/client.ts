@@ -590,3 +590,53 @@ export async function fetchHandoffToken(
   const res = await fetchWithFallback(`/api/handoff/${encodeURIComponent(token)}`, {});
   return handleResponse<HandoffPayload>(res);
 }
+
+// ----------------------------------------------------------------
+// Bug Reports
+// ----------------------------------------------------------------
+
+export interface BugReportResponse {
+  id: string;
+  screenshot_path: string;
+  created_at: string;
+}
+
+export async function submitBugReport(input: {
+  screenshotUri: string;
+  title?: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<BugReportResponse> {
+  const form = new FormData();
+
+  form.append("screenshot", {
+    uri: input.screenshotUri,
+    type: "image/jpeg",
+    name: input.screenshotUri.split("/").pop() ?? "bug-report.jpg",
+  } as unknown as Blob);
+
+  if (input.title?.trim()) {
+    form.append("title", input.title.trim());
+  }
+
+  if (input.description?.trim()) {
+    form.append("description", input.description.trim());
+  }
+
+  if (input.metadata && Object.keys(input.metadata).length > 0) {
+    form.append("metadata", JSON.stringify(input.metadata));
+  }
+
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithFallback(
+    "/api/bug-reports",
+    {
+      method: "POST",
+      headers: authHeaders,
+      body: form,
+    },
+    { timeoutMs: 120_000 },
+  );
+
+  return handleResponse<BugReportResponse>(res);
+}
