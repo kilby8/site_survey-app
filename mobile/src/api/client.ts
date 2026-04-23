@@ -452,6 +452,21 @@ export async function batchSync(payload: {
   return handleResponse<ApiSyncResponse>(res);
 }
 
+/** POST /api/surveys/:id/complete — marks survey complete and queues webhook delivery. */
+export async function completeSurvey(surveyId: string): Promise<{
+  survey_id: string;
+  status: string;
+  event_id: string;
+}> {
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithAuthRetry(`/api/surveys/${surveyId}/complete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders },
+    body: JSON.stringify({}),
+  });
+  return handleResponse<{ survey_id: string; status: string; event_id: string }>(res);
+}
+
 // ----------------------------------------------------------------
 // Engineering Report
 // ----------------------------------------------------------------

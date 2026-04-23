@@ -21,7 +21,7 @@ import {
   ensureSurveyUuid,
   getSurveyById,
 } from '../database/surveyDb';
-import { postSurvey, uploadPhotos } from '../api/client';
+import { postSurvey, uploadPhotos, completeSurvey } from '../api/client';
 import type { Survey } from '../types';
 
 // ----------------------------------------------------------------
@@ -219,7 +219,15 @@ async function _syncOneSurvey(survey: Survey): Promise<void> {
       }
     }
 
-    // 3. Mark the local record as synced
+    // 3. Mark survey complete to enqueue webhook delivery for external pipeline
+    try {
+      await completeSurvey(workingSurvey.id);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Survey completion webhook enqueue failed: ${message}`);
+    }
+
+    // 4. Mark the local record as synced
     await setSyncStatus(workingSurvey.id, 'synced');
 
     _telemetryListener?.({
