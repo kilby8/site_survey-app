@@ -56,6 +56,117 @@ Use one of these repo-root commands instead:
 - `npm run eas:build`
 - `npm run eas:submit`
 
+## SolarPro Webhook + Survey API Integration Snippets
+
+### Webhook event model
+
+`survey.completed` is sent as a **thin event**. Consumers should fetch full survey details via API.
+
+Example payload shape:
+
+```json
+{
+  "event": "survey.completed",
+  "event_id": "uuid",
+  "occurred_at": "ISO-8601 timestamp",
+  "survey_id": "uuid",
+  "status": "submitted",
+  "project_id": "uuid|null",
+  "project_name": "string",
+  "inspector_name": "string",
+  "site_name": "string",
+  "completed_at": "ISO-8601 timestamp"
+}
+```
+
+Webhook headers sent by backend:
+
+- `X-Survey-Signature`
+- `X-Survey-Timestamp`
+- `X-Survey-Event-Id`
+
+Signature format:
+
+- HMAC-SHA256 over `${timestamp}.${rawBody}`
+- Header value: `sha256=<hex_digest>`
+
+### End-to-end cURL examples (bash)
+
+#### 1) Sign in and capture tokens
+
+```bash
+API_BASE="https://solar-pro.app"
+
+SIGNIN_RESP=$(curl -sS -X POST "$API_BASE/api/users/signin" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "identifier": "your-user-or-email",
+    "password": "your-password"
+  }')
+
+echo "$SIGNIN_RESP"
+ACCESS_TOKEN=$(echo "$SIGNIN_RESP" | jq -r '.token')
+REFRESH_TOKEN=$(echo "$SIGNIN_RESP" | jq -r '.refreshToken')
+```
+
+#### 2) Fetch full survey by ID (thin-event follow-up)
+
+```bash
+SURVEY_ID="4f2a587d-4d18-4f8c-8f88-9ed6d26ff7c0"
+
+curl -sS "$API_BASE/api/surveys/$SURVEY_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" | jq
+```
+
+#### 3) Refresh expired access token
+
+```bash
+REFRESH_RESP=$(curl -sS -X POST "$API_BASE/api/users/refresh" \
+  -H "Content-Type: application/json" \
+  -d "{\"refreshToken\":\"$REFRESH_TOKEN\"}")
+
+echo "$REFRESH_RESP"
+ACCESS_TOKEN=$(echo "$REFRESH_RESP" | jq -r '.token')
+REFRESH_TOKEN=$(echo "$REFRESH_RESP" | jq -r '.refreshToken')
+```
+
+#### 4) Build webhook signature locally (verification fixture)
+
+```bash
+WEBHOOK_SECRET="whsec_test_47_435"
+TIMESTAMP="2026-04-23T18:25:43.000Z"
+EVENT_ID="8d7f7a5d-8a84-4ec2-96a8-f0db57876fe8"
+
+RAW_BODY='{"event":"survey.completed","event_id":"8d7f7a5d-8a84-4ec2-96a8-f0db57876fe8","occurred_at":"2026-04-23T18:25:43.000Z","survey_id":"4f2a587d-4d18-4f8c-8f88-9ed6d26ff7c0","status":"submitted","project_id":"a0d89f6f-9a65-4bd6-b724-2ea2935f0dc9","project_name":"Solar Farm East","inspector_name":"Taylor Reed","site_name":"Parcel 17","completed_at":"2026-04-23T18:25:41.382Z"}'
+
+SIGNATURE_HEX=$(printf "%s.%s" "$TIMESTAMP" "$RAW_BODY" \
+  | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -hex \
+  | sed 's/^.* //')
+
+SIGNATURE="sha256=$SIGNATURE_HEX"
+echo "$SIGNATURE"
+```
+
+#### 5) Send signed webhook request to receiver
+
+```bash
+RECEIVER_URL="https://your-solarpro-host/api/webhooks/survey-complete"
+
+curl -i -X POST "$RECEIVER_URL" \
+  -H "Content-Type: application/json" \
+  -H "X-Survey-Timestamp: $TIMESTAMP" \
+  -H "X-Survey-Event-Id: $EVENT_ID" \
+  -H "X-Survey-Signature: $SIGNATURE" \
+  --data-raw "$RAW_BODY"
+```
+
+### Backend configuration for webhook delivery
+
+Set in `backend/.env` (production):
+
+- `SOLARPRO_WEBHOOK_URL` (base URL of receiver; backend posts to `/api/webhooks/survey-complete`)
+- `SURVEY_WEBHOOK_SECRET` (shared HMAC secret)
+
 ## Security Checklist
 
 - Set a strong JWT secret in backend/.env before production deployment.

@@ -81,6 +81,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshTokenRef = useRef<string | null>(null);
 
+  const refreshSession = useCallback(async (storedRefreshToken: string): Promise<string | null> => {
+    try {
+      const result = await refreshAccessToken(storedRefreshToken);
+      await setStoredToken(result.token);
+      await setStoredRefreshToken(result.refreshToken);
+      refreshTokenRef.current = result.refreshToken;
+      setToken(result.token);
+      return result.token;
+    } catch {
+      await clearStoredToken();
+      await clearStoredRefreshToken();
+      refreshTokenRef.current = null;
+      setToken(null);
+      setUser(null);
+      return null;
+    }
+  }, []);
+
   /** Schedule a proactive token refresh REFRESH_BUFFER_MS before expiry. */
   const scheduleRefresh = useCallback((accessToken: string, storedRefreshToken: string) => {
     if (refreshTimerRef.current) {
@@ -92,7 +110,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!expMs) return;
 
     const delay = expMs - Date.now() - REFRESH_BUFFER_MS;
-    if (delay <= 0) return;
+    if (delay <= 0) {
+      void (async () => {
+        const nextAccessToken = await refreshSession(storedRefreshToken);
+        if (!nextAccessToken) return;
+        scheduleRefresh(nextAccessToken, refreshTokenRef.current || storedRefreshToken);
+      })();
+      return;
+    }
 
     refreshTimerRef.current = setTimeout(async () => {
       try {
@@ -111,7 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
       }
     }, delay);
-  }, []);
+  }, [refreshSession]);
 
   const signOut = useCallback(async () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
@@ -131,15 +156,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const savedToken = await getStoredToken();
         if (!savedToken) return;
 
-        const currentUser = await fetchCurrentUser(savedToken);
-        if (!mounted) return;
-
         const savedRefreshToken = await getStoredRefreshToken();
         refreshTokenRef.current = savedRefreshToken;
-        setToken(savedToken);
+
+        let activeToken = savedToken;
+        let currentUser: AuthUser | null = null;
+
+        try {
+          currentUser = await fetchCurrentUser(savedToken);
+        } catch {
+          if (savedRefreshToken) {
+            const refreshedToken = await refreshSession(savedRefreshToken);
+            if (refreshedToken) {
+              activeToken = refreshedToken;
+              currentUser = await fetchCurrentUser(refreshedToken);
+            }
+          }
+        }
+
+        if (!mounted || !currentUser) return;
+
+        setToken(activeToken);
         setUser(currentUser);
 
-        if (savedRefreshToken) scheduleRefresh(savedToken, savedRefreshToken);
+        if (refreshTokenRef.current) {
+          scheduleRefresh(activeToken, refreshTokenRef.current);
+        }
       } catch {
         await clearStoredToken();
         await clearStoredRefreshToken();
@@ -153,7 +195,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     };
-  }, [scheduleRefresh]);
+  }, [refreshSession, scheduleRefresh]);
 
   const signInWithPassword = useCallback(async (identifier: string, password: string) => {
     const result = await signIn(identifier, password);
