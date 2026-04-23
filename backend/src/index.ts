@@ -19,6 +19,7 @@ import categoriesRouter from "./routes/categories";
 import usersRouter from "./routes/users";
 import roboflowProxyRouter from "./routes/roboflowProxy";
 import handoffRouter from "./routes/handoff";
+import fallbackSurveyRouter from "./routes/fallbackSurvey";
 import openApiRouter from "./routes/openapi";
 import bugReportsRouter from "./routes/bugReports";
 import webhooksRouter from "./routes/webhooks";
@@ -145,6 +146,8 @@ app.get("/view/:surveyId", (_req, res) => {
 app.get("/admin/surveys", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "admin-surveys.html"));
 });
+
+app.use(fallbackSurveyRouter);
 
 // ----------------------------------------------------------------
 // Serve uploaded photos statically

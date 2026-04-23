@@ -98,6 +98,16 @@ router.get("/openapi.json", (_req: Request, res: Response) => {
           },
         },
       },
+      "/fallback-surveys/submit": {
+        post: {
+          summary: "Submit browser fallback survey payload to Postgres",
+          responses: {
+            "201": { description: "Stored" },
+            "400": { description: "Validation failed" },
+            "409": { description: "Token replayed" },
+          },
+        },
+      },
       "/surveys": {
         get: {
           summary: "List surveys",

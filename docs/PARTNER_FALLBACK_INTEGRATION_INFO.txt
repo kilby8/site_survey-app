@@ -1,0 +1,38 @@
+SolarPro Fallback Integration is now live on Render.
+
+If your domain (survey.partnerapp.com) is unavailable, use this fallback handoff URL:
+
+https://solar-pro.app/new-survey-fallback?token=<JWT>
+
+What this does:
+- Validates HS256 handoff token using SOLARPRO_HANDOFF_SECRET
+- Renders a browser form prefilled from token claims
+- Stores submission in Postgres table: fallback_surveys
+- Sets status: pending_partner_push
+
+Token requirements:
+- Required claims: jti, project_id
+- Supported claims: project_name, site_name, site_address, inspector_name, category_id, category_name, notes, latitude, longitude, gps_accuracy, metadata
+
+API endpoint for form submit:
+- POST https://solar-pro.app/api/fallback-surveys/submit
+- Body must include token and form fields
+
+Expected responses:
+- 201: stored successfully
+- 409: handoff token replayed (jti already used)
+- 400/401: validation/token error
+
+Shared secrets (out-of-band only):
+1) SURVEY_WEBHOOK_SECRET
+2) SOLARPRO_HANDOFF_SECRET
+
+Bearer auth decision remains:
+- Use static PARTNER_API_BEARER_TOKEN for GET /api/surveys/{id} and /uploads/... access.
+
+Partner smoke test sequence:
+1) Receive handoff URL with token
+2) Open /new-survey-fallback?token=<JWT>
+3) Submit form
+4) Confirm 201 response
+5) Confirm fallback record exists in SolarPro with pending_partner_push
