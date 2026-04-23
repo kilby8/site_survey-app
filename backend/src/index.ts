@@ -24,6 +24,7 @@ import { requireAuth } from "./middleware/auth";
 import { pool } from "./database";
 import { uploadFile, isS3Mode } from "./utils/storageClient";
 import { startWebhookWorker } from "./services/webhookService";
+import { startSqlServerSyncWorker } from "./services/sqlServerSyncService";
 import {
   incrementMetric,
   recordTiming,
@@ -234,6 +235,7 @@ if (require.main === module) {
     console.log(`Site Survey API running on http://localhost:${PORT}`);
     console.log(`Photo uploads served from /uploads`);
     startWebhookWorker();
+    startSqlServerSyncWorker();
   });
 }
 
