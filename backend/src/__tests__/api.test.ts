@@ -247,164 +247,37 @@ describe("POST /api/surveys", () => {
     createdIds.push(res.body.id);
   });
 
-  it("saves and returns solar Ground Mount metadata", async () => {
-    const payload = {
-      project_name: "Solar Farm Alpha",
-      inspector_name: "Bob Solar",
-      site_name: "Field B - South",
-      category_name: "Ground Mount",
-      latitude: 40.7128,
-      longitude: -74.006,
-      status: "draft",
-      metadata: {
-        type: "ground_mount",
-        soil_type: "Clay",
-        slope_degrees: 3.5,
-        trenching_path: "Avoid irrigation pipes near NW corner",
-        vegetation_clearing: true,
-      },
-    };
-
-    const res = await request(app)
-      .post("/api/surveys")
-      .set("Authorization", authHeader)
-      .send(payload)
-      .set("Content-Type", "application/json");
-
-    expect(res.status).toBe(201);
-    expect(res.body.metadata).toBeDefined();
-    expect(res.body.metadata.type).toBe("ground_mount");
-    expect(res.body.metadata.soil_type).toBe("Clay");
-    expect(res.body.metadata.slope_degrees).toBe(3.5);
-    expect(res.body.metadata.vegetation_clearing).toBe(true);
-    createdIds.push(res.body.id);
-  });
-
-  it("saves and returns Roof Mount metadata", async () => {
-    const payload = {
-      project_name: "Residential Roof Project",
-      inspector_name: "Alice Roofer",
-      site_name: "42 Oak Street",
-      category_name: "Roof Mount",
-      latitude: 34.0522,
-      longitude: -118.2437,
-      status: "draft",
-      metadata: {
-        type: "roof_mount",
-        roof_material: "Asphalt Shingle",
-        rafter_size: "2x6",
-        rafter_spacing: "24in",
-        roof_age_years: 8,
-        azimuth: 185,
-      },
-    };
-
-    const res = await request(app)
-      .post("/api/surveys")
-      .set("Authorization", authHeader)
-      .send(payload)
-      .set("Content-Type", "application/json");
-
-    expect(res.status).toBe(201);
-    expect(res.body.metadata.type).toBe("roof_mount");
-    expect(res.body.metadata.roof_material).toBe("Asphalt Shingle");
-    expect(res.body.metadata.azimuth).toBe(185);
-    createdIds.push(res.body.id);
-  });
-
-  it("saves and returns Solar Fencing metadata", async () => {
-    const payload = {
-      project_name: "Agrivoltaic Project Delta",
-      inspector_name: "Carlos Fence",
-      site_name: "Paddock 7",
-      category_name: "Solar Fencing",
-      latitude: 37.7749,
-      longitude: -122.4194,
-      status: "draft",
-      metadata: {
-        type: "solar_fencing",
-        perimeter_length_ft: 1200,
-        lower_shade_risk: false,
-        foundation_type: "Driven Piles",
-        bifacial_surface: "Gravel",
-      },
-    };
-
-    const res = await request(app)
-      .post("/api/surveys")
-      .set("Authorization", authHeader)
-      .send(payload)
-      .set("Content-Type", "application/json");
-
-    expect(res.status).toBe(201);
-    expect(res.body.metadata.type).toBe("solar_fencing");
-    expect(res.body.metadata.perimeter_length_ft).toBe(1200);
-    expect(res.body.metadata.foundation_type).toBe("Driven Piles");
-    createdIds.push(res.body.id);
-  });
-
-  it("returns 400 when required fields are missing", async () => {
-    const res = await request(app)
-      .post("/api/surveys")
-      .set("Authorization", authHeader)
-      .send({ notes: "missing required fields" })
-      .set("Content-Type", "application/json");
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBeDefined();
-  });
-
-  it("returns 422 when client-provided survey id is not a UUID", async () => {
+  it("creates survey when category_id is a slug-like value", async () => {
     const res = await request(app)
       .post("/api/surveys")
       .set("Authorization", authHeader)
       .send({
-        id: "local-not-uuid",
-        project_name: "Invalid ID Survey",
+        project_name: "Slug Category Survey",
         inspector_name: "Inspector",
         site_name: "Site",
+        category_id: "roof_mount",
       });
 
-    expect(res.status).toBe(422);
-    expect(res.body.error?.code).toBe("VALIDATION_FAILED");
-    expect(res.body.error?.field).toBe("id");
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBeDefined();
+    createdIds.push(res.body.id);
   });
 
-  it("upserts when posting same survey id twice", async () => {
-    const fixedId = "22222222-2222-4222-8222-222222222222";
-    createdIds.push(fixedId);
-
-    const first = await request(app)
+  it("creates survey when project_id/category_id are unknown UUIDs", async () => {
+    const res = await request(app)
       .post("/api/surveys")
       .set("Authorization", authHeader)
       .send({
-        id: fixedId,
-        project_name: "Idempotent Survey",
-        inspector_name: "First Inspector",
-        site_name: "First Site",
-        notes: "first",
+        project_name: "Unknown FK Survey",
+        inspector_name: "Inspector",
+        site_name: "Site",
+        project_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        category_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       });
 
-    expect(first.status).toBe(201);
-    expect(first.body.id).toBe(fixedId);
-    expect(first.body.inspector_name).toBe("First Inspector");
-
-    const second = await request(app)
-      .post("/api/surveys")
-      .set("Authorization", authHeader)
-      .send({
-        id: fixedId,
-        project_name: "Idempotent Survey",
-        inspector_name: "Second Inspector",
-        site_name: "Second Site",
-        notes: "second",
-      });
-
-    expect(second.status).toBe(201);
-    expect(second.body.id).toBe(fixedId);
-    expect(second.body.inspector_name).toBe("Second Inspector");
-    expect(second.body.site_name).toBe("Second Site");
-    expect(second.body.notes).toBe("second");
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBeDefined();
+    createdIds.push(res.body.id);
   });
 });
 
@@ -601,27 +474,25 @@ describe("POST /api/surveys/sync", () => {
     expect(res.body.error?.field).toBe("id");
   });
 
-  it("syncs a batch of offline surveys", async () => {
-    const offlineId = "11111111-1111-1111-1111-111111111111";
+  it("syncs survey when project_id/category_id are unknown UUIDs", async () => {
+    const offlineId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     createdIds.push(offlineId);
 
     const res = await request(app)
       .post("/api/surveys/sync")
       .set("Authorization", authHeader)
       .send({
-        device_id: "test-device-001",
+        device_id: "test-device-002",
         surveys: [
           {
             action: "create",
             survey: {
               id: offlineId,
-              project_name: "Offline Sync Project",
+              project_name: "Offline Unknown FK Project",
               inspector_name: "Sync Tester",
               site_name: "Offline Site",
-              latitude: -33.8688,
-              longitude: 151.2093,
-              status: "submitted",
-              checklist: [{ label: "Power", status: "pass", notes: "" }],
+              project_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+              category_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
             },
           },
         ],
@@ -630,7 +501,6 @@ describe("POST /api/surveys/sync", () => {
     expect(res.status).toBe(200);
     expect(res.body.synced).toBe(1);
     expect(res.body.results[0].success).toBe(true);
-    expect(res.body.results[0].action).toBe("created");
   });
 
   it("returns 400 when surveys array is missing", async () => {

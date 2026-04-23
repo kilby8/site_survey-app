@@ -33,13 +33,28 @@ let surveysSoftDeleteReady: Promise<void> | null = null;
 
 async function ensureSurveySoftDeleteColumn(): Promise<void> {
   if (!surveysSoftDeleteReady) {
-    surveysSoftDeleteReady = pool
-      .query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`)
-      .then(() => undefined)
-      .catch((error) => {
-        surveysSoftDeleteReady = null;
-        throw error;
-      });
+    surveysSoftDeleteReady = (async () => {
+      try {
+        const { rows } = await pool.query<{ exists: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1
+               FROM information_schema.columns
+              WHERE table_schema = 'public'
+                AND table_name = 'surveys'
+                AND column_name = 'deleted_at'
+           ) AS exists`,
+        );
+
+        if (rows[0]?.exists) return;
+
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+      } catch (error) {
+        console.warn("soft-delete column migration skipped:", error);
+      }
+    })().catch((error) => {
+      surveysSoftDeleteReady = null;
+      throw error;
+    });
   }
 
   await surveysSoftDeleteReady;
@@ -429,18 +444,47 @@ function geoExpr(params: unknown[], lon: number, lat: number): string {
  */
 async function fetchSurveyFull(id: string) {
   await ensureSurveySoftDeleteColumn();
-  const { rows } = await pool.query<Record<string, unknown>>(
-    `SELECT
-       s.id, s.project_name, s.project_id, s.category_id, s.category_name,
-       s.inspector_name, s.site_name, s.site_address,
-       s.latitude, s.longitude, s.gps_accuracy,
-       ST_AsGeoJSON(s.location::geometry)::jsonb AS location_geojson,
-       s.survey_date, s.notes, s.status, s.device_id, s.metadata,
-       s.synced_at, s.created_at, s.updated_at
-     FROM surveys s
-     WHERE s.id = $1 AND s.deleted_at IS NULL`,
-    [id],
-  );
+
+  let rows: Array<Record<string, unknown>> = [];
+
+  try {
+    const result = await pool.query<Record<string, unknown>>(
+      `SELECT
+         s.id, s.project_name, s.project_id, s.category_id, s.category_name,
+         s.inspector_name, s.site_name, s.site_address,
+         s.latitude, s.longitude, s.gps_accuracy,
+         ST_AsGeoJSON(s.location::geometry)::jsonb AS location_geojson,
+         s.survey_date, s.notes, s.status, s.device_id, s.metadata,
+         s.synced_at, s.created_at, s.updated_at
+       FROM surveys s
+       WHERE s.id = $1 AND s.deleted_at IS NULL`,
+      [id],
+    );
+    rows = result.rows;
+  } catch (error) {
+    const pgError = error as { code?: string; message?: string };
+    const missingDeletedAt =
+      pgError.code === "42703" ||
+      (pgError.message ?? "").toLowerCase().includes("deleted_at");
+
+    if (!missingDeletedAt) throw error;
+
+    const fallback = await pool.query<Record<string, unknown>>(
+      `SELECT
+         s.id, s.project_name, s.project_id, s.category_id, s.category_name,
+         s.inspector_name, s.site_name, s.site_address,
+         s.latitude, s.longitude, s.gps_accuracy,
+         ST_AsGeoJSON(s.location::geometry)::jsonb AS location_geojson,
+         s.survey_date, s.notes, s.status, s.device_id, s.metadata,
+         s.synced_at, s.created_at, s.updated_at
+       FROM surveys s
+       WHERE s.id = $1`,
+      [id],
+    );
+
+    rows = fallback.rows;
+  }
+
   if (rows.length === 0) return null;
   const survey = rows[0];
 
