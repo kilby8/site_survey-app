@@ -10,7 +10,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, ActivityIndicator,
-  Alert, StyleSheet, RefreshControl,
+  Alert, StyleSheet, RefreshControl, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
   emptySubtitle: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 8 },
   fab: {
     position:        'absolute',
-    bottom:           24,
+    bottom:           Platform.OS === 'android' ? 88 : 28,
     right:            24,
     width:            62,
     height:           62,
