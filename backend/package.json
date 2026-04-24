@@ -7,7 +7,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "jest --forceExit"
+    "test": "jest --forceExit",
+    "test:webhook": "node dist/scripts/testSolarProWebhook.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1033.0",
