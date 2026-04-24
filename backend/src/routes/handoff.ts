@@ -42,6 +42,10 @@ type HandoffClaims = JwtPayload & {
   longitude?: number;
   gps_accuracy?: number;
   metadata?: unknown;
+  solarpro_user_id?: string;
+  solarpro_project_id?: string;
+  solarpro_email?: string;
+  solarpro_org_id?: string;
 };
 
 router.get("/:token", async (req: Request, res: Response) => {
@@ -129,6 +133,18 @@ router.get("/:token", async (req: Request, res: Response) => {
       throw error;
     }
 
+    console.log("[HANDOFF DECODED]", decoded);
+
+    if (decoded.solarpro_user_id) {
+      console.log("[HANDOFF OWNER]", {
+        solarpro_user_id: decoded.solarpro_user_id,
+        solarpro_project_id: decoded.solarpro_project_id ?? null,
+        solarpro_email: decoded.solarpro_email ?? null,
+        solarpro_org_id: decoded.solarpro_org_id ?? null,
+        jti: decoded.jti,
+      });
+    }
+
     res.json({
       project_id: decoded.project_id,
       project_name: decoded.project_name ?? null,
@@ -144,6 +160,10 @@ router.get("/:token", async (req: Request, res: Response) => {
       gps_accuracy:
         typeof decoded.gps_accuracy === "number" ? decoded.gps_accuracy : null,
       metadata: decoded.metadata ?? null,
+      solarpro_user_id: decoded.solarpro_user_id ?? null,
+      solarpro_project_id: decoded.solarpro_project_id ?? null,
+      solarpro_email: decoded.solarpro_email ?? null,
+      solarpro_org_id: decoded.solarpro_org_id ?? null,
     });
   } catch (error) {
     console.error("GET /api/handoff/:token error:", error);

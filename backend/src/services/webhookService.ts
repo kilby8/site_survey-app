@@ -14,6 +14,10 @@ interface SurveyCompletePayload {
   inspector_name: string;
   site_name: string;
   completed_at: string;
+  solarpro_user_id: string | null;
+  solarpro_project_id: string | null;
+  solarpro_email: string | null;
+  solarpro_org_id: string | null;
 }
 
 interface WebhookDeliveryRow {
@@ -85,6 +89,10 @@ export async function enqueueSurveyCompleteWebhook(params: {
   inspector_name: string;
   site_name: string;
   completed_at: string;
+  solarpro_user_id: string | null;
+  solarpro_project_id: string | null;
+  solarpro_email: string | null;
+  solarpro_org_id: string | null;
 }): Promise<string> {
   await ensureWebhookDeliveriesTable();
 
@@ -100,6 +108,10 @@ export async function enqueueSurveyCompleteWebhook(params: {
     inspector_name: params.inspector_name,
     site_name: params.site_name,
     completed_at: params.completed_at,
+    solarpro_user_id: params.solarpro_user_id,
+    solarpro_project_id: params.solarpro_project_id,
+    solarpro_email: params.solarpro_email,
+    solarpro_org_id: params.solarpro_org_id,
   };
 
   await pool.query(

@@ -41,6 +41,12 @@ async function ensureSurveySoftDeleteColumn(): Promise<void> {
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS category_name VARCHAR(100)`);
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS metadata JSONB`);
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_user_id TEXT`);
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_project_id TEXT`);
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_email TEXT`);
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_org_id TEXT`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_solarpro_user_id ON surveys(solarpro_user_id)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_solarpro_project_id ON surveys(solarpro_project_id)`);
       } catch (error) {
         console.warn("survey schema migration skipped:", error);
       }
@@ -303,6 +309,10 @@ interface SurveyInput {
   notes?: string;
   status?: string;
   device_id?: string;
+  solarpro_user_id?: string | null;
+  solarpro_project_id?: string | null;
+  solarpro_email?: string | null;
+  solarpro_org_id?: string | null;
   /** Category-specific fields (Ground Mount / Roof Mount / Solar Fencing) */
   metadata?: SurveyMetadata | null;
   checklist?: ChecklistItemInput[];
@@ -980,6 +990,10 @@ router.post("/sync", async (req: Request, res: Response) => {
             survey.status ?? "submitted",
             device_id ?? survey.device_id ?? null,
             survey.metadata != null ? JSON.stringify(survey.metadata) : null,
+            survey.solarpro_user_id ?? null,
+            survey.solarpro_project_id ?? null,
+            survey.solarpro_email ?? null,
+            survey.solarpro_org_id ?? null,
           );
 
           await client.query(
@@ -987,10 +1001,15 @@ router.post("/sync", async (req: Request, res: Response) => {
                (id, project_name, project_id, category_id, category_name,
                 inspector_name, site_name, site_address,
                 latitude, longitude, gps_accuracy, location,
-                survey_date, notes, status, device_id, metadata, synced_at)
+                survey_date, notes, status, device_id, metadata,
+                solarpro_user_id, solarpro_project_id, solarpro_email, solarpro_org_id, synced_at)
              VALUES
                ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
                 ${locationSql},
+                $${insertParams.length - 8},
+                $${insertParams.length - 7},
+                $${insertParams.length - 6},
+                $${insertParams.length - 5},
                 $${insertParams.length - 4},
                 $${insertParams.length - 3},
                 $${insertParams.length - 2},
@@ -1014,6 +1033,10 @@ router.post("/sync", async (req: Request, res: Response) => {
                status = EXCLUDED.status,
                device_id = EXCLUDED.device_id,
                metadata = EXCLUDED.metadata,
+               solarpro_user_id = COALESCE(EXCLUDED.solarpro_user_id, surveys.solarpro_user_id),
+               solarpro_project_id = COALESCE(EXCLUDED.solarpro_project_id, surveys.solarpro_project_id),
+               solarpro_email = COALESCE(EXCLUDED.solarpro_email, surveys.solarpro_email),
+               solarpro_org_id = COALESCE(EXCLUDED.solarpro_org_id, surveys.solarpro_org_id),
                synced_at = NOW(),
                updated_at = NOW()`,
 
@@ -1064,6 +1087,10 @@ router.post("/sync", async (req: Request, res: Response) => {
             survey.notes ?? null,
             survey.status ?? null,
             survey.metadata != null ? JSON.stringify(survey.metadata) : null,
+            survey.solarpro_user_id ?? null,
+            survey.solarpro_project_id ?? null,
+            survey.solarpro_email ?? null,
+            survey.solarpro_org_id ?? null,
           );
 
           await client.query(
@@ -1079,9 +1106,13 @@ router.post("/sync", async (req: Request, res: Response) => {
                longitude      = COALESCE($10, longitude),
                gps_accuracy   = COALESCE($11, gps_accuracy),
                location       = ${locationSql},
-               notes          = COALESCE($${updateParams.length - 2}, notes),
-               status         = COALESCE($${updateParams.length - 1}, status),
-               metadata       = COALESCE($${updateParams.length}::jsonb, metadata),
+               notes          = COALESCE($${updateParams.length - 6}, notes),
+               status         = COALESCE($${updateParams.length - 5}, status),
+               metadata       = COALESCE($${updateParams.length - 4}::jsonb, metadata),
+               solarpro_user_id = COALESCE($${updateParams.length - 3}, solarpro_user_id),
+               solarpro_project_id = COALESCE($${updateParams.length - 2}, solarpro_project_id),
+               solarpro_email = COALESCE($${updateParams.length - 1}, solarpro_email),
+               solarpro_org_id = COALESCE($${updateParams.length}, solarpro_org_id),
                updated_at     = NOW()
              WHERE id = $1`,
             updateParams,
@@ -1184,12 +1215,17 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
       project_name: string;
       inspector_name: string;
       site_name: string;
+      solarpro_user_id: string | null;
+      solarpro_project_id: string | null;
+      solarpro_email: string | null;
+      solarpro_org_id: string | null;
     }>(
       `UPDATE surveys
           SET status = 'submitted',
               updated_at = NOW()
         WHERE id = $1 AND deleted_at IS NULL
-        RETURNING id::text, status, project_id::text, project_name, inspector_name, site_name`,
+        RETURNING id::text, status, project_id::text, project_name, inspector_name, site_name,
+                  solarpro_user_id, solarpro_project_id, solarpro_email, solarpro_org_id`,
       [surveyId],
     );
 
@@ -1213,6 +1249,10 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
       inspector_name: survey.inspector_name,
       site_name: survey.site_name,
       completed_at: completedAt,
+      solarpro_user_id: survey.solarpro_user_id ?? null,
+      solarpro_project_id: survey.solarpro_project_id ?? null,
+      solarpro_email: survey.solarpro_email ?? null,
+      solarpro_org_id: survey.solarpro_org_id ?? null,
     });
 
     await processWebhookQueue(10);
@@ -1656,6 +1696,10 @@ router.post("/", async (req: Request, res: Response) => {
       body.status ?? "draft", // status
       body.device_id ?? null, // device_id
       body.metadata != null ? JSON.stringify(body.metadata) : null, // metadata
+      body.solarpro_user_id ?? null,
+      body.solarpro_project_id ?? null,
+      body.solarpro_email ?? null,
+      body.solarpro_org_id ?? null,
     );
 
     const { rows } = await client.query(
@@ -1663,10 +1707,15 @@ router.post("/", async (req: Request, res: Response) => {
          (id, project_name, project_id, category_id, category_name,
           inspector_name, site_name, site_address,
           latitude, longitude, gps_accuracy, location,
-          survey_date, notes, status, device_id, metadata)
+          survey_date, notes, status, device_id, metadata,
+          solarpro_user_id, solarpro_project_id, solarpro_email, solarpro_org_id)
        VALUES
          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
           ${locationSql},
+          $${insertParams.length - 8},
+          $${insertParams.length - 7},
+          $${insertParams.length - 6},
+          $${insertParams.length - 5},
           $${insertParams.length - 4},
           $${insertParams.length - 3},
           $${insertParams.length - 2},
@@ -1689,6 +1738,10 @@ router.post("/", async (req: Request, res: Response) => {
          status = EXCLUDED.status,
          device_id = EXCLUDED.device_id,
          metadata = EXCLUDED.metadata,
+         solarpro_user_id = COALESCE(EXCLUDED.solarpro_user_id, surveys.solarpro_user_id),
+         solarpro_project_id = COALESCE(EXCLUDED.solarpro_project_id, surveys.solarpro_project_id),
+         solarpro_email = COALESCE(EXCLUDED.solarpro_email, surveys.solarpro_email),
+         solarpro_org_id = COALESCE(EXCLUDED.solarpro_org_id, surveys.solarpro_org_id),
          updated_at = NOW()
        RETURNING id`,
       insertParams,
@@ -1781,6 +1834,10 @@ router.put("/:id", async (req: Request, res: Response) => {
       body.notes ?? null,
       body.status ?? null,
       body.metadata != null ? JSON.stringify(body.metadata) : null,
+      body.solarpro_user_id ?? null,
+      body.solarpro_project_id ?? null,
+      body.solarpro_email ?? null,
+      body.solarpro_org_id ?? null,
     );
 
     await client.query(
@@ -1796,9 +1853,13 @@ router.put("/:id", async (req: Request, res: Response) => {
          longitude      = COALESCE($10, longitude),
          gps_accuracy   = COALESCE($11, gps_accuracy),
          location       = ${locationSql},
-         notes          = COALESCE($${updateParams.length - 2}, notes),
-         status         = COALESCE($${updateParams.length - 1}, status),
-         metadata       = COALESCE($${updateParams.length}::jsonb, metadata),
+         notes          = COALESCE($${updateParams.length - 6}, notes),
+         status         = COALESCE($${updateParams.length - 5}, status),
+         metadata       = COALESCE($${updateParams.length - 4}::jsonb, metadata),
+         solarpro_user_id = COALESCE($${updateParams.length - 3}, solarpro_user_id),
+         solarpro_project_id = COALESCE($${updateParams.length - 2}, solarpro_project_id),
+         solarpro_email = COALESCE($${updateParams.length - 1}, solarpro_email),
+         solarpro_org_id = COALESCE($${updateParams.length}, solarpro_org_id),
          updated_at     = NOW()
        WHERE id = $1`,
       updateParams,

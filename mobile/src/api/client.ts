@@ -389,6 +389,10 @@ export async function postSurvey(
       notes: survey.notes,
       status: "submitted",
       device_id: survey.device_id,
+      solarpro_user_id: survey.solarpro_user_id ?? null,
+      solarpro_project_id: survey.solarpro_project_id ?? null,
+      solarpro_email: survey.solarpro_email ?? null,
+      solarpro_org_id: survey.solarpro_org_id ?? null,
       /** Category-specific metadata (Ground Mount / Roof Mount / Solar Fencing) */
       metadata: survey.metadata ?? null,
       // Checklist items are sent with the survey for atomic creation
@@ -640,6 +644,10 @@ export interface HandoffPayload {
   longitude: number | null;
   gps_accuracy: number | null;
   metadata: Record<string, unknown> | null;
+  solarpro_user_id: string | null;
+  solarpro_project_id: string | null;
+  solarpro_email: string | null;
+  solarpro_org_id: string | null;
 }
 
 export async function fetchHandoffToken(

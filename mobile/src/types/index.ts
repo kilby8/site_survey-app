@@ -120,6 +120,10 @@ export interface Survey {
   sync_status: SyncStatus;
   sync_error: string | null;
   device_id: string | null;
+  solarpro_user_id?: string | null;
+  solarpro_project_id?: string | null;
+  solarpro_email?: string | null;
+  solarpro_org_id?: string | null;
   /** Category-specific fields — Ground Mount / Roof Mount / Solar Fencing */
   metadata: SurveyMetadata | null;
   created_at: string;

@@ -554,6 +554,8 @@ router.post('/solarpro-sso', async (req: Request, res: Response) => {
 
   let decoded: {
     solarpro_user_id?: string;
+    solarpro_project_id?: string;
+    solarpro_org_id?: string;
     solarpro_email?: string;
     solarpro_name?: string;
     email?: string;
@@ -592,6 +594,16 @@ router.post('/solarpro-sso', async (req: Request, res: Response) => {
       authAudit('users.solarpro-sso.created', req, ssoEmail, { userId: user.id });
     } else {
       authAudit('users.solarpro-sso.matched', req, ssoEmail, { userId: user.id });
+    }
+
+    if (decoded.solarpro_user_id || decoded.solarpro_project_id || decoded.solarpro_org_id) {
+      console.log('[SSO OWNER STORED]', {
+        solarpro_user_id: decoded.solarpro_user_id ?? null,
+        solarpro_project_id: decoded.solarpro_project_id ?? null,
+        solarpro_org_id: decoded.solarpro_org_id ?? null,
+        solarpro_email: decoded.solarpro_email ?? null,
+        jti: decoded.jti ?? null,
+      });
     }
 
     const isAdmin = isElevatedAdminEmail(user.email);

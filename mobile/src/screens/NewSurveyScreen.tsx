@@ -44,6 +44,10 @@ interface NewSurveyDraft {
   checklist: ChecklistItemDraft[];
   photos: PhotoDraft[];
   user_id: string | null;
+  solarpro_user_id: string | null;
+  solarpro_project_id: string | null;
+  solarpro_email: string | null;
+  solarpro_org_id: string | null;
 }
 
 export default function NewSurveyScreen() {
@@ -61,6 +65,10 @@ export default function NewSurveyScreen() {
 
   const [projectName, setProjectName] = useState("Mobile Site Survey");
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [solarproUserId, setSolarproUserId] = useState<string | null>(null);
+  const [solarproProjectId, setSolarproProjectId] = useState<string | null>(null);
+  const [solarproEmail, setSolarproEmail] = useState<string | null>(null);
+  const [solarproOrgId, setSolarproOrgId] = useState<string | null>(null);
   const [inspectorName, setInspectorName] = useState(user?.fullName ?? "");
   const [siteName, setSiteName] = useState("");
   const [siteAddress, setSiteAddress] = useState("");
@@ -111,6 +119,10 @@ export default function NewSurveyScreen() {
     checklist,
     photos,
     user_id: user?.id ?? null,
+    solarpro_user_id: solarproUserId,
+    solarpro_project_id: solarproProjectId,
+    solarpro_email: solarproEmail,
+    solarpro_org_id: solarproOrgId,
   }), [
     projectName,
     inspectorName,
@@ -123,6 +135,10 @@ export default function NewSurveyScreen() {
     checklist,
     photos,
     user?.id,
+    solarproUserId,
+    solarproProjectId,
+    solarproEmail,
+    solarproOrgId,
   ]);
 
   const saveDraftToFile = useCallback(async () => {
@@ -204,6 +220,10 @@ export default function NewSurveyScreen() {
         if (handoff.metadata) {
           setMetadata(handoff.metadata as unknown as SurveyMetadata);
         }
+        if (handoff.solarpro_user_id) setSolarproUserId(handoff.solarpro_user_id);
+        if (handoff.solarpro_project_id) setSolarproProjectId(handoff.solarpro_project_id);
+        if (handoff.solarpro_email) setSolarproEmail(handoff.solarpro_email);
+        if (handoff.solarpro_org_id) setSolarproOrgId(handoff.solarpro_org_id);
         setHandoffLinked(true);
       } catch (error) {
         const message =
@@ -273,6 +293,10 @@ export default function NewSurveyScreen() {
         notes: notes.trim(),
         status: "draft",
         device_id: deviceId,
+        solarpro_user_id: solarproUserId,
+        solarpro_project_id: solarproProjectId,
+        solarpro_email: solarproEmail,
+        solarpro_org_id: solarproOrgId,
         metadata: metadata ?? null,
         checklist: checklist.map((item, i) => ({
           label: item.label.trim() || `Checklist Item ${i + 1}`,
