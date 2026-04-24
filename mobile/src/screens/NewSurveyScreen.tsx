@@ -79,6 +79,17 @@ export default function NewSurveyScreen() {
   const [photos, setPhotos] = useState<PhotoDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [draftFileUri, setDraftFileUri] = useState<string | null>(null);
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+
+  const stepLabels = ["Site Info", "Checklist", "Photos", "Review"] as const;
+
+  const canProceedStep1 =
+    projectName.trim().length > 0 &&
+    inspectorName.trim().length > 0 &&
+    siteName.trim().length > 0;
+
+  const requiredPhotoSlots = 2;
+  const hasMinimumPhotos = photos.length >= requiredPhotoSlots;
 
   const selectedCategoryName = useMemo(() => {
     const found = SURVEY_CATEGORIES.find((c) => c.id === (categoryId ?? ""));
@@ -307,125 +318,226 @@ export default function NewSurveyScreen() {
           <Text style={styles.title}>New Survey</Text>
           <Text style={styles.autoSaveHint}>Auto-saving draft every 300 seconds</Text>
 
-          {handoffLinked && projectName.trim() && (
-            <View style={styles.linkedBanner}>
-              <Text style={styles.linkedBannerText}>
-                Linked to SolarPro project: {projectName.trim()}
-              </Text>
+          <View style={styles.stepBarWrap}>
+            {stepLabels.map((label, index) => {
+              const step = (index + 1) as 1 | 2 | 3 | 4;
+              const active = currentStep === step;
+              const done = currentStep > step;
+              return (
+                <View key={label} style={[styles.stepPill, active && styles.stepPillActive, done && styles.stepPillDone]}>
+                  <Text style={[styles.stepPillText, (active || done) && styles.stepPillTextActive]}>
+                    {step}. {label}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+
+          {currentStep === 1 && (
+            <>
+              {handoffLinked && projectName.trim() && (
+                <View style={styles.linkedBanner}>
+                  <Text style={styles.linkedBannerText}>
+                    Linked to SolarPro project: {projectName.trim()}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.section}>
+                <Text style={styles.label}>Project Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter project name"
+                  value={projectName}
+                  onChangeText={setProjectName}
+                  placeholderTextColor={colors.textMuted}
+                />
+              </View>
+
+              <View style={styles.section}>
+                <Text style={styles.label}>Inspector Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter inspector name"
+                  value={inspectorName}
+                  onChangeText={setInspectorName}
+                  placeholderTextColor={colors.textMuted}
+                />
+              </View>
+
+              <View style={styles.section}>
+                <Text style={styles.label}>Site Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter site name"
+                  value={siteName}
+                  onChangeText={setSiteName}
+                  placeholderTextColor={colors.textMuted}
+                />
+              </View>
+
+              <View style={styles.section}>
+                <Text style={styles.label}>Site Address</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter site address"
+                  value={siteAddress}
+                  onChangeText={setSiteAddress}
+                  placeholderTextColor={colors.textMuted}
+                />
+              </View>
+
+              <View style={styles.section}>
+                <Text style={styles.label}>Category</Text>
+                <View style={styles.categoryRow}>
+                  {SURVEY_CATEGORIES.filter((c) => c.id).map((c) => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[
+                        styles.categoryBtn,
+                        categoryId === c.id && styles.categoryBtnActive,
+                      ]}
+                      onPress={() => setCategoryId(c.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.categoryBtnText,
+                          categoryId === c.id && styles.categoryBtnTextActive,
+                        ]}
+                      >
+                        {c.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <GPSCapture
+                coordinates={location.coordinates}
+                status={location.status}
+                errorMsg={location.errorMsg}
+                onCapture={location.capture}
+                onClear={location.clear}
+              />
+
+              <SolarMetadataForm
+                categoryId={categoryId}
+                metadata={metadata}
+                onChange={setMetadata}
+              />
+            </>
+          )}
+
+          {currentStep === 2 && (
+            <ChecklistEditor items={checklist} onChange={setChecklist} />
+          )}
+
+          {currentStep === 3 && (
+            <>
+              <PhotoCapture photos={photos} onChange={setPhotos} />
+              {!hasMinimumPhotos && (
+                <View style={styles.warningBanner}>
+                  <Text style={styles.warningText}>
+                    Add at least {requiredPhotoSlots} photos before final submission.
+                  </Text>
+                </View>
+              )}
+              <View style={styles.section}>
+                <Text style={styles.label}>Notes</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Add survey notes"
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholderTextColor={colors.textMuted}
+                  multiline
+                  numberOfLines={4}
+                />
+              </View>
+            </>
+          )}
+
+          {currentStep === 4 && (
+            <View style={styles.section}>
+              <Text style={styles.label}>Review & Submit</Text>
+
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewKey}>Project</Text>
+                <Text style={styles.reviewVal}>{projectName || '—'}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewKey}>Inspector</Text>
+                <Text style={styles.reviewVal}>{inspectorName || '—'}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewKey}>Site</Text>
+                <Text style={styles.reviewVal}>{siteName || '—'}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewKey}>Category</Text>
+                <Text style={styles.reviewVal}>{selectedCategoryName || '—'}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewKey}>Checklist Items</Text>
+                <Text style={styles.reviewVal}>{checklist.length}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewKey}>Photos</Text>
+                <Text style={styles.reviewVal}>{photos.length}</Text>
+              </View>
+
+              <TouchableOpacity style={styles.editStepBtn} onPress={() => setCurrentStep(1)}>
+                <Text style={styles.editStepText}>Edit Site Info</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.editStepBtn} onPress={() => setCurrentStep(2)}>
+                <Text style={styles.editStepText}>Edit Checklist</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.editStepBtn} onPress={() => setCurrentStep(3)}>
+                <Text style={styles.editStepText}>Edit Photos</Text>
+              </TouchableOpacity>
             </View>
           )}
 
-          <View style={styles.section}>
-            <Text style={styles.label}>Project Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter project name"
-              value={projectName}
-              onChangeText={setProjectName}
-              placeholderTextColor={colors.textMuted}
-            />
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.label}>Inspector Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter inspector name"
-              value={inspectorName}
-              onChangeText={setInspectorName}
-              placeholderTextColor={colors.textMuted}
-            />
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.label}>Site Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter site name"
-              value={siteName}
-              onChangeText={setSiteName}
-              placeholderTextColor={colors.textMuted}
-            />
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.label}>Site Address</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter site address"
-              value={siteAddress}
-              onChangeText={setSiteAddress}
-              placeholderTextColor={colors.textMuted}
-            />
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.label}>Category</Text>
-            <View style={styles.categoryRow}>
-              {SURVEY_CATEGORIES.filter((c) => c.id).map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={[
-                    styles.categoryBtn,
-                    categoryId === c.id && styles.categoryBtnActive,
-                  ]}
-                  onPress={() => setCategoryId(c.id)}
-                >
-                  <Text
-                    style={[
-                      styles.categoryBtnText,
-                      categoryId === c.id && styles.categoryBtnTextActive,
-                    ]}
-                  >
-                    {c.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          <GPSCapture
-            coordinates={location.coordinates}
-            status={location.status}
-            errorMsg={location.errorMsg}
-            onCapture={location.capture}
-            onClear={location.clear}
-          />
-
-          <SolarMetadataForm
-            categoryId={categoryId}
-            metadata={metadata}
-            onChange={setMetadata}
-          />
-
-          <ChecklistEditor items={checklist} onChange={setChecklist} />
-
-          <PhotoCapture photos={photos} onChange={setPhotos} />
-
-          <View style={styles.section}>
-            <Text style={styles.label}>Notes</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Add survey notes"
-              value={notes}
-              onChangeText={setNotes}
-              placeholderTextColor={colors.textMuted}
-              multiline
-              numberOfLines={4}
-            />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
-            onPress={submitSurvey}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color={colors.white} />
+          <View style={styles.navRow}>
+            {currentStep > 1 ? (
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => setCurrentStep((prev) => (prev - 1) as 1 | 2 | 3 | 4)}
+                disabled={submitting}
+              >
+                <Text style={styles.secondaryBtnText}>← Back</Text>
+              </TouchableOpacity>
             ) : (
-              <Text style={styles.btnText}>Create Survey</Text>
+              <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.back()}>
+                <Text style={styles.secondaryBtnText}>Cancel</Text>
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+
+            {currentStep < 4 ? (
+              <TouchableOpacity
+                style={[
+                  styles.submitBtn,
+                  ((currentStep === 1 && !canProceedStep1) || submitting) && styles.submitBtnDisabled,
+                ]}
+                onPress={() => setCurrentStep((prev) => (prev + 1) as 1 | 2 | 3 | 4)}
+                disabled={(currentStep === 1 && !canProceedStep1) || submitting}
+              >
+                <Text style={styles.btnText}>Next →</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
+                onPress={submitSurvey}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.btnText}>Create Survey</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -450,7 +562,37 @@ const styles = StyleSheet.create({
   autoSaveHint: {
     color: colors.textMuted,
     fontSize: 12,
-    marginBottom: 16,
+    marginBottom: 12,
+  },
+  stepBarWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 14,
+  },
+  stepPill: {
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    backgroundColor: colors.inputBg,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  stepPillActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  stepPillDone: {
+    borderColor: colors.successBorder,
+    backgroundColor: colors.successBg,
+  },
+  stepPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  stepPillTextActive: {
+    color: colors.white,
   },
   linkedBanner: {
     backgroundColor: colors.successBg,
@@ -523,12 +665,81 @@ const styles = StyleSheet.create({
   categoryBtnTextActive: {
     color: colors.white,
   },
+  warningBanner: {
+    backgroundColor: '#3A2F16',
+    borderColor: '#B98A22',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  warningText: {
+    color: '#FFD98A',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  reviewRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 8,
+  },
+  reviewKey: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  reviewVal: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+    flexShrink: 1,
+    textAlign: 'right',
+    marginLeft: 10,
+  },
+  editStepBtn: {
+    backgroundColor: colors.inputBg,
+    borderColor: colors.inputBorder,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  editStepText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  navRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  secondaryBtn: {
+    flex: 1,
+    backgroundColor: colors.inputBg,
+    borderColor: colors.inputBorder,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  secondaryBtnText: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
   submitBtn: {
+    flex: 1,
     backgroundColor: colors.primary,
     borderRadius: 12,
     padding: 15,
     alignItems: "center",
-    marginTop: 16,
+    marginTop: 0,
     shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.24,
