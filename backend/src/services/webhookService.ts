@@ -176,7 +176,7 @@ async function deliverOne(row: WebhookDeliveryRow): Promise<void> {
   const payloadText = row.payload;
 
   try {
-    const response = await fetch(`${url}/api/webhooks/survey-complete`, {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
