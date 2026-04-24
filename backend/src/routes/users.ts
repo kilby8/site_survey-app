@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { Router, Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import {
   getUserById,
   getUserByEmail,
@@ -531,6 +532,94 @@ router.post('/logout', async (req: Request, res: Response) => {
   }
 
   res.json({ message: 'Logged out' });
+});
+
+// POST /api/users/solarpro-sso
+// Accepts a SolarPro handoff JWT and returns local auth tokens,
+// auto-provisioning a user account when needed.
+router.post('/solarpro-sso', async (req: Request, res: Response) => {
+  const { token } = req.body as { token?: string };
+
+  if (!token || typeof token !== 'string') {
+    res.status(400).json({ error: 'token is required' });
+    return;
+  }
+
+  const handoffSecret = process.env.SOLARPRO_HANDOFF_SECRET?.trim();
+  if (!handoffSecret) {
+    console.error('[solarpro-sso] SOLARPRO_HANDOFF_SECRET is not configured');
+    res.status(500).json({ error: 'SSO not configured' });
+    return;
+  }
+
+  let decoded: {
+    solarpro_user_id?: string;
+    solarpro_email?: string;
+    solarpro_name?: string;
+    email?: string;
+    name?: string;
+    project_id?: string;
+    jti?: string;
+    exp?: number;
+  };
+
+  try {
+    const verified = jwt.verify(token, handoffSecret, { algorithms: ['HS256'] });
+    if (!verified || typeof verified !== 'object') {
+      res.status(401).json({ error: 'Invalid SSO token' });
+      return;
+    }
+    decoded = verified as typeof decoded;
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired SSO token' });
+    return;
+  }
+
+  const ssoEmail = (decoded.solarpro_email ?? decoded.email ?? '').trim().toLowerCase();
+  const ssoName = (decoded.solarpro_name ?? decoded.name ?? 'SolarPro User').trim();
+
+  if (!ssoEmail) {
+    res.status(422).json({ error: 'SSO token missing email claim' });
+    return;
+  }
+
+  try {
+    let user = await getUserByEmail(ssoEmail);
+
+    if (!user) {
+      const randomPassword = randomBytes(32).toString('hex');
+      user = await createUser(ssoEmail, randomPassword, ssoName);
+      authAudit('users.solarpro-sso.created', req, ssoEmail, { userId: user.id });
+    } else {
+      authAudit('users.solarpro-sso.matched', req, ssoEmail, { userId: user.id });
+    }
+
+    const isAdmin = isElevatedAdminEmail(user.email);
+    const accessToken = signAuthToken({
+      userId: user.id,
+      email: user.email,
+      role: isAdmin ? 'admin' : 'user',
+    });
+    const refreshToken = await issueRefreshToken(user.id);
+
+    authAudit('users.solarpro-sso.success', req, user.email, { status: 200, userId: user.id });
+
+    res.json({
+      token: accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.full_name,
+        role: isAdmin ? 'admin' : 'user',
+        createdAt: user.created_at,
+      },
+    });
+  } catch (err) {
+    console.error('POST /api/users/solarpro-sso error:', err);
+    authAudit('users.solarpro-sso.error', req, ssoEmail, { status: 500 });
+    res.status(500).json({ error: 'SSO login failed' });
+  }
 });
 
 // DELETE /api/users/me
