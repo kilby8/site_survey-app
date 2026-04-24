@@ -97,7 +97,6 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.hint}>Admin test login: admin / admin123!</Text>
             <Text style={styles.apiHint}>API: {API_URL}</Text>
           </View>
         </ScrollView>
@@ -148,6 +147,5 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   linkText: { color: BRAND_PRIMARY, fontSize: 13, fontWeight: '600' },
-  hint: { marginTop: 14, fontSize: 12, color: colors.textSecondary },
-  apiHint: { marginTop: 6, fontSize: 11, color: colors.textMuted },
+  apiHint: { marginTop: 10, fontSize: 11, color: colors.textMuted },
 });
