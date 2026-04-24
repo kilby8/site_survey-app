@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import Header from './components/Header';
 import SurveyList from './components/SurveyList';
-import SurveyForm from './components/SurveyForm';
+import SurveyFormV2 from './components/SurveyFormV2';
 import AuthScreen from './components/AuthScreen';
 import { getCurrentUser } from './api/authApi';
 import type { AuthUser } from './api/authApi';
@@ -152,13 +152,13 @@ function App() {
           />
         )}
         {view.page === 'new' && (
-          <SurveyForm
+          <SurveyFormV2
             onSaved={handleSaved}
             onCancel={() => setView({ page: 'list' })}
           />
         )}
         {view.page === 'edit' && (
-          <SurveyForm
+          <SurveyFormV2
             surveyId={view.id}
             onSaved={handleSaved}
             onCancel={() => setView({ page: 'list' })}
