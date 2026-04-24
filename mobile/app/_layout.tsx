@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AppBootstrapProvider, useAppBootstrap } from '../src/context/AppBootstrapContext';
@@ -65,6 +65,22 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function FloatingHomeButton() {
+  const router = useRouter();
+
+  return (
+    <TouchableOpacity
+      style={styles.homeFab}
+      onPress={() => router.replace('/')}
+      accessibilityRole="button"
+      accessibilityLabel="Go Home"
+    >
+      <Text style={styles.homeFabIcon}>⌂</Text>
+      <Text style={styles.homeFabText}>Home</Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function RootLayout() {
   return (
     <AppBootstrapProvider>
@@ -72,21 +88,24 @@ export default function RootLayout() {
         <StatusBar style="light" />
         <BootstrapGate>
           <AuthGate>
-            <Stack
-              screenOptions={{
-                headerStyle: { backgroundColor: colors.card },
-                headerTintColor: colors.textPrimary,
-                headerTitleStyle: { fontWeight: '700', fontSize: 18 },
-                contentStyle: { backgroundColor: colors.background },
-              }}
-            >
-              <Stack.Screen name="index" options={{ title: 'Site Surveys', headerShown: false }} />
-              <Stack.Screen name="login" options={{ title: 'Sign In', headerShown: false }} />
-              <Stack.Screen name="register" options={{ title: 'Create Account', headerShown: false }} />
-              <Stack.Screen name="forgot-password" options={{ title: 'Reset Password', headerShown: false }} />
-              <Stack.Screen name="new-survey" options={{ title: 'New Survey', headerShown: true }} />
-              <Stack.Screen name="survey/[id]" options={{ title: 'Survey Details', headerShown: true }} />
-            </Stack>
+            <View style={styles.rootShell}>
+              <Stack
+                screenOptions={{
+                  headerStyle: { backgroundColor: colors.card },
+                  headerTintColor: colors.textPrimary,
+                  headerTitleStyle: { fontWeight: '700', fontSize: 18 },
+                  contentStyle: { backgroundColor: colors.background },
+                }}
+              >
+                <Stack.Screen name="index" options={{ title: 'Site Surveys', headerShown: false }} />
+                <Stack.Screen name="login" options={{ title: 'Sign In', headerShown: false }} />
+                <Stack.Screen name="register" options={{ title: 'Create Account', headerShown: false }} />
+                <Stack.Screen name="forgot-password" options={{ title: 'Reset Password', headerShown: false }} />
+                <Stack.Screen name="new-survey" options={{ title: 'New Survey', headerShown: true }} />
+                <Stack.Screen name="survey/[id]" options={{ title: 'Survey Details', headerShown: true }} />
+              </Stack>
+              <FloatingHomeButton />
+            </View>
           </AuthGate>
         </BootstrapGate>
       </AuthProvider>
@@ -95,6 +114,9 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  rootShell: {
+    flex: 1,
+  },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -105,4 +127,36 @@ const styles = StyleSheet.create({
   errorTitle: { fontSize: 18, fontWeight: '700', color: colors.errorText, marginBottom: 8 },
   errorMsg: { fontSize: 14, color: colors.textSecondary, textAlign: 'center' },
   loadingText: { fontSize: 14, color: colors.textSecondary, marginTop: 12 },
+  homeFab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 18,
+    backgroundColor: colors.primary,
+    borderRadius: 22,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 8,
+    zIndex: 999,
+  },
+  homeFabIcon: {
+    color: colors.background,
+    fontSize: 15,
+    fontWeight: '900',
+    lineHeight: 17,
+  },
+  homeFabText: {
+    color: colors.background,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
 });
