@@ -37,10 +37,37 @@ export interface SolarFencingMetadata {
   bifacial_surface: "Concrete" | "Gravel" | "Grass" | "Dirt" | null;
 }
 
+export interface CommercialThreePhaseMetadata {
+  type: "commercial_3phase";
+  // 1) Project Site Information
+  customer_name: string;
+  customer_address: string;
+  city: string;
+  state: string;
+  zip: string;
+  parcel_number: string;
+  utility_having_jurisdiction: string;
+  municipality_having_jurisdiction: string;
+  nec_code_year: number | null;
+  // 2) Environmental & Structural Constraints
+  snow_load_lbs_sqft: number | null;
+  seismic_rating: "A" | "B" | "C" | "D" | "E" | "F" | null;
+  building_height_ft: number | null;
+  max_wind_speed_mph: number | null;
+  wind_exposure: "B" | "C" | "D" | null;
+  // 3) PV System Information
+  desired_pv_system_size_kw_dc: number | null;
+  module_make_model: string;
+  number_of_modules: number | null;
+  module_tilt_angle_deg: number | null;
+  module_azimuth_deg: number | null;
+}
+
 export type SurveyMetadata =
   | GroundMountMetadata
   | RoofMountMetadata
-  | SolarFencingMetadata;
+  | SolarFencingMetadata
+  | CommercialThreePhaseMetadata;
 
 // ------------------------------------------------------------------
 // Core domain models
@@ -178,6 +205,7 @@ export const SURVEY_CATEGORIES = [
   { id: "ground_mount", name: "Ground Mount" },
   { id: "roof_mount", name: "Roof Mount" },
   { id: "solar_fencing", name: "Solar Fencing" },
+  { id: "commercial_3phase", name: "Commercial 3-Phase Solar" },
 ];
 
 // ------------------------------------------------------------------

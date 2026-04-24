@@ -7,6 +7,7 @@ import type {
   GroundMountMetadata,
   RoofMountMetadata,
   SolarFencingMetadata,
+  CommercialThreePhaseMetadata,
 } from '../types';
 import { solarProTheme } from '../theme/solarProTheme';
 
@@ -123,6 +124,28 @@ const DEFAULT_ROOF: RoofMountMetadata = {
 const DEFAULT_FENCING: SolarFencingMetadata = {
   type: 'solar_fencing', perimeter_length_ft: null,
   lower_shade_risk: false, foundation_type: null, bifacial_surface: null,
+};
+const DEFAULT_3PHASE: CommercialThreePhaseMetadata = {
+  type: 'commercial_3phase',
+  customer_name: '',
+  customer_address: '',
+  city: '',
+  state: '',
+  zip: '',
+  parcel_number: '',
+  utility_having_jurisdiction: '',
+  municipality_having_jurisdiction: '',
+  nec_code_year: null,
+  snow_load_lbs_sqft: null,
+  seismic_rating: null,
+  building_height_ft: null,
+  max_wind_speed_mph: null,
+  wind_exposure: null,
+  desired_pv_system_size_kw_dc: null,
+  module_make_model: '',
+  number_of_modules: null,
+  module_tilt_angle_deg: null,
+  module_azimuth_deg: null,
 };
 
 // ──────────────────────────────────────────────────────────────────
@@ -277,6 +300,200 @@ function SolarFencingSection({
   );
 }
 
+function LabeledNumberField({
+  label,
+  placeholder,
+  value,
+  onChange,
+  decimal,
+}: {
+  label: string;
+  placeholder: string;
+  value: number | null;
+  onChange: (v: number | null) => void;
+  decimal?: boolean;
+}) {
+  return (
+    <>
+      <FieldLabel text={label} />
+      <NumberInput
+        value={value}
+        placeholder={placeholder}
+        decimal={decimal}
+        onChange={onChange}
+      />
+    </>
+  );
+}
+
+function LabeledTextField({
+  label,
+  placeholder,
+  value,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <>
+      <FieldLabel text={label} />
+      <TextInput
+        style={styles.input}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textMuted}
+        value={value}
+        onChangeText={onChange}
+      />
+    </>
+  );
+}
+
+function CommercialThreePhaseSection({
+  meta,
+  onChange,
+}: {
+  meta: CommercialThreePhaseMetadata;
+  onChange: (m: CommercialThreePhaseMetadata) => void;
+}) {
+  const set = <K extends keyof CommercialThreePhaseMetadata>(k: K, v: CommercialThreePhaseMetadata[K]) =>
+    onChange({ ...meta, [k]: v });
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>🏢 Commercial 3-Phase Survey</Text>
+
+      <Text style={styles.groupHeader}>1. Project Site Information</Text>
+      <LabeledTextField
+        label="Customer Name"
+        placeholder="Enter customer name"
+        value={meta.customer_name}
+        onChange={(v) => set('customer_name', v)}
+      />
+      <LabeledTextField
+        label="Customer Address"
+        placeholder="Street address"
+        value={meta.customer_address}
+        onChange={(v) => set('customer_address', v)}
+      />
+      <LabeledTextField
+        label="City"
+        placeholder="City"
+        value={meta.city}
+        onChange={(v) => set('city', v)}
+      />
+      <LabeledTextField
+        label="State"
+        placeholder="State"
+        value={meta.state}
+        onChange={(v) => set('state', v)}
+      />
+      <LabeledTextField
+        label="Zip"
+        placeholder="Zip"
+        value={meta.zip}
+        onChange={(v) => set('zip', v)}
+      />
+      <LabeledTextField
+        label="Parcel Number"
+        placeholder="Parcel/APN"
+        value={meta.parcel_number}
+        onChange={(v) => set('parcel_number', v)}
+      />
+      <LabeledTextField
+        label="Utility Having Jurisdiction"
+        placeholder="Utility name"
+        value={meta.utility_having_jurisdiction}
+        onChange={(v) => set('utility_having_jurisdiction', v)}
+      />
+      <LabeledTextField
+        label="Municipality Having Jurisdiction"
+        placeholder="Municipality"
+        value={meta.municipality_having_jurisdiction}
+        onChange={(v) => set('municipality_having_jurisdiction', v)}
+      />
+      <FieldLabel text="NEC Code Year" />
+      <Selector
+        options={['2014', '2017', '2020', '2023'] as const}
+        value={meta.nec_code_year != null ? String(meta.nec_code_year) as '2014' | '2017' | '2020' | '2023' : null}
+        onSelect={(v) => set('nec_code_year', parseInt(v, 10))}
+      />
+
+      <Text style={styles.groupHeader}>2. Environmental & Structural Constraints</Text>
+      <LabeledNumberField
+        label="Snow Load (lbs/sqft)"
+        placeholder="e.g. 30"
+        value={meta.snow_load_lbs_sqft}
+        decimal
+        onChange={(v) => set('snow_load_lbs_sqft', v)}
+      />
+      <FieldLabel text="Seismic Rating" />
+      <Selector
+        options={['A', 'B', 'C', 'D', 'E', 'F'] as const}
+        value={meta.seismic_rating}
+        onSelect={(v) => set('seismic_rating', v)}
+      />
+      <LabeledNumberField
+        label="Building Height (ft)"
+        placeholder="e.g. 28"
+        value={meta.building_height_ft}
+        decimal
+        onChange={(v) => set('building_height_ft', v)}
+      />
+      <LabeledNumberField
+        label="Max Wind Speed (MPH)"
+        placeholder="e.g. 115"
+        value={meta.max_wind_speed_mph}
+        decimal
+        onChange={(v) => set('max_wind_speed_mph', v)}
+      />
+      <FieldLabel text="Wind Exposure" />
+      <Selector
+        options={['B', 'C', 'D'] as const}
+        value={meta.wind_exposure}
+        onSelect={(v) => set('wind_exposure', v)}
+      />
+
+      <Text style={styles.groupHeader}>3. PV System Information</Text>
+      <LabeledNumberField
+        label="Desired Solar PV System Size (STC)"
+        placeholder="kW DC"
+        value={meta.desired_pv_system_size_kw_dc}
+        decimal
+        onChange={(v) => set('desired_pv_system_size_kw_dc', v)}
+      />
+      <LabeledTextField
+        label="Module Make/Model"
+        placeholder="Manufacturer and model"
+        value={meta.module_make_model}
+        onChange={(v) => set('module_make_model', v)}
+      />
+      <LabeledNumberField
+        label="Number of Modules"
+        placeholder="e.g. 455"
+        value={meta.number_of_modules}
+        onChange={(v) => set('number_of_modules', v)}
+      />
+      <LabeledNumberField
+        label="Module Tilt Angle (degrees)"
+        placeholder="e.g. 10"
+        value={meta.module_tilt_angle_deg}
+        decimal
+        onChange={(v) => set('module_tilt_angle_deg', v)}
+      />
+      <LabeledNumberField
+        label="Module Azimuth (degrees)"
+        placeholder="e.g. 180"
+        value={meta.module_azimuth_deg}
+        decimal
+        onChange={(v) => set('module_azimuth_deg', v)}
+      />
+    </View>
+  );
+}
+
 // ──────────────────────────────────────────────────────────────────
 // Main export
 // ──────────────────────────────────────────────────────────────────
@@ -316,6 +533,15 @@ export default function SolarMetadataForm({ categoryId, metadata, onChange }: Pr
     );
   }
 
+  if (categoryId === 'commercial_3phase') {
+    return (
+      <CommercialThreePhaseSection
+        meta={ensureMeta(DEFAULT_3PHASE)}
+        onChange={onChange}
+      />
+    );
+  }
+
   // Non-solar category — render nothing
   return null;
 }
@@ -338,6 +564,15 @@ const styles = StyleSheet.create({
     fontWeight:   '800',
     color:        colors.textPrimary,
     marginBottom: 12,
+  },
+  groupHeader: {
+    marginTop: 12,
+    marginBottom: 6,
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   fieldLabel: {
     fontSize:     13,
