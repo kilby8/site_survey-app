@@ -46,6 +46,35 @@ npm run android:diagnose    # Check Android setup
 npm run android:reset-adb   # Fix device detection issues
 ```
 
+## Mobile API Target (important for login)
+
+The mobile app signs in against whatever API base URL is active at runtime.
+To guarantee mobile login uses the same credentials as the website, point mobile to the same backend origin used by the website (currently `https://solar-pro.app`).
+
+Resolution order in mobile runtime:
+
+1. `EXPO_PUBLIC_API_URL`
+2. `expo.extra.apiUrl`
+3. inferred local dev fallback (`http://<lan-ip>:3001`, emulator fallback, localhost)
+
+For local Expo runs, create `mobile/.env`:
+
+```bash
+EXPO_PUBLIC_API_URL=https://solar-pro.app
+```
+
+For EAS preview/production builds and updates, set `EXPO_PUBLIC_API_URL` in EAS environment variables to the same backend URL.
+
+## Production DB Source of Truth (Render)
+
+Backend production should use `DATABASE_URL` (single source) so both website and app API authenticate against the same users table.
+
+- Render service: `site-survey-api`
+- Required env var: `DATABASE_URL`
+- `render.yaml` keeps `DATABASE_URL` as `sync: false` so the secret is managed in Render dashboard.
+
+If website DB is the master, set Render `DATABASE_URL` to that same database connection string.
+
 ## Mobile EAS Builds
 
 The Expo project lives in `mobile/`, so EAS commands must run from that directory. If you run `eas build` from the repo root, EAS will try to read `/eas.json` and fail.
