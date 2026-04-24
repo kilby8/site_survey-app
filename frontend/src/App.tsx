@@ -124,18 +124,31 @@ function App() {
     return <AuthScreen onAuthenticated={handleAuthenticated} initialMessage={sessionNotice} />;
   }
 
-  const headerTitle =
-    view.page === 'list' ? 'Site Surveys' :
-    view.page === 'new' ? 'New Survey' : 'Edit Survey';
+  if (view.page === 'new') {
+    return (
+      <SurveyFormV2
+        onSaved={handleSaved}
+        onCancel={() => setView({ page: 'list' })}
+      />
+    );
+  }
 
-  const headerBack =
-    view.page !== 'list' ? () => setView({ page: 'list' }) : undefined;
+  if (view.page === 'edit') {
+    return (
+      <SurveyFormV2
+        surveyId={view.id}
+        onSaved={handleSaved}
+        onCancel={() => setView({ page: 'list' })}
+      />
+    );
+  }
+
+  const headerTitle = 'Site Surveys';
 
   return (
     <div className="app">
       <Header
         title={headerTitle}
-        onBack={headerBack}
         isOnline={isOnline}
         pendingSync={queueLength}
       />
@@ -144,26 +157,11 @@ function App() {
           <p className="session-user">Signed in as <strong>{authUser.fullName}</strong></p>
           <button className="btn btn--outline btn--sm" onClick={() => handleSignOut()}>Sign out</button>
         </section>
-        {view.page === 'list' && (
-          <SurveyList
-            onNewSurvey={() => setView({ page: 'new' })}
-            onEditSurvey={(id) => setView({ page: 'edit', id })}
-            refreshTrigger={listRefresh}
-          />
-        )}
-        {view.page === 'new' && (
-          <SurveyFormV2
-            onSaved={handleSaved}
-            onCancel={() => setView({ page: 'list' })}
-          />
-        )}
-        {view.page === 'edit' && (
-          <SurveyFormV2
-            surveyId={view.id}
-            onSaved={handleSaved}
-            onCancel={() => setView({ page: 'list' })}
-          />
-        )}
+        <SurveyList
+          onNewSurvey={() => setView({ page: 'new' })}
+          onEditSurvey={(id) => setView({ page: 'edit', id })}
+          refreshTrigger={listRefresh}
+        />
       </main>
     </div>
   );
