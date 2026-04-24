@@ -129,8 +129,8 @@ const styles = StyleSheet.create({
   loadingText: { fontSize: 14, color: colors.textSecondary, marginTop: 12 },
   homeFab: {
     position: 'absolute',
-    right: 16,
-    bottom: 18,
+    left: 16,
+    bottom: 84,
     backgroundColor: colors.primary,
     borderRadius: 22,
     minHeight: 44,
