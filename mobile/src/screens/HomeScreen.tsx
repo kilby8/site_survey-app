@@ -216,7 +216,12 @@ export default function HomeScreen() {
 
       {/* Toolbar */}
       <View style={styles.toolbar}>
-        <Text style={styles.title}>Site Surveys</Text>
+        <View style={styles.titleBlock}>
+          <Text style={styles.title}>Site Surveys</Text>
+          <Text style={styles.subtitle}>
+            {surveys.length} total · {sync.pending} pending sync
+          </Text>
+        </View>
         <View style={styles.toolbarActions}>
           <TouchableOpacity
             style={[styles.bugBtn, reportingBug && styles.bugBtnDisabled]}
@@ -302,12 +307,17 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
+  titleBlock: {
+    flex: 1,
+    marginRight: 10,
+  },
   toolbarActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   title: { fontSize: 22, fontWeight: '800', color: colors.textPrimary },
+  subtitle: { marginTop: 2, fontSize: 12, fontWeight: '600', color: colors.textMuted },
   deleteBtn: {
     backgroundColor: colors.errorText,
     paddingHorizontal: 14,

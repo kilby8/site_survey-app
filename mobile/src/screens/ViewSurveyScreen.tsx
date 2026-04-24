@@ -459,7 +459,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 const styles = StyleSheet.create({
   screen:     { flex: 1, backgroundColor: colors.background },
   centered:   { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  scroll:     { padding: 16, paddingBottom: 40 },
+  scroll:     { padding: 16, paddingBottom: 46 },
   errorText:  { color: colors.errorText, fontSize: 16 },
 
   headerCard: {
@@ -495,7 +495,7 @@ const styles = StyleSheet.create({
     marginBottom:        10,
   },
   categoryTagText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
-  row:       { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.border },
+  row:       { flexDirection: 'row', paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.border },
   rowLabel:  { width: 82, fontSize: 13, color: colors.textMuted, fontWeight: '700' },
   rowValue:  { flex: 1, fontSize: 13, color: colors.textSecondary },
   gpsBox: {

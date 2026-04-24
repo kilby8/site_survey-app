@@ -332,6 +332,9 @@ export default function NewSurveyScreen() {
               );
             })}
           </View>
+          <Text style={styles.stepHint}>
+            Step {currentStep} of 4 · {stepLabels[currentStep - 1]}
+          </Text>
 
           {currentStep === 1 && (
             <>
@@ -562,13 +565,13 @@ const styles = StyleSheet.create({
   autoSaveHint: {
     color: colors.textMuted,
     fontSize: 12,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   stepBarWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginBottom: 14,
+    marginBottom: 8,
   },
   stepPill: {
     borderWidth: 1,
@@ -593,6 +596,12 @@ const styles = StyleSheet.create({
   },
   stepPillTextActive: {
     color: colors.white,
+  },
+  stepHint: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '700',
+    marginBottom: 14,
   },
   linkedBanner: {
     backgroundColor: colors.successBg,
@@ -717,7 +726,7 @@ const styles = StyleSheet.create({
   navRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 4,
+    marginTop: 6,
   },
   secondaryBtn: {
     flex: 1,
