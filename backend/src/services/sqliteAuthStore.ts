@@ -92,6 +92,7 @@ function ensureRefreshTokenTable(): Promise<void> {
       await pool.query(`ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS email VARCHAR(255)`);
       await pool.query(`ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)`);
 
+      await pool.query('ALTER TABLE refresh_tokens DROP CONSTRAINT IF EXISTS refresh_tokens_user_id_fkey');
       await pool.query('CREATE INDEX IF NOT EXISTS refresh_tokens_hash_idx ON refresh_tokens(token_hash)');
       await pool.query('CREATE INDEX IF NOT EXISTS refresh_tokens_user_idx ON refresh_tokens(user_id)');
       await pool.query('CREATE INDEX IF NOT EXISTS refresh_tokens_email_idx ON refresh_tokens(email)');

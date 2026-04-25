@@ -370,7 +370,7 @@ router.post('/signin', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('POST /api/users/signin error:', err);
     authAudit('users.signin.error', req, normalizedIdentifier, { status: 500 });
-    res.status(500).json({ error: 'Failed to sign in', detail: String((err as any)?.message ?? err) });
+    res.status(500).json({ error: 'Failed to sign in' });
   }
 });
 
