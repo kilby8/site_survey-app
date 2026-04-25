@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'crypto';
+import bcrypt from 'bcryptjs';
 import { Pool } from 'pg';
 import { pool } from '../database';
 
@@ -275,7 +276,7 @@ export async function verifyUserCredentials(
   if (storedHash.includes(':')) {
     isValid = verifyPassword(password, storedHash);
   } else if (storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$') || storedHash.startsWith('$2y$')) {
-    isValid = await verifyLegacyBcryptPasswordInPool(getWebsitePool(), email, password);
+    isValid = await bcrypt.compare(password, storedHash);
 
     if (isValid) {
       await getWebsitePool().query(
@@ -404,4 +405,6 @@ export async function deleteUserById(userId: string): Promise<boolean> {
   const result = await sourcePool.query('DELETE FROM users WHERE id::text = $1', [userId]);
   return (result.rowCount ?? 0) > 0;
 }
+
+
 
