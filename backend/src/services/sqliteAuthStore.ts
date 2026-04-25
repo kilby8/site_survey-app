@@ -20,6 +20,7 @@ export interface RefreshTokenWithUserRecord {
 
 let refreshTableReady: Promise<void> | null = null;
 let websitePool: Pool | null | undefined;
+let websiteUsersShapeReady: Promise<{ nameColumn: 'name' | 'full_name' }> | null = null;
 
 function getEnv(name: string): string | null {
   const value = process.env[name]?.trim();
@@ -156,13 +157,37 @@ function mapWebsiteUser(row: WebsiteUserRecord): AuthUserRecord {
   };
 }
 
+async function resolveWebsiteUsersShape(): Promise<{ nameColumn: 'name' | 'full_name' }> {
+  if (!websiteUsersShapeReady) {
+    websiteUsersShapeReady = (async () => {
+      const sourcePool = getWebsitePool();
+      const { rows } = await sourcePool.query<{ column_name: string }>(
+        `SELECT column_name
+           FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'users'`,
+      );
+
+      const columns = new Set(rows.map((r) => r.column_name));
+      const nameColumn: 'name' | 'full_name' = columns.has('full_name') ? 'full_name' : 'name';
+      return { nameColumn };
+    })().catch((error) => {
+      websiteUsersShapeReady = null;
+      throw error;
+    });
+  }
+
+  return websiteUsersShapeReady;
+}
+
 async function findWebsiteUserByEmail(email: string): Promise<(AuthUserRecord & { password_hash: string }) | null> {
   const sourcePool = getWebsitePool();
+  const shape = await resolveWebsiteUsersShape();
   const { rows } = await sourcePool.query<WebsiteUserRecord>(
     `SELECT id::text,
             email::text,
             password_hash::text,
-            COALESCE(full_name::text, name::text, '') AS full_name,
+            COALESCE(${shape.nameColumn}::text, '') AS full_name,
             created_at::text
        FROM users
       WHERE lower(email::text) = lower($1::text)
@@ -180,11 +205,12 @@ async function findWebsiteUserByEmail(email: string): Promise<(AuthUserRecord & 
 
 async function findWebsiteUserById(userId: string): Promise<AuthUserRecord | null> {
   const sourcePool = getWebsitePool();
+  const shape = await resolveWebsiteUsersShape();
   const { rows } = await sourcePool.query<WebsiteUserRecord>(
     `SELECT id::text,
             email::text,
             password_hash::text,
-            COALESCE(full_name::text, name::text, '') AS full_name,
+            COALESCE(${shape.nameColumn}::text, '') AS full_name,
             created_at::text
        FROM users
       WHERE id::text = $1
@@ -218,16 +244,17 @@ export async function createUser(
   fullName: string,
 ): Promise<AuthUserRecord> {
   const sourcePool = getWebsitePool();
+  const shape = await resolveWebsiteUsersShape();
 
   const id = randomUUID();
   const passwordHash = hashPassword(password);
 
   const { rows } = await sourcePool.query<AuthUserRecord>(
-    `INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
+    `INSERT INTO users (id, email, password_hash, ${shape.nameColumn}, created_at, updated_at)
      VALUES ($1::uuid, $2, $3, $4, NOW(), NOW())
      RETURNING id::text,
                email::text,
-               COALESCE(full_name::text, name::text, '') AS full_name,
+               COALESCE(${shape.nameColumn}::text, '') AS full_name,
                created_at::text`,
     [id, email, passwordHash, fullName],
   );
