@@ -236,29 +236,6 @@ app.use("/api", openApiRouter);
 app.use("/api/bug-reports", requireAuth, bugReportsRouter);
 app.use("/api/roboflow", requireAuth, roboflowProxyRouter);
 
-// ----------------------------------------------------------------
-// Guarded auth diagnostic (remove after diagnosis)
-// ----------------------------------------------------------------
-app.post("/api/debug/auth-check", async (req, res) => {
-  const secret = process.env.DEBUG_SECRET;
-  if (!secret || req.headers["x-debug-secret"] !== secret) {
-    res.status(404).json({ error: "Not found" });
-    return;
-  }
-  const { email } = req.body as { email?: string };
-  if (!email) { res.status(400).json({ error: "email required" }); return; }
-  try {
-    const { getUserByEmail } = await import("./services/sqliteAuthStore");
-    const user = await getUserByEmail(email.trim().toLowerCase());
-    if (!user) {
-      res.json({ found: false, email });
-      return;
-    }
-    res.json({ found: true, id: user.id, email: user.email, fullName: user.full_name, createdAt: user.created_at });
-  } catch (err: any) {
-    res.status(500).json({ error: String(err?.message ?? err) });
-  }
-});
 
 // ----------------------------------------------------------------
 // 404
