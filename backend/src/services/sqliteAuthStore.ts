@@ -279,13 +279,17 @@ export async function verifyUserCredentials(
     isValid = await bcrypt.compare(password, storedHash);
 
     if (isValid) {
-      await getWebsitePool().query(
-        `UPDATE users
-            SET password_hash = $2,
-                updated_at = NOW()
-          WHERE id::text = $1`,
-        [websiteUser.id, hashPassword(password)],
-      );
+      try {
+        await getWebsitePool().query(
+          `UPDATE users
+              SET password_hash = $2,
+                  updated_at = NOW()
+            WHERE id::text = $1`,
+          [websiteUser.id, hashPassword(password)],
+        );
+      } catch (_) {
+        // hash upgrade best-effort; updated_at may not exist in website schema
+      }
     }
   }
 
