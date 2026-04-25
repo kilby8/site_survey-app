@@ -48,13 +48,13 @@ function resolveSsl(connectionString: string): false | { rejectUnauthorized: fal
 function getWebsitePool(): Pool {
   if (websitePool) return websitePool;
   if (websitePool === null) {
-    throw new Error('Website database is not configured. Set WEBSITE_DATABASE_URL or SOURCE_DATABASE_URL.');
+    throw new Error('Website database is not configured. Set WEBSITE_DATABASE_URL, SOURCE_DATABASE_URL, or DATABASE_URL.');
   }
 
-  const connectionString = getEnv('WEBSITE_DATABASE_URL') || getEnv('SOURCE_DATABASE_URL');
+  const connectionString = getEnv('WEBSITE_DATABASE_URL') || getEnv('SOURCE_DATABASE_URL') || getEnv('DATABASE_URL');
   if (!connectionString) {
     websitePool = null;
-    throw new Error('Website database is not configured. Set WEBSITE_DATABASE_URL or SOURCE_DATABASE_URL.');
+    throw new Error('Website database is not configured. Set WEBSITE_DATABASE_URL, SOURCE_DATABASE_URL, or DATABASE_URL.');
   }
 
   websitePool = new Pool({
@@ -404,3 +404,4 @@ export async function deleteUserById(userId: string): Promise<boolean> {
   const result = await sourcePool.query('DELETE FROM users WHERE id::text = $1', [userId]);
   return (result.rowCount ?? 0) > 0;
 }
+
