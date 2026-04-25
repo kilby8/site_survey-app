@@ -6,7 +6,13 @@ module.exports = ({ config }) => {
   // EAS Update and EAS Build should use hosted updates/runtime pinning.
   // Local Expo Go sessions should use Metro directly and skip runtime/update URL
   // to avoid "Something went wrong" runtime mismatches.
-  const isEasContext = Boolean(process.env.EAS_BUILD || process.env.EAS_UPDATE);
+  const isEasContext = Boolean(
+    process.env.EAS_BUILD ||
+    process.env.EAS_UPDATE ||
+    process.env.EAS_BUILD_PROFILE ||
+    process.env.EXPO_TOKEN ||
+    process.env.CI
+  );
 
   const expo = {
     ...baseExpo,
