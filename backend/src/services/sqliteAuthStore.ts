@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'crypto';
+import { Pool } from 'pg';
 import { pool } from '../database';
 
 export interface AuthUserRecord {
@@ -18,6 +19,54 @@ export interface RefreshTokenWithUserRecord {
 }
 
 let authTablesReady: Promise<void> | null = null;
+let websitePool: Pool | null | undefined;
+
+function getEnv(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value ? value : null;
+}
+
+function resolveSsl(connectionString: string): false | { rejectUnauthorized: false } {
+  try {
+    const parsed = new URL(connectionString);
+    const sslmode = parsed.searchParams.get('sslmode')?.toLowerCase();
+    const ssl = parsed.searchParams.get('ssl')?.toLowerCase();
+
+    if (ssl === 'true') return { rejectUnauthorized: false };
+    if (sslmode && sslmode !== 'disable') return { rejectUnauthorized: false };
+
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname.endsWith('.render.com')) return { rejectUnauthorized: false };
+  } catch {
+    // fall through
+  }
+
+  return false;
+}
+
+function getWebsitePool(): Pool | null {
+  if (websitePool !== undefined) return websitePool;
+
+  const connectionString = getEnv('WEBSITE_DATABASE_URL') || getEnv('SOURCE_DATABASE_URL');
+  if (!connectionString) {
+    websitePool = null;
+    return websitePool;
+  }
+
+  websitePool = new Pool({
+    connectionString,
+    ssl: resolveSsl(connectionString),
+    max: 3,
+    idleTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 5_000,
+  });
+
+  websitePool.on('error', (err) => {
+    console.error('Website PostgreSQL pool error', err);
+  });
+
+  return websitePool;
+}
 
 function ensureAuthTables(): Promise<void> {
   if (!authTablesReady) {
@@ -72,15 +121,16 @@ function verifyPassword(password: string, stored: string): boolean {
   return timingSafeEqual(actual, expected);
 }
 
-async function verifyLegacyBcryptPasswordInDb(
+async function verifyLegacyBcryptPasswordInPool(
+  targetPool: Pool,
   email: string,
   password: string,
 ): Promise<boolean> {
   try {
-    const { rows } = await pool.query<{ valid: boolean }>(
+    const { rows } = await targetPool.query<{ valid: boolean }>(
       `SELECT (password_hash = crypt($2, password_hash)) AS valid
          FROM users
-        WHERE email = $1
+        WHERE lower(email::text) = lower($1::text)
         LIMIT 1`,
       [email, password],
     );
@@ -89,6 +139,92 @@ async function verifyLegacyBcryptPasswordInDb(
   } catch {
     return false;
   }
+}
+
+async function verifyLegacyBcryptPasswordInDb(
+  email: string,
+  password: string,
+): Promise<boolean> {
+  return verifyLegacyBcryptPasswordInPool(pool, email, password);
+}
+
+type WebsiteUserRecord = {
+  id: string;
+  email: string;
+  password_hash: string;
+  full_name: string;
+  created_at: string;
+};
+
+function normalizeFallbackName(email: string, fullName: string): string {
+  const trimmed = fullName.trim();
+  if (trimmed.length > 0) return trimmed;
+
+  const localPart = email.split('@')[0]?.trim();
+  return localPart && localPart.length > 0 ? localPart : 'User';
+}
+
+async function tryWebsiteCredentialFallback(
+  email: string,
+  password: string,
+): Promise<AuthUserRecord | null> {
+  const sourcePool = getWebsitePool();
+  if (!sourcePool) return null;
+
+  const { rows } = await sourcePool.query<WebsiteUserRecord>(
+    `SELECT id::text,
+            email::text,
+            password_hash::text,
+            COALESCE(full_name::text, name::text, '') AS full_name,
+            created_at::text
+       FROM users
+      WHERE lower(email::text) = lower($1::text)
+      LIMIT 1`,
+    [email],
+  );
+
+  const websiteUser = rows[0];
+  if (!websiteUser) return null;
+
+  const sourceHash = websiteUser.password_hash;
+  let isValid = false;
+
+  if (sourceHash.includes(':')) {
+    isValid = verifyPassword(password, sourceHash);
+  } else if (sourceHash.startsWith('$2a$') || sourceHash.startsWith('$2b$') || sourceHash.startsWith('$2y$')) {
+    isValid = await verifyLegacyBcryptPasswordInPool(sourcePool, email, password);
+  }
+
+  if (!isValid) return null;
+
+  const syncedHash = sourceHash.includes(':') ? sourceHash : hashPassword(password);
+  const syncedName = normalizeFallbackName(websiteUser.email, websiteUser.full_name);
+
+  const { rows: syncedRows } = await pool.query<AuthUserRecord>(
+    `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at)
+     VALUES ($1::uuid, $2, $3, $4, $5::timestamptz, NOW())
+     ON CONFLICT (email) DO UPDATE
+       SET password_hash = EXCLUDED.password_hash,
+           full_name = EXCLUDED.full_name,
+           updated_at = NOW()
+     RETURNING id::text, email, full_name, created_at::text`,
+    [websiteUser.id, websiteUser.email, syncedHash, syncedName, websiteUser.created_at],
+  );
+
+  return syncedRows[0] || null;
+}
+
+function verifyLocalPassword(
+  email: string,
+  password: string,
+  storedHash: string,
+): boolean | Promise<boolean> {
+  if (storedHash.includes(':')) {
+    return verifyPassword(password, storedHash);
+  } else if (storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$') || storedHash.startsWith('$2y$')) {
+    return verifyLegacyBcryptPasswordInDb(email, password);
+  }
+  return false;
 }
 
 export async function getUserById(userId: string): Promise<AuthUserRecord | null> {
@@ -158,7 +294,10 @@ export async function verifyUserCredentials(
   );
 
   const row = rows[0];
-  if (!row) return null;
+
+  if (!row) {
+    return tryWebsiteCredentialFallback(email, password);
+  }
 
   const storedHash = row.password_hash;
   let isValid = false;
@@ -179,14 +318,16 @@ export async function verifyUserCredentials(
     }
   }
 
-  if (!isValid) return null;
+  if (isValid) {
+    return {
+      id: row.id,
+      email: row.email,
+      full_name: row.full_name,
+      created_at: row.created_at,
+    };
+  }
 
-  return {
-    id: row.id,
-    email: row.email,
-    full_name: row.full_name,
-    created_at: row.created_at,
-  };
+  return tryWebsiteCredentialFallback(email, password);
 }
 
 export async function updateUserPasswordByEmail(
