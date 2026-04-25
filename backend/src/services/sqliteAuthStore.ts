@@ -18,7 +18,7 @@ export interface RefreshTokenWithUserRecord {
   full_name: string;
 }
 
-let authTablesReady: Promise<void> | null = null;
+let refreshTableReady: Promise<void> | null = null;
 let websitePool: Pool | null | undefined;
 
 function getEnv(name: string): string | null {
@@ -44,20 +44,23 @@ function resolveSsl(connectionString: string): false | { rejectUnauthorized: fal
   return false;
 }
 
-function getWebsitePool(): Pool | null {
-  if (websitePool !== undefined) return websitePool;
+function getWebsitePool(): Pool {
+  if (websitePool) return websitePool;
+  if (websitePool === null) {
+    throw new Error('Website database is not configured. Set WEBSITE_DATABASE_URL or SOURCE_DATABASE_URL.');
+  }
 
   const connectionString = getEnv('WEBSITE_DATABASE_URL') || getEnv('SOURCE_DATABASE_URL');
   if (!connectionString) {
     websitePool = null;
-    return websitePool;
+    throw new Error('Website database is not configured. Set WEBSITE_DATABASE_URL or SOURCE_DATABASE_URL.');
   }
 
   websitePool = new Pool({
     connectionString,
     ssl: resolveSsl(connectionString),
-    max: 3,
-    idleTimeoutMillis: 10_000,
+    max: 5,
+    idleTimeoutMillis: 15_000,
     connectionTimeoutMillis: 5_000,
   });
 
@@ -68,24 +71,15 @@ function getWebsitePool(): Pool | null {
   return websitePool;
 }
 
-function ensureAuthTables(): Promise<void> {
-  if (!authTablesReady) {
-    authTablesReady = (async () => {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS users (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          email VARCHAR(255) NOT NULL UNIQUE,
-          password_hash TEXT NOT NULL,
-          full_name VARCHAR(255) NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      `);
-
+function ensureRefreshTokenTable(): Promise<void> {
+  if (!refreshTableReady) {
+    refreshTableReady = (async () => {
       await pool.query(`
         CREATE TABLE IF NOT EXISTS refresh_tokens (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          user_id TEXT NOT NULL,
+          email VARCHAR(255),
+          full_name VARCHAR(255),
           token_hash TEXT NOT NULL UNIQUE,
           expires_at TIMESTAMPTZ NOT NULL,
           revoked BOOLEAN NOT NULL DEFAULT FALSE,
@@ -93,16 +87,19 @@ function ensureAuthTables(): Promise<void> {
         )
       `);
 
-      await pool.query('CREATE INDEX IF NOT EXISTS users_email_idx ON users(email)');
+      await pool.query(`ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS email VARCHAR(255)`);
+      await pool.query(`ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)`);
+
       await pool.query('CREATE INDEX IF NOT EXISTS refresh_tokens_hash_idx ON refresh_tokens(token_hash)');
       await pool.query('CREATE INDEX IF NOT EXISTS refresh_tokens_user_idx ON refresh_tokens(user_id)');
+      await pool.query('CREATE INDEX IF NOT EXISTS refresh_tokens_email_idx ON refresh_tokens(email)');
     })().catch((error) => {
-      authTablesReady = null;
+      refreshTableReady = null;
       throw error;
     });
   }
 
-  return authTablesReady;
+  return refreshTableReady;
 }
 
 function hashPassword(password: string): string {
@@ -141,13 +138,6 @@ async function verifyLegacyBcryptPasswordInPool(
   }
 }
 
-async function verifyLegacyBcryptPasswordInDb(
-  email: string,
-  password: string,
-): Promise<boolean> {
-  return verifyLegacyBcryptPasswordInPool(pool, email, password);
-}
-
 type WebsiteUserRecord = {
   id: string;
   email: string;
@@ -156,21 +146,18 @@ type WebsiteUserRecord = {
   created_at: string;
 };
 
-function normalizeFallbackName(email: string, fullName: string): string {
-  const trimmed = fullName.trim();
-  if (trimmed.length > 0) return trimmed;
-
-  const localPart = email.split('@')[0]?.trim();
-  return localPart && localPart.length > 0 ? localPart : 'User';
+function mapWebsiteUser(row: WebsiteUserRecord): AuthUserRecord {
+  const normalizedName = (row.full_name || '').trim();
+  return {
+    id: row.id,
+    email: row.email,
+    full_name: normalizedName.length > 0 ? normalizedName : row.email.split('@')[0],
+    created_at: row.created_at,
+  };
 }
 
-async function tryWebsiteCredentialFallback(
-  email: string,
-  password: string,
-): Promise<AuthUserRecord | null> {
+async function findWebsiteUserByEmail(email: string): Promise<(AuthUserRecord & { password_hash: string }) | null> {
   const sourcePool = getWebsitePool();
-  if (!sourcePool) return null;
-
   const { rows } = await sourcePool.query<WebsiteUserRecord>(
     `SELECT id::text,
             email::text,
@@ -183,76 +170,46 @@ async function tryWebsiteCredentialFallback(
     [email],
   );
 
-  const websiteUser = rows[0];
-  if (!websiteUser) return null;
-
-  const sourceHash = websiteUser.password_hash;
-  let isValid = false;
-
-  if (sourceHash.includes(':')) {
-    isValid = verifyPassword(password, sourceHash);
-  } else if (sourceHash.startsWith('$2a$') || sourceHash.startsWith('$2b$') || sourceHash.startsWith('$2y$')) {
-    isValid = await verifyLegacyBcryptPasswordInPool(sourcePool, email, password);
-  }
-
-  if (!isValid) return null;
-
-  const syncedHash = sourceHash.includes(':') ? sourceHash : hashPassword(password);
-  const syncedName = normalizeFallbackName(websiteUser.email, websiteUser.full_name);
-
-  const { rows: syncedRows } = await pool.query<AuthUserRecord>(
-    `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at)
-     VALUES ($1::uuid, $2, $3, $4, $5::timestamptz, NOW())
-     ON CONFLICT (email) DO UPDATE
-       SET password_hash = EXCLUDED.password_hash,
-           full_name = EXCLUDED.full_name,
-           updated_at = NOW()
-     RETURNING id::text, email, full_name, created_at::text`,
-    [websiteUser.id, websiteUser.email, syncedHash, syncedName, websiteUser.created_at],
-  );
-
-  return syncedRows[0] || null;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ...mapWebsiteUser(row),
+    password_hash: row.password_hash,
+  };
 }
 
-function verifyLocalPassword(
-  email: string,
-  password: string,
-  storedHash: string,
-): boolean | Promise<boolean> {
-  if (storedHash.includes(':')) {
-    return verifyPassword(password, storedHash);
-  } else if (storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$') || storedHash.startsWith('$2y$')) {
-    return verifyLegacyBcryptPasswordInDb(email, password);
-  }
-  return false;
-}
-
-export async function getUserById(userId: string): Promise<AuthUserRecord | null> {
-  await ensureAuthTables();
-
-  const { rows } = await pool.query<AuthUserRecord>(
-    `SELECT id::text, email, full_name, created_at::text
-     FROM users
-     WHERE id = $1
-     LIMIT 1`,
+async function findWebsiteUserById(userId: string): Promise<AuthUserRecord | null> {
+  const sourcePool = getWebsitePool();
+  const { rows } = await sourcePool.query<WebsiteUserRecord>(
+    `SELECT id::text,
+            email::text,
+            password_hash::text,
+            COALESCE(full_name::text, name::text, '') AS full_name,
+            created_at::text
+       FROM users
+      WHERE id::text = $1
+      LIMIT 1`,
     [userId],
   );
 
-  return rows[0] || null;
+  const row = rows[0];
+  if (!row) return null;
+  return mapWebsiteUser(row);
+}
+
+export async function getUserById(userId: string): Promise<AuthUserRecord | null> {
+  return findWebsiteUserById(userId);
 }
 
 export async function getUserByEmail(email: string): Promise<AuthUserRecord | null> {
-  await ensureAuthTables();
-
-  const { rows } = await pool.query<AuthUserRecord>(
-    `SELECT id::text, email, full_name, created_at::text
-     FROM users
-     WHERE email = $1
-     LIMIT 1`,
-    [email],
-  );
-
-  return rows[0] || null;
+  const user = await findWebsiteUserByEmail(email);
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email,
+    full_name: user.full_name,
+    created_at: user.created_at,
+  };
 }
 
 export async function createUser(
@@ -260,15 +217,18 @@ export async function createUser(
   password: string,
   fullName: string,
 ): Promise<AuthUserRecord> {
-  await ensureAuthTables();
+  const sourcePool = getWebsitePool();
 
   const id = randomUUID();
   const passwordHash = hashPassword(password);
 
-  const { rows } = await pool.query<AuthUserRecord>(
-    `INSERT INTO users (id, email, password_hash, full_name)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id::text, email, full_name, created_at::text`,
+  const { rows } = await sourcePool.query<AuthUserRecord>(
+    `INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
+     VALUES ($1::uuid, $2, $3, $4, NOW(), NOW())
+     RETURNING id::text,
+               email::text,
+               COALESCE(full_name::text, name::text, '') AS full_name,
+               created_at::text`,
     [id, email, passwordHash, fullName],
   );
 
@@ -279,68 +239,50 @@ export async function verifyUserCredentials(
   email: string,
   password: string,
 ): Promise<AuthUserRecord | null> {
-  await ensureAuthTables();
+  const websiteUser = await findWebsiteUserByEmail(email);
+  if (!websiteUser) return null;
 
-  const { rows } = await pool.query<
-    AuthUserRecord & {
-      password_hash: string;
-    }
-  >(
-    `SELECT id::text, email, full_name, created_at::text, password_hash
-     FROM users
-     WHERE email = $1
-     LIMIT 1`,
-    [email],
-  );
-
-  const row = rows[0];
-
-  if (!row) {
-    return tryWebsiteCredentialFallback(email, password);
-  }
-
-  const storedHash = row.password_hash;
+  const storedHash = websiteUser.password_hash;
   let isValid = false;
 
   if (storedHash.includes(':')) {
     isValid = verifyPassword(password, storedHash);
   } else if (storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$') || storedHash.startsWith('$2y$')) {
-    isValid = await verifyLegacyBcryptPasswordInDb(email, password);
+    isValid = await verifyLegacyBcryptPasswordInPool(getWebsitePool(), email, password);
 
     if (isValid) {
-      await pool.query(
+      await getWebsitePool().query(
         `UPDATE users
             SET password_hash = $2,
                 updated_at = NOW()
-          WHERE id = $1`,
-        [row.id, hashPassword(password)],
+          WHERE id::text = $1`,
+        [websiteUser.id, hashPassword(password)],
       );
     }
   }
 
-  if (isValid) {
-    return {
-      id: row.id,
-      email: row.email,
-      full_name: row.full_name,
-      created_at: row.created_at,
-    };
-  }
+  if (!isValid) return null;
 
-  return tryWebsiteCredentialFallback(email, password);
+  return {
+    id: websiteUser.id,
+    email: websiteUser.email,
+    full_name: websiteUser.full_name,
+    created_at: websiteUser.created_at,
+  };
 }
 
 export async function updateUserPasswordByEmail(
   email: string,
   newPassword: string,
 ): Promise<{ id: string } | null> {
-  await ensureAuthTables();
+  const sourcePool = getWebsitePool();
 
-  const { rows } = await pool.query<{ id: string }>(
+  const { rows } = await sourcePool.query<{ id: string }>(
     `UPDATE users
-     SET password_hash = $2, updated_at = NOW()
-     WHERE email = $1
-     RETURNING id::text`,
+        SET password_hash = $2,
+            updated_at = NOW()
+      WHERE lower(email::text) = lower($1::text)
+      RETURNING id::text`,
     [email, hashPassword(newPassword)],
   );
 
@@ -349,62 +291,89 @@ export async function updateUserPasswordByEmail(
 
 export async function insertRefreshToken(
   userId: string,
+  email: string,
+  fullName: string,
   tokenHash: string,
   expiresAt: Date,
 ): Promise<void> {
-  await ensureAuthTables();
+  await ensureRefreshTokenTable();
 
   await pool.query(
-    `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, revoked)
-     VALUES ($1, $2, $3, $4, FALSE)`,
-    [randomUUID(), userId, tokenHash, expiresAt.toISOString()],
+    `INSERT INTO refresh_tokens (id, user_id, email, full_name, token_hash, expires_at, revoked)
+     VALUES ($1, $2, $3, $4, $5, $6, FALSE)`,
+    [randomUUID(), userId, email, fullName, tokenHash, expiresAt.toISOString()],
   );
 }
 
 export async function getRefreshTokenWithUserByHash(
   tokenHash: string,
 ): Promise<RefreshTokenWithUserRecord | null> {
-  await ensureAuthTables();
+  await ensureRefreshTokenTable();
 
   const { rows } = await pool.query<RefreshTokenWithUserRecord>(
-    `SELECT rt.id::text,
-            rt.user_id::text,
-            rt.expires_at::text,
-            CASE WHEN rt.revoked THEN 1 ELSE 0 END AS revoked,
-            u.email,
-            u.full_name
-     FROM refresh_tokens rt
-     JOIN users u ON u.id = rt.user_id
-     WHERE rt.token_hash = $1
+    `SELECT id::text,
+            user_id::text,
+            expires_at::text,
+            CASE WHEN revoked THEN 1 ELSE 0 END AS revoked,
+            COALESCE(email, '') AS email,
+            COALESCE(full_name, '') AS full_name
+     FROM refresh_tokens
+     WHERE token_hash = $1
      LIMIT 1`,
     [tokenHash],
   );
 
-  return rows[0] || null;
+  const row = rows[0];
+  if (!row) return null;
+
+  if (row.email && row.full_name) {
+    return row;
+  }
+
+  const websiteUser = await findWebsiteUserById(row.user_id);
+  if (!websiteUser) {
+    return row;
+  }
+
+  if (!row.email || !row.full_name) {
+    await pool.query(
+      `UPDATE refresh_tokens
+          SET email = COALESCE(email, $2),
+              full_name = COALESCE(full_name, $3)
+        WHERE id = $1`,
+      [row.id, websiteUser.email, websiteUser.full_name],
+    );
+  }
+
+  return {
+    ...row,
+    email: websiteUser.email,
+    full_name: websiteUser.full_name,
+  };
 }
 
 export async function revokeRefreshTokenById(tokenId: string): Promise<void> {
-  await ensureAuthTables();
+  await ensureRefreshTokenTable();
   await pool.query('UPDATE refresh_tokens SET revoked = TRUE WHERE id = $1', [tokenId]);
 }
 
 export async function revokeRefreshTokensByUserId(userId: string): Promise<void> {
-  await ensureAuthTables();
-  await pool.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1', [userId]);
+  await ensureRefreshTokenTable();
+  await pool.query('UPDATE refresh_tokens SET revoked = TRUE WHERE user_id::text = $1', [userId]);
 }
 
 export async function revokeRefreshTokenByHash(tokenHash: string): Promise<void> {
-  await ensureAuthTables();
+  await ensureRefreshTokenTable();
   await pool.query('UPDATE refresh_tokens SET revoked = TRUE WHERE token_hash = $1', [tokenHash]);
 }
 
 export async function deleteRefreshTokensByUserId(userId: string): Promise<void> {
-  await ensureAuthTables();
-  await pool.query('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
+  await ensureRefreshTokenTable();
+  await pool.query('DELETE FROM refresh_tokens WHERE user_id::text = $1', [userId]);
 }
 
 export async function deleteUserById(userId: string): Promise<boolean> {
-  await ensureAuthTables();
-  const result = await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+  const sourcePool = getWebsitePool();
+  const result = await sourcePool.query('DELETE FROM users WHERE id::text = $1', [userId]);
   return (result.rowCount ?? 0) > 0;
 }

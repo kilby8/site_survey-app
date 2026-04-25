@@ -198,11 +198,11 @@ function isValidResetToken(email: string, token: string): boolean {
 }
 
 /** Issues a new refresh token, persists its hash, and returns the raw value. */
-async function issueRefreshToken(userId: string): Promise<string> {
+async function issueRefreshToken(userId: string, email: string, fullName: string): Promise<string> {
   const raw = generateRefreshToken();
   const hash = hashRefreshToken(raw);
   const expiresAt = refreshTokenExpiresAt();
-  await insertRefreshToken(userId, hash, expiresAt);
+  await insertRefreshToken(userId, email, fullName, hash, expiresAt);
   return raw;
 }
 
@@ -279,7 +279,7 @@ router.post('/register', registerRateLimit, async (req: Request, res: Response) 
 
     const user = await createUser(normalizedEmail, password, displayName);
     const token = signAuthToken({ userId: user.id, email: user.email });
-    const refreshToken = await issueRefreshToken(user.id);
+    const refreshToken = await issueRefreshToken(user.id, user.email, user.full_name);
     authAudit('users.register.success', req, user.email, { status: 201, userId: user.id });
 
     res.status(201).json({
@@ -353,7 +353,7 @@ router.post('/signin', async (req: Request, res: Response) => {
     clearSignInFailures(key);
     const isAdmin = isElevatedAdminEmail(user.email);
     const token = signAuthToken({ userId: user.id, email: user.email, role: isAdmin ? 'admin' : 'user' });
-    const refreshToken = await issueRefreshToken(user.id);
+    const refreshToken = await issueRefreshToken(user.id, user.email, user.full_name);
     authAudit('users.signin.success', req, user.email, { status: 200, userId: user.id });
 
     res.json({
@@ -507,7 +507,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
     await revokeRefreshTokenById(row.id);
     const isAdmin = isElevatedAdminEmail(row.email);
     const newAccessToken = signAuthToken({ userId: row.user_id, email: row.email, role: isAdmin ? 'admin' : 'user' });
-    const newRefreshToken = await issueRefreshToken(row.user_id);
+    const newRefreshToken = await issueRefreshToken(row.user_id, row.email, row.full_name);
 
     authAudit('users.refresh.success', req, row.email, { status: 200, userId: row.user_id });
     res.json({ token: newAccessToken, refreshToken: newRefreshToken });
@@ -612,7 +612,7 @@ router.post('/solarpro-sso', async (req: Request, res: Response) => {
       email: user.email,
       role: isAdmin ? 'admin' : 'user',
     });
-    const refreshToken = await issueRefreshToken(user.id);
+    const refreshToken = await issueRefreshToken(user.id, user.email, user.full_name);
 
     authAudit('users.solarpro-sso.success', req, user.email, { status: 200, userId: user.id });
 
