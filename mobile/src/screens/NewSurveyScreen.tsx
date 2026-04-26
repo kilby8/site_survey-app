@@ -503,7 +503,7 @@ export default function NewSurveyScreen() {
                 onPress={() => setCurrentStep((prev) => (prev - 1) as 1 | 2 | 3 | 4)}
                 disabled={submitting}
               >
-                <Text style={styles.secondaryBtnText}>â† Back</Text>
+                <Text style={styles.secondaryBtnText}>← Back</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.back()}>
@@ -520,7 +520,7 @@ export default function NewSurveyScreen() {
                 onPress={() => setCurrentStep((prev) => (prev + 1) as 1 | 2 | 3 | 4)}
                 disabled={(currentStep === 1 && !canProceedStep1) || submitting}
               >
-                <Text style={styles.btnText}>Next â†’</Text>
+                <Text style={styles.btnText}>Next →</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
