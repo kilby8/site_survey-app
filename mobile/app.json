@@ -239,7 +239,9 @@
     },
     "owner": "kilby",
     "updates": {
-      "url": "https://u.expo.dev/aed7aae8-7d55-47e1-8850-c6b0040c99b5"
+      "url": "https://u.expo.dev/aed7aae8-7d55-47e1-8850-c6b0040c99b5",
+      "checkAutomatically": "ON_ERROR_RECOVERY",
+      "fallbackToCacheTimeout": 0
     },
     "runtimeVersion": "1.0.0"
   }
