@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, TextInput, TouchableOpacity, Text, StyleSheet, ActivityIndicator, Alert,
+  View, TextInput, TouchableOpacity, Text, StyleSheet,
+  ActivityIndicator, Alert, NativeModules, NativeEventEmitter, Platform,
 } from 'react-native';
-import Voice, { SpeechResultsEvent, SpeechErrorEvent } from '@react-native-voice/voice';
 import { solarProTheme } from '../theme/solarProTheme';
 
 const { colors } = solarProTheme;
+const { SpeechModule } = NativeModules;
+const emitter = SpeechModule ? new NativeEventEmitter(SpeechModule) : null;
 
 interface Props {
   value: string;
@@ -31,39 +33,42 @@ export default function VoiceNoteInput({
   }, [value, listening]);
 
   useEffect(() => {
-    Voice.onSpeechStart   = () => setListening(true);
-    Voice.onSpeechEnd     = () => setListening(false);
-    Voice.onSpeechResults = (e: SpeechResultsEvent) => {
-      const transcript = e.value?.[0] ?? '';
-      setInterim('');
-      const sep = baseRef.current.trim() ? ' ' : '';
-      onChangeText(baseRef.current.trim() + sep + transcript);
-    };
-    Voice.onSpeechPartialResults = (e: SpeechResultsEvent) => {
-      setInterim(e.value?.[0] ?? '');
-    };
-    Voice.onSpeechError = (e: SpeechErrorEvent) => {
-      setListening(false);
-      setInterim('');
-      const msg = e.error?.message ?? String(e.error);
-      if (!msg.includes('7') && !msg.toLowerCase().includes('no match')) {
-        Alert.alert('Voice error', msg);
-      }
-    };
-    return () => { Voice.destroy().then(Voice.removeAllListeners); };
+    if (!emitter) return;
+
+    const subs = [
+      emitter.addListener('speech_start', () => setListening(true)),
+      emitter.addListener('speech_end',   () => setListening(false)),
+      emitter.addListener('speech_results', (transcript: string) => {
+        setInterim('');
+        const sep = baseRef.current.trim() ? ' ' : '';
+        onChangeText(baseRef.current.trim() + sep + transcript);
+      }),
+      emitter.addListener('speech_partial', (partial: string) => setInterim(partial)),
+      emitter.addListener('speech_error', (code: string) => {
+        setListening(false);
+        setInterim('');
+        // 7 = no match - not really an error
+        if (code !== '7') Alert.alert('Voice error', `Code ${code}`);
+      }),
+    ];
+    return () => subs.forEach(s => s.remove());
   }, [onChangeText]);
 
   const toggleListening = useCallback(async () => {
+    if (!SpeechModule) {
+      Alert.alert('Not available', 'Voice input is not available on this device.');
+      return;
+    }
     if (listening) {
-      await Voice.stop();
+      await SpeechModule.stop();
       setListening(false);
     } else {
       try {
         baseRef.current = value;
         setInterim('');
-        await Voice.start('en-US');
-      } catch {
-        Alert.alert('Voice unavailable', 'Speech recognition is not available on this device.');
+        await SpeechModule.start();
+      } catch (e: any) {
+        Alert.alert('Voice error', e?.message ?? String(e));
       }
     }
   }, [listening, value]);

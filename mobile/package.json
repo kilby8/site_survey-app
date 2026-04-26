@@ -20,12 +20,10 @@
     "typecheck": "tsc --noEmit",
     "deploy": "npx eas-cli update --branch preview --environment preview",
     "deploy-prod": "npx eas-cli update --branch main --environment production",
-    "build": "npx eas-cli build --platform all --environment production",
-    "postinstall": "node scripts/postinstall.js"
+    "build": "npx eas-cli build --platform all --environment production"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
-    "@react-native-voice/voice": "3.2.4",
     "axios": "^1.14.0",
     "expo": "^54.0.0",
     "expo-constants": "~18.0.13",
@@ -82,7 +80,6 @@
     "@types/uuid": "^10.0.0",
     "babel-preset-expo": "~54.0.10",
     "eslint": "^10.2.1",
-    "patch-package": "^8.0.1",
     "typescript": "~5.9.2"
   }
 }
