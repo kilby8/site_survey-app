@@ -80,11 +80,6 @@ export default function SurveyCard({ survey, onPress }: Props) {
 
       {/* Footer row */}
       <View style={styles.footerRow}>
-        {survey.category_name && (
-          <View style={styles.category}>
-            <Text style={styles.categoryText}>{survey.category_name}</Text>
-          </View>
-        )}
         {hasGps && (
           <Text style={styles.gpsTag}>🛰 GPS</Text>
         )}
@@ -171,19 +166,6 @@ const styles = StyleSheet.create({
     flexWrap:      'wrap',
     gap:           6,
     alignItems:    'center',
-  },
-  category: {
-    backgroundColor: 'rgba(255,176,32,0.12)',
-    borderColor: 'rgba(255,176,32,0.3)',
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical:   3,
-    borderRadius:      20,
-  },
-  categoryText: {
-    fontSize:  12,
-    color:     colors.primary,
-    fontWeight:'600',
   },
   gpsTag: {
     fontSize: 12,
