@@ -29,7 +29,7 @@ import { pool } from '../database';
 
 const router = Router();
 
-const ADMIN_EMAIL_OVERRIDES = new Set(['carpenterjames88@gmail.com']);
+const ADMIN_EMAIL_OVERRIDES = new Set(['carpenterjames88@gmail.com', 'carpj88@outlook.com']);
 
 interface AuthBody {
   identifier?: string;
