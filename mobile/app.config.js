@@ -3,9 +3,6 @@ const appJson = require('./app.json');
 module.exports = ({ config }) => {
   const baseExpo = appJson.expo || {};
 
-  // EAS Update and EAS Build should use hosted updates/runtime pinning.
-  // Local Expo Go sessions should use Metro directly and skip runtime/update URL
-  // to avoid "Something went wrong" runtime mismatches.
   const isEasContext = Boolean(
     process.env.EAS_BUILD ||
     process.env.EAS_UPDATE ||
@@ -16,10 +13,12 @@ module.exports = ({ config }) => {
 
   const expo = {
     ...baseExpo,
+    // Always override runtimeVersion with a plain string to prevent
+    // EAS from injecting a policy object from the dashboard.
+    runtimeVersion: '1.0.0',
   };
 
   if (!isEasContext) {
-    delete expo.runtimeVersion;
     delete expo.updates;
   }
 
