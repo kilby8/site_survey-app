@@ -64,10 +64,10 @@ export function PasswordInput(props: PasswordInputProps) {
 // ----------------------------------------------------------------
 const styles = StyleSheet.create({
   banner: {
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 14,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
   },
   bannerSuccess: { backgroundColor: colors.successBg, borderWidth: 1, borderColor: colors.successBorder },
   bannerError:   { backgroundColor: colors.errorBg, borderWidth: 1, borderColor: colors.errorBorder },
@@ -77,13 +77,13 @@ const styles = StyleSheet.create({
   pwRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.inputBorder,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: colors.inputBg,
-    marginBottom: 12,
-    height: 46,
-    paddingHorizontal: 12,
+    marginBottom: 16,
+    height: 50,
+    paddingHorizontal: 14,
   },
   pwInput: {
     flex: 1,

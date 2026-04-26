@@ -53,51 +53,58 @@ export default function LoginScreen() {
       >
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.card}>
-            <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
-            <Text style={styles.title}>Site Survey</Text>
-            <Text style={styles.subtitle}>Sign in to continue</Text>
+            <View style={styles.accentBar} />
+            <View style={styles.cardInner}>
+              <View style={styles.logoWrap}>
+                <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
+              </View>
+              <Text style={styles.title}>Site Survey</Text>
+              <Text style={styles.subtitle}>Sign in to your account</Text>
 
-            {status && <StatusBanner type={status.type} message={status.message} />}
+              {status && <StatusBanner type={status.type} message={status.message} />}
 
-            <TextInput
-              value={identifier}
-              onChangeText={setIdentifier}
-              placeholder="Email or username"
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.input}
-            />
+              <Text style={styles.inputLabel}>Email or Username</Text>
+              <TextInput
+                value={identifier}
+                onChangeText={setIdentifier}
+                placeholder="you@example.com"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.input}
+              />
 
-            <PasswordInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Password"
-              placeholderTextColor={colors.textMuted}
-            />
+              <Text style={styles.inputLabel}>Password</Text>
+              <PasswordInput
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Your password"
+                placeholderTextColor={colors.textMuted}
+              />
 
-            <TouchableOpacity
-              style={[styles.button, (!canSubmit || submitting) && styles.buttonDisabled]}
-              onPress={handleSignIn}
-              disabled={!canSubmit || submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color={colors.white} />
-              ) : (
-                <Text style={styles.buttonText}>Sign In</Text>
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.linksRow}>
-              <TouchableOpacity onPress={() => router.push('/register')}>
-                <Text style={styles.linkText}>Create account</Text>
+              <TouchableOpacity
+                style={[styles.button, (!canSubmit || submitting) && styles.buttonDisabled]}
+                onPress={handleSignIn}
+                disabled={!canSubmit || submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.buttonText}>Sign In</Text>
+                )}
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => router.push('/forgot-password')}>
-                <Text style={styles.linkText}>Forgot password</Text>
-              </TouchableOpacity>
+
+              <View style={styles.linksRow}>
+                <TouchableOpacity onPress={() => router.push('/register')}>
+                  <Text style={styles.linkText}>Create account</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('/forgot-password')}>
+                  <Text style={styles.linkText}>Forgot password?</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.apiHint}>{API_URL}</Text>
             </View>
-
-            <Text style={styles.apiHint}>API: {API_URL}</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -113,39 +120,54 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 420,
     backgroundColor: colors.card,
-    borderRadius: 14,
-    padding: 20,
+    borderRadius: 20,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
+    elevation: 12,
   },
-  logo: { width: 170, height: 72, alignSelf: 'center', marginBottom: 8 },
-  title: { fontSize: 28, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' },
-  subtitle: { fontSize: 14, color: colors.textSecondary, marginTop: 6, marginBottom: 18 },
+  accentBar: { height: 4, backgroundColor: BRAND_PRIMARY },
+  cardInner: { padding: 28 },
+  logoWrap: { alignItems: 'center', marginBottom: 20 },
+  logo: { width: 150, height: 64, borderRadius: 8 },
+  title: { fontSize: 30, fontWeight: '800', color: colors.textPrimary, textAlign: 'center', letterSpacing: -0.5 },
+  subtitle: { fontSize: 14, color: colors.textSecondary, marginTop: 6, marginBottom: 24, textAlign: 'center' },
+  inputLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
   input: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.inputBorder,
-    borderRadius: 10,
-    height: 46,
-    paddingHorizontal: 12,
+    borderRadius: 12,
+    height: 50,
+    paddingHorizontal: 14,
     color: colors.textPrimary,
-    marginBottom: 12,
+    marginBottom: 16,
     backgroundColor: colors.inputBg,
+    fontSize: 15,
   },
   button: {
-    height: 46,
-    borderRadius: 10,
+    height: 52,
+    borderRadius: 14,
     backgroundColor: BRAND_PRIMARY,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
+    marginTop: 4,
+    shadowColor: BRAND_PRIMARY,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 8,
   },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#0B1220', fontSize: 15, fontWeight: '700' },
+  buttonDisabled: { opacity: 0.45, shadowOpacity: 0 },
+  buttonText: { color: '#0B1220', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
   linksRow: {
-    marginTop: 12,
+    marginTop: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   linkText: { color: BRAND_PRIMARY, fontSize: 13, fontWeight: '600' },
-  apiHint: { marginTop: 10, fontSize: 11, color: colors.textMuted },
+  apiHint: { marginTop: 16, fontSize: 11, color: colors.textMuted, textAlign: 'center' },
 });
