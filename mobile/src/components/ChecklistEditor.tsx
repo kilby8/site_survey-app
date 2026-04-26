@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import type { ChecklistStatus } from "../types";
 import { captureFromCamera, pickFromLibrary } from "../services/photoService";
+import VoiceNoteInput from './VoiceNoteInput';
 import { solarProTheme } from "../theme/solarProTheme";
 
 const { colors } = solarProTheme;
@@ -45,9 +46,9 @@ const STATUS_OPTIONS: {
   label: string;
   color: string;
 }[] = [
-  { value: "pass", label: "✓ Pass", color: "#16a34a" },
-  { value: "fail", label: "✗ Fail", color: "#dc2626" },
-  { value: "n/a", label: "— N/A", color: "#6b7280" },
+  { value: "pass", label: "âœ“ Pass", color: "#16a34a" },
+  { value: "fail", label: "âœ— Fail", color: "#dc2626" },
+  { value: "n/a", label: "â€” N/A", color: "#6b7280" },
   { value: "pending", label: "? Pending", color: "#f59e0b" },
 ];
 
@@ -160,7 +161,7 @@ export default function ChecklistEditor({ items, onChange }: Props) {
             <View style={styles.itemHeader}>
               <Text style={styles.itemLabel}>{item.label}</Text>
               <TouchableOpacity onPress={() => removeItem(idx)} hitSlop={8}>
-                <Text style={styles.removeBtn}>✕</Text>
+                <Text style={styles.removeBtn}>âœ•</Text>
               </TouchableOpacity>
             </View>
 
@@ -215,11 +216,11 @@ export default function ChecklistEditor({ items, onChange }: Props) {
                           onPress={() => removePhoto(idx, photoIdx)}
                           hitSlop={6}
                         >
-                          <Text style={styles.photoRemoveBtnText}>✕</Text>
+                          <Text style={styles.photoRemoveBtnText}>âœ•</Text>
                         </TouchableOpacity>
                         <TextInput
                           style={styles.photoLabelInput}
-                          placeholder="Label…"
+                          placeholder="Labelâ€¦"
                           placeholderTextColor={colors.textMuted}
                           value={photo.label}
                           onChangeText={(t) => setPhotoLabel(idx, photoIdx, t)}
@@ -242,7 +243,7 @@ export default function ChecklistEditor({ items, onChange }: Props) {
                   {loadingItemIdx === idx ? (
                     <ActivityIndicator size="small" color={colors.white} />
                   ) : (
-                    <Text style={styles.cameraBtnText}>📷 Camera</Text>
+                    <Text style={styles.cameraBtnText}>ðŸ“· Camera</Text>
                   )}
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -265,7 +266,7 @@ export default function ChecklistEditor({ items, onChange }: Props) {
                         styles.cameraBtnTextSecondary,
                       ]}
                     >
-                      🖼 Library
+                      ðŸ–¼ Library
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -289,7 +290,7 @@ export default function ChecklistEditor({ items, onChange }: Props) {
       <View style={styles.addRow}>
         <TextInput
           style={styles.addInput}
-          placeholder="Add checklist item…"
+          placeholder="Add checklist itemâ€¦"
           placeholderTextColor={colors.textMuted}
           value={newLabel}
           onChangeText={setNewLabel}

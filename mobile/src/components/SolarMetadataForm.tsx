@@ -10,6 +10,7 @@ import type {
   CommercialThreePhaseMetadata,
 } from '../types';
 import { solarProTheme } from '../theme/solarProTheme';
+import VoiceNoteInput from './VoiceNoteInput';
 import { captureFromCamera, pickFromLibrary } from '../services/photoService';
 
 const { colors } = solarProTheme;
@@ -20,9 +21,9 @@ interface Props {
   onChange:   (metadata: SurveyMetadata | null) => void;
 }
 
-// ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Small reusable primitives
-// ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function FieldLabel({ text, required }: { text: string; required?: boolean }) {
   return (
@@ -110,9 +111,9 @@ function NumberInput({
   );
 }
 
-// ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Default metadata objects
-// ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const DEFAULT_GROUND: GroundMountMetadata = {
   type: 'ground_mount', soil_type: null, slope_degrees: null,
@@ -149,9 +150,9 @@ const DEFAULT_3PHASE: CommercialThreePhaseMetadata = {
   module_azimuth_deg: null,
 };
 
-// ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Section components
-// ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function GroundMountSection({
   meta,
@@ -165,7 +166,7 @@ function GroundMountSection({
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>🌱 Ground Mount Details</Text>
+      <Text style={styles.sectionTitle}>ðŸŒ± Ground Mount Details</Text>
 
       <FieldLabel text="Soil Type" />
       <Selector
@@ -214,7 +215,7 @@ function RoofMountSection({
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>🏠 Roof Mount Details</Text>
+      <Text style={styles.sectionTitle}>ðŸ  Roof Mount Details</Text>
 
       <FieldLabel text="Roof Material" />
       <Selector
@@ -234,7 +235,7 @@ function RoofMountSection({
             onPress={() => set('rafter_photo_uri', null)}
             hitSlop={8}
           >
-            <Text style={styles.rafterPhotoRemoveText}>✕</Text>
+            <Text style={styles.rafterPhotoRemoveText}>âœ•</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -248,7 +249,7 @@ function RoofMountSection({
               } catch (e) { Alert.alert('Camera error', String(e)); }
             }}
           >
-            <Text style={styles.rafterBtnText}>📷 Camera</Text>
+            <Text style={styles.rafterBtnText}>ðŸ“· Camera</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.rafterBtn, styles.rafterBtnAlt]}
@@ -259,7 +260,7 @@ function RoofMountSection({
               } catch (e) { Alert.alert('Library error', String(e)); }
             }}
           >
-            <Text style={[styles.rafterBtnText, styles.rafterBtnAltText]}>🖼 Library</Text>
+            <Text style={[styles.rafterBtnText, styles.rafterBtnAltText]}>ðŸ–¼ Library</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -286,7 +287,7 @@ function RoofMountSection({
         onChange={(v) => set('roof_age_years', v)}
       />
 
-      <FieldLabel text="Azimuth — primary roof plane (° compass)" />
+      <FieldLabel text="Azimuth â€” primary roof plane (Â° compass)" />
       <NumberInput
         value={meta.azimuth}
         placeholder="e.g. 185 (south-facing)"
@@ -309,7 +310,7 @@ function SolarFencingSection({
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>⚡ Solar Fencing Details</Text>
+      <Text style={styles.sectionTitle}>âš¡ Solar Fencing Details</Text>
 
       <FieldLabel text="Perimeter Length (linear feet)" />
       <NumberInput
@@ -405,7 +406,7 @@ function CommercialThreePhaseSection({
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>🏢 Commercial 3-Phase Survey</Text>
+      <Text style={styles.sectionTitle}>ðŸ¢ Commercial 3-Phase Survey</Text>
 
       <Text style={styles.groupHeader}>1. Project Site Information</Text>
       <LabeledTextField
@@ -536,9 +537,9 @@ function CommercialThreePhaseSection({
   );
 }
 
-// ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Main export
-// ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function SolarMetadataForm({ categoryId, metadata, onChange }: Props) {
   // Initialise default metadata when the category changes to a solar type
@@ -584,13 +585,13 @@ export default function SolarMetadataForm({ categoryId, metadata, onChange }: Pr
     );
   }
 
-  // Non-solar category — render nothing
+  // Non-solar category â€” render nothing
   return null;
 }
 
-// ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Styles
-// ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const styles = StyleSheet.create({
   section: {

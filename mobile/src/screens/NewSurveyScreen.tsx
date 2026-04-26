@@ -357,7 +357,7 @@ export default function NewSurveyScreen() {
             })}
           </View>
           <Text style={styles.stepHint}>
-            Step {currentStep} of 4 · {stepLabels[currentStep - 1]}
+            Step {currentStep} of 4 Â· {stepLabels[currentStep - 1]}
           </Text>
 
           {currentStep === 1 && (
@@ -465,15 +465,15 @@ export default function NewSurveyScreen() {
 
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewKey}>Project</Text>
-                <Text style={styles.reviewVal}>{projectName || '—'}</Text>
+                <Text style={styles.reviewVal}>{projectName || 'â€”'}</Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewKey}>Inspector</Text>
-                <Text style={styles.reviewVal}>{inspectorName || '—'}</Text>
+                <Text style={styles.reviewVal}>{inspectorName || 'â€”'}</Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewKey}>Site</Text>
-                <Text style={styles.reviewVal}>{siteName || '—'}</Text>
+                <Text style={styles.reviewVal}>{siteName || 'â€”'}</Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewKey}>Checklist Items</Text>
@@ -503,7 +503,7 @@ export default function NewSurveyScreen() {
                 onPress={() => setCurrentStep((prev) => (prev - 1) as 1 | 2 | 3 | 4)}
                 disabled={submitting}
               >
-                <Text style={styles.secondaryBtnText}>← Back</Text>
+                <Text style={styles.secondaryBtnText}>â† Back</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.back()}>
@@ -520,7 +520,7 @@ export default function NewSurveyScreen() {
                 onPress={() => setCurrentStep((prev) => (prev + 1) as 1 | 2 | 3 | 4)}
                 disabled={(currentStep === 1 && !canProceedStep1) || submitting}
               >
-                <Text style={styles.btnText}>Next →</Text>
+                <Text style={styles.btnText}>Next â†’</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
