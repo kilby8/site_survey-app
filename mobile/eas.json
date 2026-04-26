@@ -1,27 +1,30 @@
 {
-  "build": {
-    "development": {
-      "env": {
-        "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage": "false"
-      },
-      "developmentClient": true,
-      "distribution": "internal"
-    },
-    "preview": {
-      "channel": "preview",
-      "env": {
-        "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage": "false"
-      },
-      "distribution": "internal",
-      "android": {
-        "buildType": "apk"
-      }
-    },
-    "production": {
-      "channel": "production",
-      "env": {
-        "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage": "false"
-      }
-    }
-  }
+    "build":  {
+                  "development":  {
+                                      "env":  {
+                                                  "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage":  "false",
+                                                  "EXPO_PUBLIC_API_URL":  "https://solar-pro.app"
+                                              },
+                                      "developmentClient":  true,
+                                      "distribution":  "internal"
+                                  },
+                  "preview":  {
+                                  "channel":  "preview",
+                                  "env":  {
+                                              "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage":  "false",
+                                              "EXPO_PUBLIC_API_URL":  "https://solar-pro.app"
+                                          },
+                                  "distribution":  "internal",
+                                  "android":  {
+                                                  "buildType":  "apk"
+                                              }
+                              },
+                  "production":  {
+                                     "channel":  "production",
+                                     "env":  {
+                                                 "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage":  "false",
+                                                 "EXPO_PUBLIC_API_URL":  "https://solar-pro.app"
+                                             }
+                                 }
+              }
 }
