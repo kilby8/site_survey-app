@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Switch,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Switch, Image, Alert,
 } from 'react-native';
 import type {
   SurveyMetadata,
@@ -10,6 +10,7 @@ import type {
   CommercialThreePhaseMetadata,
 } from '../types';
 import { solarProTheme } from '../theme/solarProTheme';
+import { captureFromCamera, pickFromLibrary } from '../services/photoService';
 
 const { colors } = solarProTheme;
 
@@ -221,6 +222,47 @@ function RoofMountSection({
         value={meta.roof_material}
         onSelect={(v) => set('roof_material', v)}
       />
+
+      {/* Rafter photo */}
+      <FieldLabel text="Rafter Photo" />
+      <Text style={styles.hint}>Use a tape measure to show size and spacing</Text>
+      {meta.rafter_photo_uri ? (
+        <View style={styles.rafterPhotoWrap}>
+          <Image source={{ uri: meta.rafter_photo_uri }} style={styles.rafterPhoto} />
+          <TouchableOpacity
+            style={styles.rafterPhotoRemove}
+            onPress={() => set('rafter_photo_uri', null)}
+            hitSlop={8}
+          >
+            <Text style={styles.rafterPhotoRemoveText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.rafterBtnRow}>
+          <TouchableOpacity
+            style={styles.rafterBtn}
+            onPress={async () => {
+              try {
+                const p = await captureFromCamera();
+                if (p) set('rafter_photo_uri', p.uri);
+              } catch (e) { Alert.alert('Camera error', String(e)); }
+            }}
+          >
+            <Text style={styles.rafterBtnText}>📷 Camera</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.rafterBtn, styles.rafterBtnAlt]}
+            onPress={async () => {
+              try {
+                const p = await pickFromLibrary();
+                if (p) set('rafter_photo_uri', p.uri);
+              } catch (e) { Alert.alert('Library error', String(e)); }
+            }}
+          >
+            <Text style={[styles.rafterBtnText, styles.rafterBtnAltText]}>🖼 Library</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <FieldLabel text="Rafter Size" />
       <Selector
@@ -621,4 +663,54 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   boolLabel: { fontSize: 15, fontWeight: '700' },
+  hint: {
+    fontSize: 11,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    marginBottom: 8,
+    marginTop: -2,
+  },
+  rafterPhotoWrap: {
+    position: 'relative',
+    marginBottom: 12,
+    alignSelf: 'flex-start',
+  },
+  rafterPhoto: {
+    width: '100%',
+    height: 180,
+    borderRadius: 10,
+    backgroundColor: colors.inputBg,
+  },
+  rafterPhotoRemove: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 12,
+    width: 26,
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rafterPhotoRemoveText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  rafterBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  rafterBtn: {
+    flex: 1,
+    backgroundColor: colors.primary,
+    paddingVertical: 13,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rafterBtnAlt: {
+    backgroundColor: colors.inputBg,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  rafterBtnText: { color: '#0B1220', fontSize: 14, fontWeight: '700' },
+  rafterBtnAltText: { color: colors.primary },
 });
