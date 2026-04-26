@@ -5,7 +5,8 @@
         "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage": "false"
       },
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "runtimeVersion": "1.0.0"
     },
     "preview": {
       "channel": "preview",
@@ -16,14 +17,16 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "runtimeVersion": "1.0.0"
     },
     "production": {
       "channel": "production",
       "env": {
         "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage": "false"
       },
-      "environment": "production"
+      "environment": "production",
+      "runtimeVersion": "1.0.0"
     }
   }
 }
