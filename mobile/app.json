@@ -53,13 +53,6 @@
           "photosPermission": "Site Survey needs photo library access.",
           "cameraPermission": "Site Survey needs camera access."
         }
-      ],
-      [
-        "@react-native-voice/voice",
-        {
-          "microphonePermission": "Site Survey needs microphone access for voice notes.",
-          "speechRecognitionPermission": "Site Survey uses speech recognition to transcribe voice notes."
-        }
       ]
     ],
     "extra": {
