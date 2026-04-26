@@ -102,7 +102,7 @@ export default function VoiceNoteInput({
         {listening ? (
           <ActivityIndicator size="small" color="#fff" />
         ) : (
-          <Text style={styles.micIcon}>&#x1F3A4;</Text>
+          <Text style={styles.micIcon}>🎤</Text>
         )}
       </TouchableOpacity>
       {listening && (
