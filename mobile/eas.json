@@ -5,7 +5,8 @@
         "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage": "false"
       },
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "prebuildCommand": "npx patch-package"
     },
     "preview": {
       "channel": "preview",
@@ -16,14 +17,16 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "prebuildCommand": "npx patch-package"
     },
     "production": {
       "channel": "production",
       "env": {
         "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage": "false"
       },
-      "environment": "production"
+      "environment": "production",
+      "prebuildCommand": "npx patch-package"
     }
   }
 }
