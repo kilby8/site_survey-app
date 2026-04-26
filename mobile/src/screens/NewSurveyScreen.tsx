@@ -414,31 +414,6 @@ export default function NewSurveyScreen() {
                 />
               </View>
 
-              <View style={styles.section}>
-                <Text style={styles.label}>Category</Text>
-                <View style={styles.categoryRow}>
-                  {SURVEY_CATEGORIES.filter((c) => c.id).map((c) => (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={[
-                        styles.categoryBtn,
-                        categoryId === c.id && styles.categoryBtnActive,
-                      ]}
-                      onPress={() => setCategoryId(c.id)}
-                    >
-                      <Text
-                        style={[
-                          styles.categoryBtnText,
-                          categoryId === c.id && styles.categoryBtnTextActive,
-                        ]}
-                      >
-                        {c.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
               <GPSCapture
                 coordinates={location.coordinates}
                 status={location.status}
@@ -499,10 +474,6 @@ export default function NewSurveyScreen() {
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewKey}>Site</Text>
                 <Text style={styles.reviewVal}>{siteName || '—'}</Text>
-              </View>
-              <View style={styles.reviewRow}>
-                <Text style={styles.reviewKey}>Category</Text>
-                <Text style={styles.reviewVal}>{selectedCategoryName || '—'}</Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewKey}>Checklist Items</Text>
@@ -672,31 +643,6 @@ const styles = StyleSheet.create({
   textArea: {
     minHeight: 88,
     textAlignVertical: "top",
-  },
-  categoryRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  categoryBtn: {
-    borderWidth: 1,
-    borderColor: colors.inputBorder,
-    backgroundColor: colors.inputBg,
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  categoryBtnActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  categoryBtnText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  categoryBtnTextActive: {
-    color: colors.white,
   },
   warningBanner: {
     backgroundColor: '#3A2F16',
