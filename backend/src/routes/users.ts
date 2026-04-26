@@ -206,6 +206,20 @@ async function issueRefreshToken(userId: string, email: string, fullName: string
   return raw;
 }
 
+
+// GET /api/users/active-sessions (admin only)
+router.get('/active-sessions', requireAuth, async (req: Request, res: Response) => {
+  const isAdmin = req.authUser?.role === 'admin' || isElevatedAdminEmail(req.authUser?.email || '');
+  if (!isAdmin) { res.status(403).json({ error: 'Admin access required' }); return; }
+  try {
+    const { rows } = await pool.query(
+      'SELECT user_id, email, full_name, created_at, expires_at FROM refresh_tokens WHERE revoked = false AND expires_at > NOW() ORDER BY created_at DESC LIMIT 50'
+    );
+    res.json({ activeSessions: rows, count: rows.length });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch sessions' });
+  }
+});
 // GET /api/users/me
 router.get('/me', requireAuth, meRateLimit, async (req: Request, res: Response) => {
   try {
