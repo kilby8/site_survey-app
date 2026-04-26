@@ -17,7 +17,6 @@ mobile/.env.*
 
 # Expo / React Native
 mobile/.expo/
-mobile/android/
 mobile/ios/
 *.jks
 *.p8
@@ -51,5 +50,6 @@ yarn-error.log*
 
 # Test coverage
 coverage/
-mobile/android/local.properties
 mobile/gradle-build.log
+
+mobile/android/local.properties
