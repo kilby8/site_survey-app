@@ -27,6 +27,7 @@ export interface RoofMountMetadata {
   rafter_spacing: "16in" | "24in" | null;
   roof_age_years: number | null;
   azimuth: number | null;
+  rafter_photo_uri?: string | null;
 }
 
 export interface SolarFencingMetadata {

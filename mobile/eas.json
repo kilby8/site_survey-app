@@ -3,7 +3,7 @@
                   "development":  {
                                       "env":  {
                                                   "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage":  "false",
-                                                  "EXPO_PUBLIC_API_URL":  "https://solar-pro.app"
+                                                  "EXPO_PUBLIC_API_URL":  "https://site-survey-api-bpyz.onrender.com"
                                               },
                                       "developmentClient":  true,
                                       "distribution":  "internal"
@@ -12,8 +12,9 @@
                                   "channel":  "preview",
                                   "env":  {
                                               "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage":  "false",
-                                              "EXPO_PUBLIC_API_URL":  "https://solar-pro.app"
+                                              "EXPO_PUBLIC_API_URL":  "https://site-survey-api-bpyz.onrender.com"
                                           },
+                                  "environment":  "preview",
                                   "distribution":  "internal",
                                   "android":  {
                                                   "buildType":  "apk"
@@ -23,7 +24,19 @@
                                      "channel":  "production",
                                      "env":  {
                                                  "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage":  "false",
-                                                 "EXPO_PUBLIC_API_URL":  "https://solar-pro.app"
+                                                 "EXPO_PUBLIC_API_URL":  "https://site-survey-api-bpyz.onrender.com"
+                                             },
+                                     "environment":  "production",
+                                     "autoIncrement":  true
+                                 }
+              },
+    "submit":  {
+                  "production":  {
+                                     "android":  {
+                                                     "track":  "production"
+                                                 },
+                                     "ios":  {
+                                                 "ascAppId":  "6745909944"
                                              }
                                  }
               }

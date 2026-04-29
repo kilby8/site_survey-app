@@ -224,6 +224,12 @@ export default function HomeScreen() {
         </View>
         <View style={styles.toolbarActions}>
           <TouchableOpacity
+            style={styles.mapBtn}
+            onPress={() => router.push('/map')}
+          >
+            <Text style={styles.mapBtnText}>🗺 Map</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.bugBtn, reportingBug && styles.bugBtnDisabled]}
             onPress={handleReportBug}
             disabled={reportingBug}
@@ -318,6 +324,17 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
   subtitle: { marginTop: 2, fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  mapBtn: {
+    backgroundColor: colors.inputBg,
+    borderColor: colors.inputBorder,
+    borderWidth: 1,
+    borderRadius: 10,
+    minHeight: 38,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapBtnText: { color: colors.textPrimary, fontWeight: '700', fontSize: 13 },
   deleteBtn: {
     backgroundColor: colors.errorText,
     paddingHorizontal: 14,

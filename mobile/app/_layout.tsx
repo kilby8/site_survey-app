@@ -102,6 +102,7 @@ export default function RootLayout() {
                 <Stack.Screen name="register" options={{ title: 'Create Account', headerShown: false }} />
                 <Stack.Screen name="forgot-password" options={{ title: 'Reset Password', headerShown: false }} />
                 <Stack.Screen name="new-survey" options={{ title: 'New Survey', headerShown: true }} />
+                <Stack.Screen name="map" options={{ title: 'Survey Map', headerShown: true }} />
                 <Stack.Screen name="survey/[id]" options={{ title: 'Survey Details', headerShown: true }} />
               </Stack>
               <FloatingHomeButton />
