@@ -14,6 +14,7 @@ mobile/.env
 mobile/.env.*
 *.env.local
 *.env.*.local
+mobile/credentials.json
 
 # Expo / React Native
 mobile/.expo/
@@ -41,6 +42,7 @@ Thumbs.db
 .vs/
 *.swp
 *.swo
+**/__pycache__/
 
 # Logs
 *.log
