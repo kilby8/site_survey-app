@@ -21,6 +21,10 @@ We use collected information to:
 - Associate surveys with the correct account and project.
 - Improve app reliability, performance, and support troubleshooting.
 
+## Data Ownership
+
+All information collected, stored, processed, or generated through the app is owned by U.T.S, subject to applicable law and any written agreements between U.T.S and authorized users or customers.
+
 ## Data Sharing
 
 We do not sell your personal information.
