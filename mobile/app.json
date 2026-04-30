@@ -39,7 +39,8 @@
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "versionCode": 5
     },
     "web": {
       "bundler": "metro"
@@ -62,6 +63,7 @@
       ]
     ],
     "extra": {
+      "apiUrl": "https://site-survey-api-bpyz.onrender.com",
       "router": {},
       "eas": {
         "projectId": "aed7aae8-7d55-47e1-8850-c6b0040c99b5"
