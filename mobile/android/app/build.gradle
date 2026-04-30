@@ -1,3 +1,5 @@
+import groovy.json.JsonSlurper
+
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
@@ -81,6 +83,24 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def signingConfigFromCredentials = null
+try {
+    def credentialsFile = rootProject.file('../credentials.json')
+    if (credentialsFile.exists()) {
+        def parsed = new JsonSlurper().parseText(credentialsFile.text)
+        def ks = parsed?.android?.keystore
+        if (ks?.keystorePath && ks?.keystorePassword && ks?.keyAlias && ks?.keyPassword) {
+            signingConfigFromCredentials = [
+                storeFilePath: "../../${ks.keystorePath}",
+                storePassword: ks.keystorePassword,
+                keyAlias: ks.keyAlias,
+                keyPassword: ks.keyPassword
+            ]
+        }
+    }
+} catch (ignored) {
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
 
@@ -92,7 +112,7 @@ android {
         applicationId 'com.sitesurvey.mobile'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
+        versionCode 3
         versionName "1.0.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
@@ -104,6 +124,14 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (signingConfigFromCredentials != null) {
+            release {
+                storeFile file(signingConfigFromCredentials.storeFilePath)
+                storePassword signingConfigFromCredentials.storePassword
+                keyAlias signingConfigFromCredentials.keyAlias
+                keyPassword signingConfigFromCredentials.keyPassword
+            }
+        }
     }
     buildTypes {
         debug {
@@ -112,7 +140,7 @@ android {
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigFromCredentials != null ? signingConfigs.release : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds
