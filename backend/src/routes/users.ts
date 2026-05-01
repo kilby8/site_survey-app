@@ -66,6 +66,7 @@ const REGISTER_WINDOW_MS = getIntEnv('USERS_REGISTER_WINDOW_MINUTES', 15) * 60 *
 const ME_MAX_REQUESTS = getIntEnv('USERS_ME_MAX_REQUESTS', 120);
 const ME_WINDOW_MS = getIntEnv('USERS_ME_WINDOW_MINUTES', 1) * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = getIntEnv('PASSWORD_RESET_TTL_MINUTES', 30) * 60 * 1000;
+const PASSWORD_RESET_EXPOSE_TOKEN = process.env.PASSWORD_RESET_EXPOSE_TOKEN === 'true';
 const signInAttemptMap = new Map<string, SignInAttemptState>();
 const passwordResetMap = new Map<string, PasswordResetState>();
 const SUPPORTED_SOCIAL_PROVIDERS = new Set(['google', 'microsoft', 'apple']);
@@ -414,7 +415,7 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
     const user = await getUserByEmail(normalizedEmail);
     if (user) {
       const resetToken = createPasswordResetToken(normalizedEmail);
-      let delivery = 'sent';
+      let delivery: 'sent' | 'failed' = 'sent';
 
       try {
         await sendPasswordResetEmail(normalizedEmail, resetToken);
@@ -423,11 +424,16 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
         console.error('Password reset email delivery error:', mailErr);
       }
 
+      const exposeResetToken =
+        process.env.NODE_ENV !== 'production' ||
+        delivery === 'failed' ||
+        PASSWORD_RESET_EXPOSE_TOKEN;
+
       authAudit('users.forgot-password.success', req, normalizedEmail, { status: 200, userId: user.id });
       res.json({
         message: genericMessage,
         delivery,
-        resetToken: process.env.NODE_ENV === 'production' ? undefined : resetToken,
+        resetToken: exposeResetToken ? resetToken : undefined,
         expiresInMinutes: Math.floor(PASSWORD_RESET_TTL_MS / 60000),
       });
       return;
