@@ -18,10 +18,12 @@ const DEFAULT_REGION: Region = {
   longitudeDelta: 30,
 };
 
+function hasValidCoords(item: Pick<SurveyListItem, 'latitude' | 'longitude'>): boolean {
+  return Number.isFinite(item.latitude) && Number.isFinite(item.longitude);
+}
+
 function buildRegion(items: SurveyListItem[]): Region {
-  const withCoords = items.filter(
-    (s) => typeof s.latitude === 'number' && typeof s.longitude === 'number',
-  );
+  const withCoords = items.filter(hasValidCoords);
 
   if (withCoords.length === 0) return DEFAULT_REGION;
 
@@ -62,17 +64,19 @@ export default function SurveyMapScreen() {
   );
 
   const mappable = useMemo(
-    () => surveys.filter((s) => typeof s.latitude === 'number' && typeof s.longitude === 'number'),
+    () => surveys.filter(hasValidCoords),
     [surveys],
   );
 
   const region = useMemo(() => buildRegion(mappable), [mappable]);
 
-  const openNativeMaps = useCallback((survey: SurveyListItem) => {
-    if (typeof survey.latitude !== 'number' || typeof survey.longitude !== 'number') return;
+  const mapProvider = Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined;
 
-    const lat = survey.latitude;
-    const lon = survey.longitude;
+  const openNativeMaps = useCallback((survey: SurveyListItem) => {
+    if (!hasValidCoords(survey)) return;
+
+    const lat = survey.latitude as number;
+    const lon = survey.longitude as number;
     const label = encodeURIComponent(survey.site_name || survey.project_name || 'Survey Site');
 
     const url = Platform.select({
@@ -97,7 +101,7 @@ export default function SurveyMapScreen() {
 
       <MapView
         style={styles.map}
-        provider={PROVIDER_GOOGLE}
+        provider={mapProvider}
         initialRegion={region}
         showsUserLocation
         showsCompass
