@@ -164,6 +164,10 @@ app.get("/tools/map-simulator", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "map-simulator.html"));
 });
 
+app.get("/admin/pipeline-topology", (_req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, "pipeline-topology.html"));
+});
+
 app.use(fallbackSurveyRouter);
 
 // ----------------------------------------------------------------

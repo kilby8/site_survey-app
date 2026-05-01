@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pipeline Mission Control</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/reactflow@11.11.4/dist/style.css" />
+    <style>
+      html, body, #root { height: 100%; margin: 0; }
+      .react-flow__attribution { display: none; }
+    </style>
+  </head>
+  <body class="bg-slate-950 text-slate-100">
+    <div id="root"></div>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/reactflow@11.11.4/dist/umd/index.js"></script>
+
+    <script>
+      'use strict';
+
+      const { useCallback, useEffect, useMemo, useRef, useState } = React;
+      const {
+        ReactFlow,
+        ReactFlowProvider,
+        Background,
+        Controls,
+        MiniMap,
+        useNodesState,
+        useEdgesState,
+        Handle,
+        Position,
+      } = window.ReactFlow;
+
+      const UI_STATE_KEY = 'pipeline-mission-control-ui-v1';
+
+      const DEFAULT_PIPELINE_STEPS = [
+        { id: 'step-1', step: 1, label: 'Mobile Sync Starts', subtext: 'SyncManager posts pending local surveys.', status: 'LIVE', layer: 'Mobile', nodeType: 'Source', hmacVerification: 'N/A (origin event)', fieldMapping: ['device_id -> context.device', 'survey.id -> payload.survey_id'], x: 0, y: 40 },
+        { id: 'step-2', step: 2, label: 'Survey + Photos Persist', subtext: '/api/surveys + /api/surveys/:id/photos persist data.', status: 'LIVE', layer: 'Backend', nodeType: 'Processor', hmacVerification: 'N/A', fieldMapping: ['payload.project_name -> surveys.project_name', 'payload.photos[] -> survey_photos'], x: 280, y: 40 },
+        { id: 'step-3', step: 3, label: 'Auto Complete Trigger', subtext: 'Client calls POST /api/surveys/:id/complete.', status: 'LIVE', layer: 'Mobile', nodeType: 'Trigger', hmacVerification: 'N/A', fieldMapping: ['survey_id -> route param :id', 'status -> submitted'], x: 560, y: 40 },
+        { id: 'step-4', step: 4, label: 'Outbound Queue Enqueue', subtext: 'survey.completed event stored in queue.', status: 'LIVE', layer: 'Backend', nodeType: 'Queue', hmacVerification: 'N/A', fieldMapping: ['survey.completed -> webhook_deliveries.event_type', 'event_id -> webhook_deliveries.event_id'], x: 840, y: 40 },
+        { id: 'step-5', step: 5, label: 'Signed Delivery', subtext: 'Outbound worker posts signed payload.', status: 'LIVE', layer: 'Integration', nodeType: 'Security', hmacVerification: 'HMAC-SHA256 over ${timestamp}.${rawBody}', fieldMapping: ['X-Survey-Signature -> sha256=<digest>', 'X-Survey-Event-Id -> event_id'], x: 1120, y: 40 },
+        { id: 'step-6', step: 6, label: 'Inbound Receiver', subtext: 'POST /api/webhooks/survey-complete validates request.', status: 'LIVE', layer: 'Backend', nodeType: 'Gateway', hmacVerification: 'Verify timestamp + signature; reject mismatch.', fieldMapping: ['incoming.survey_id -> inbound_events.survey_id', 'incoming.event_id -> dedupe key'], x: 1400, y: 40 },
+        { id: 'step-7', step: 7, label: 'Pre-Ingest Handshake', subtext: '202 ACCEPTED_PRE_INGEST returned for valid signed payload.', status: 'LIVE', layer: 'Integration', nodeType: 'Handshake', hmacVerification: 'Must pass prior verification.', fieldMapping: ['event_id -> ack metadata', 'status -> ACCEPTED_PRE_INGEST'], x: 1680, y: 40 },
+        { id: 'step-8', step: 8, label: 'Partner Mapping', subtext: 'Partner adapter maps fields into internal schema.', status: 'PARTIAL', layer: 'External', nodeType: 'Mapper', hmacVerification: 'Assumes upstream validation complete.', fieldMapping: ['inspector_name -> assigned_engineer', 'site_name -> project.location_name'], x: 1960, y: 40 },
+        { id: 'step-9', step: 9, label: 'Engineering Queue', subtext: 'Events routed to engineering work queue.', status: 'PARTIAL', layer: 'External', nodeType: 'Queue', hmacVerification: 'N/A', fieldMapping: ['project_id -> engineering.project_ref', 'survey_id -> engineering.ticket_ref'], x: 2240, y: 40 },
+        { id: 'step-10', step: 10, label: 'Admin Observability', subtext: 'Admin home presents pipeline and logs.', status: 'LIVE', layer: 'Website', nodeType: 'Monitor', hmacVerification: 'N/A', fieldMapping: ['webhook_deliveries -> admin grid', 'survey events -> logger stream'], x: 2520, y: 40 },
+        { id: 'step-11', step: 11, label: 'Final Reconciliation', subtext: 'Hash-sync and downstream confirmation.', status: 'NOT WIRED', layer: 'Integration', nodeType: 'Reconcile', hmacVerification: 'Pending wired handler.', fieldMapping: ['website.users.password_hash -> app.users.password_hash', 'delivery.status -> reconciliation.state'], x: 2800, y: 40 },
+      ];
+
+      const STATUS_STYLE = {
+        LIVE: { border: 'border-emerald-400/80', glow: 'shadow-[0_0_0_1px_rgba(16,185,129,0.35),0_0_18px_rgba(16,185,129,0.2)]', badge: 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40' },
+        PARTIAL: { border: 'border-cyan-400/80', glow: 'shadow-[0_0_0_1px_rgba(34,211,238,0.3),0_0_16px_rgba(34,211,238,0.16)]', badge: 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40' },
+        'NOT WIRED': { border: 'border-slate-500/70', glow: 'shadow-[0_0_0_1px_rgba(100,116,139,0.3)]', badge: 'bg-slate-700/50 text-slate-300 border border-slate-500/60' },
+      };
+
+      function buildFilterMap(values, existing) {
+        const defaults = Object.fromEntries(values.map((k) => [k, true]));
+        return { ...defaults, ...(existing || {}) };
+      }
+
+      function buildEdges(steps) {
+        return steps.slice(0, -1).map((s, i) => ({
+          id: `e-${s.id}-${steps[i + 1].id}`,
+          source: s.id,
+          target: steps[i + 1].id,
+          animated: true,
+          style: { stroke: '#334155', strokeWidth: 2 },
+        }));
+      }
+
+      function readUiState() {
+        try {
+          const raw = localStorage.getItem(UI_STATE_KEY);
+          return raw ? JSON.parse(raw) : null;
+        } catch {
+          return null;
+        }
+      }
+
+      function PipelineNode({ data, selected }) {
+        const styles = STATUS_STYLE[data.status] || STATUS_STYLE['NOT WIRED'];
+        const highlighted = Boolean(data.highlighted);
+
+        return React.createElement(
+          'div',
+          { className: ['w-[250px] rounded-lg border-l-4 bg-slate-900/95 p-3 text-slate-100 transition-all', styles.border, styles.glow, selected ? 'ring-2 ring-cyan-300/70' : '', highlighted ? 'ring-2 ring-yellow-300/70' : ''].join(' ') },
+          React.createElement(Handle, { type: 'target', position: Position.Left, className: 'w-2 h-2 !bg-slate-400' }),
+          React.createElement('div', { className: 'flex items-center justify-between gap-2' },
+            React.createElement('span', { className: 'text-[10px] font-mono uppercase tracking-wider text-slate-400' }, `Step ${data.step}`),
+            React.createElement('span', { className: `rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${styles.badge}` }, data.status)
+          ),
+          React.createElement('div', { className: 'mt-2 text-sm font-semibold text-white' }, data.label),
+          React.createElement('div', { className: 'mt-1 max-h-9 overflow-hidden text-[11px] text-slate-400' }, data.subtext),
+          React.createElement('div', { className: 'mt-2 text-[10px] uppercase tracking-wider text-slate-500' }, `${data.layer} · ${data.nodeType}`),
+          React.createElement(Handle, { type: 'source', position: Position.Right, className: 'w-2 h-2 !bg-slate-400' })
+        );
+      }
+
+      function App() {
+        const reactFlowRef = useRef(null);
+        const searchRef = useRef(null);
+        const fileInputRef = useRef(null);
+        const noticeTimer = useRef(null);
+        const savedUi = useMemo(() => readUiState(), []);
+
+        const [pipelineSteps, setPipelineSteps] = useState(DEFAULT_PIPELINE_STEPS);
+        const [showLayers, setShowLayers] = useState(savedUi?.showLayers ?? true);
+        const [showNodeTypes, setShowNodeTypes] = useState(savedUi?.showNodeTypes ?? true);
+        const [query, setQuery] = useState('');
+        const [selectedNodeId, setSelectedNodeId] = useState(null);
+        const [notice, setNotice] = useState('');
+
+        const layers = useMemo(() => [...new Set(pipelineSteps.map((s) => s.layer))], [pipelineSteps]);
+        const nodeTypesList = useMemo(() => [...new Set(pipelineSteps.map((s) => s.nodeType))], [pipelineSteps]);
+        const [layerFilter, setLayerFilter] = useState(() => buildFilterMap([...new Set(DEFAULT_PIPELINE_STEPS.map((s) => s.layer))], savedUi?.layerFilter));
+        const [typeFilter, setTypeFilter] = useState(() => buildFilterMap([...new Set(DEFAULT_PIPELINE_STEPS.map((s) => s.nodeType))], savedUi?.typeFilter));
+
+        useEffect(() => setLayerFilter((prev) => buildFilterMap(layers, prev)), [layers]);
+        useEffect(() => setTypeFilter((prev) => buildFilterMap(nodeTypesList, prev)), [nodeTypesList]);
+
+        useEffect(() => {
+          localStorage.setItem(UI_STATE_KEY, JSON.stringify({ showLayers, showNodeTypes, layerFilter, typeFilter }));
+        }, [showLayers, showNodeTypes, layerFilter, typeFilter]);
+
+        const showNotice = useCallback((message) => {
+          setNotice(message);
+          if (noticeTimer.current) clearTimeout(noticeTimer.current);
+          noticeTimer.current = setTimeout(() => setNotice(''), 2000);
+        }, []);
+
+        useEffect(() => () => noticeTimer.current && clearTimeout(noticeTimer.current), []);
+
+        const filteredSteps = useMemo(() => pipelineSteps.filter((s) => Boolean(layerFilter[s.layer]) && Boolean(typeFilter[s.nodeType])), [pipelineSteps, layerFilter, typeFilter]);
+        const orderedSteps = useMemo(() => [...filteredSteps].sort((a, b) => a.step - b.step), [filteredSteps]);
+
+        const searchLower = query.trim().toLowerCase();
+        const baseNodes = useMemo(() => filteredSteps.map((s) => ({
+          id: s.id,
+          type: 'pipelineNode',
+          position: { x: s.x, y: s.y },
+          data: {
+            step: s.step,
+            label: s.label,
+            subtext: s.subtext,
+            status: s.status,
+            layer: s.layer,
+            nodeType: s.nodeType,
+            hmacVerification: s.hmacVerification,
+            fieldMapping: s.fieldMapping,
+            highlighted: Boolean(searchLower) && (`${s.label} ${s.subtext} ${s.id} ${s.hmacVerification} ${s.fieldMapping.join(' ')}`.toLowerCase().includes(searchLower)),
+          },
+        })), [filteredSteps, searchLower]);
+
+        const baseEdges = useMemo(() => {
+          const visible = new Set(filteredSteps.map((s) => s.id));
+          return buildEdges(pipelineSteps).filter((e) => visible.has(e.source) && visible.has(e.target));
+        }, [pipelineSteps, filteredSteps]);
+
+        const [nodes, setNodes, onNodesChange] = useNodesState(baseNodes);
+        const [edges, setEdges, onEdgesChange] = useEdgesState(baseEdges);
+        useEffect(() => setNodes(baseNodes), [baseNodes, setNodes]);
+        useEffect(() => setEdges(baseEdges), [baseEdges, setEdges]);
+
+        const selectedNode = useMemo(() => pipelineSteps.find((s) => s.id === selectedNodeId) || null, [pipelineSteps, selectedNodeId]);
+        const nodeTypes = useMemo(() => ({ pipelineNode: PipelineNode }), []);
+
+        useEffect(() => {
+          if (selectedNodeId && !filteredSteps.some((s) => s.id === selectedNodeId)) setSelectedNodeId(null);
+        }, [filteredSteps, selectedNodeId]);
+
+        const moveSelection = useCallback((direction) => {
+          if (!orderedSteps.length) return;
+          const i = orderedSteps.findIndex((s) => s.id === selectedNodeId);
+          if (i === -1) return setSelectedNodeId(orderedSteps[0].id);
+          setSelectedNodeId(orderedSteps[(i + direction + orderedSteps.length) % orderedSteps.length].id);
+        }, [orderedSteps, selectedNodeId]);
+
+        useEffect(() => {
+          function onKeyDown(e) {
+            const tag = String(e.target?.tagName || '').toLowerCase();
+            const typing = tag === 'input' || tag === 'textarea' || Boolean(e.target?.isContentEditable);
+            if (e.ctrlKey && e.key.toLowerCase() === 'f') { e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select(); return; }
+            if (e.key === 'Escape') { setQuery(''); return; }
+            if (typing) return;
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); moveSelection(1); }
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); moveSelection(-1); }
+          }
+          window.addEventListener('keydown', onKeyDown);
+          return () => window.removeEventListener('keydown', onKeyDown);
+        }, [moveSelection]);
+
+        useEffect(() => {
+          const hit = nodes.find((n) => n.data.highlighted);
+          if (hit && reactFlowRef.current) reactFlowRef.current.setCenter(hit.position.x + 120, hit.position.y + 40, { zoom: 0.95, duration: 300 });
+        }, [nodes]);
+
+        useEffect(() => {
+          if (selectedNode && reactFlowRef.current) reactFlowRef.current.setCenter(selectedNode.x + 120, selectedNode.y + 40, { zoom: 0.95, duration: 250 });
+        }, [selectedNode]);
+
+        const toggleLayer = useCallback((k) => setLayerFilter((p) => ({ ...p, [k]: !p[k] })), []);
+        const toggleType = useCallback((k) => setTypeFilter((p) => ({ ...p, [k]: !p[k] })), []);
+
+        const resetFilters = useCallback(() => {
+          setLayerFilter(Object.fromEntries(layers.map((k) => [k, true])));
+          setTypeFilter(Object.fromEntries(nodeTypesList.map((k) => [k, true])));
+          setQuery('');
+          showNotice('Filters reset.');
+        }, [layers, nodeTypesList, showNotice]);
+
+        const copyForChatGpt = useCallback(async () => {
+          const payload = selectedNode || { summary: 'Pipeline overview', nodes: filteredSteps.map((s) => ({ id: s.id, step: s.step, label: s.label, status: s.status })) };
+          try { await navigator.clipboard.writeText(JSON.stringify(payload, null, 2)); showNotice('Copied pipeline context.'); }
+          catch { showNotice('Copy failed.'); }
+        }, [selectedNode, filteredSteps, showNotice]);
+
+        const exportJson = useCallback(() => {
+          const blob = new Blob([JSON.stringify(pipelineSteps, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'pipeline-node-config.json';
+          a.click();
+          URL.revokeObjectURL(url);
+          showNotice('Pipeline JSON exported.');
+        }, [pipelineSteps, showNotice]);
+
+        const importJson = useCallback((event) => {
+          const file = event.target?.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            try {
+              const parsed = JSON.parse(String(reader.result || '[]'));
+              if (!Array.isArray(parsed) || !parsed.length) throw new Error();
+              const ids = new Set();
+              const normalized = parsed.map((raw, idx) => {
+                if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string' || !raw.id.trim() || ids.has(raw.id)) throw new Error();
+                ids.add(raw.id);
+                const status = ['LIVE', 'PARTIAL', 'NOT WIRED'].includes(raw.status) ? raw.status : 'NOT WIRED';
+                return {
+                  id: raw.id,
+                  step: Number(raw.step) || idx + 1,
+                  label: String(raw.label || `Step ${idx + 1}`),
+                  subtext: String(raw.subtext || ''),
+                  status,
+                  layer: String(raw.layer || 'Uncategorized'),
+                  nodeType: String(raw.nodeType || 'Unknown'),
+                  hmacVerification: String(raw.hmacVerification || 'N/A'),
+                  fieldMapping: Array.isArray(raw.fieldMapping) ? raw.fieldMapping.map((v) => String(v)) : [],
+                  x: Number(raw.x) || idx * 280,
+                  y: Number(raw.y) || 40,
+                };
+              });
+              setPipelineSteps(normalized);
+              setSelectedNodeId(null);
+              showNotice(`Imported ${normalized.length} nodes.`);
+            } catch {
+              showNotice('Import failed. Invalid JSON schema.');
+            } finally {
+              event.target.value = '';
+            }
+          };
+          reader.readAsText(file);
+        }, [showNotice]);
+
+        const statusCounts = useMemo(() => {
+          const c = { LIVE: 0, PARTIAL: 0, NOT_WIRED: 0 };
+          for (const s of pipelineSteps) {
+            if (s.status === 'LIVE') c.LIVE += 1;
+            else if (s.status === 'PARTIAL') c.PARTIAL += 1;
+            else c.NOT_WIRED += 1;
+          }
+          return c;
+        }, [pipelineSteps]);
+
+        const projectBars = [2, 2, 3, 3, 3, 4, 3, 3, 4, 6, 24, 4, 3, 3];
+        const userBars = [18, 18, 18, 18, 18, 18, 18];
+
+        return React.createElement(
+          'div',
+          { className: 'h-full w-full p-3 lg:p-4' },
+          React.createElement('div', { className: 'grid h-full grid-cols-12 gap-3' },
+            React.createElement('aside', { className: 'col-span-12 flex min-h-0 flex-col rounded-xl border border-slate-800 bg-slate-950/95 p-3 xl:col-span-2' },
+              React.createElement('div', { className: 'mb-4 rounded-lg border border-slate-800 bg-slate-900/80 p-3' },
+                React.createElement('div', { className: 'text-sm font-semibold text-amber-300' }, 'SolarPro'),
+                React.createElement('div', { className: 'text-[11px] uppercase tracking-wider text-slate-400' }, 'Admin Portal')
+              ),
+              React.createElement('div', { className: 'mb-2 text-[10px] uppercase tracking-widest text-slate-500' }, 'Overview'),
+              React.createElement('div', { className: 'mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs font-semibold text-amber-300' }, 'Dashboard'),
+              React.createElement('div', { className: 'space-y-1 text-xs' },
+                ['Road to RE+ 26', 'Topography', 'Users', 'Projects', 'Engineering', 'Utilities'].map((x) => React.createElement('div', { key: x, className: 'rounded px-2 py-1.5 text-slate-400 hover:bg-slate-900 hover:text-slate-200' }, x))
+              ),
+              React.createElement('div', { className: 'mt-4 mb-2 text-[10px] uppercase tracking-widest text-slate-500' }, 'System'),
+              React.createElement('div', { className: 'space-y-1 text-xs' },
+                ['System Tools', 'Activity Log', 'Database', 'System Health'].map((x) => React.createElement('div', { key: x, className: 'rounded px-2 py-1.5 text-slate-400 hover:bg-slate-900 hover:text-slate-200' }, x))
+              )
+            ),
+
+            React.createElement('main', { className: 'col-span-12 flex min-h-0 flex-col gap-3 xl:col-span-10' },
+              React.createElement('div', { className: 'flex flex-col gap-2 rounded-xl border border-slate-800 bg-slate-950/90 px-4 py-3 md:flex-row md:items-center md:justify-between' },
+                React.createElement('div', null,
+                  React.createElement('div', { className: 'mb-1 flex items-center gap-2 text-[11px] text-slate-400' },
+                    React.createElement('span', { className: 'text-amber-300' }, '◉'),
+                    React.createElement('span', null, 'Admin Portal'),
+                    React.createElement('span', null, '/'),
+                    React.createElement('span', { className: 'text-white' }, 'Dashboard')
+                  ),
+                  React.createElement('h1', { className: 'text-2xl font-semibold text-white' }, 'System Overview'),
+                  React.createElement('p', { className: 'text-xs text-slate-400' }, 'Mission Control topology · Ctrl+F search · Arrow keys navigate nodes')
+                ),
+                React.createElement('div', { className: 'flex flex-wrap items-center gap-2' },
+                  React.createElement('button', { className: 'rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-800', onClick: () => reactFlowRef.current?.fitView({ duration: 280, padding: 0.25 }) }, 'Refresh'),
+                  React.createElement('button', { className: 'rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-800', onClick: copyForChatGpt }, 'Copy for ChatGPT'),
+                  React.createElement('button', { className: 'rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-800', onClick: exportJson }, 'Export JSON'),
+                  React.createElement('button', { className: 'rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-800', onClick: () => fileInputRef.current?.click() }, 'Import JSON'),
+                  React.createElement('input', { ref: fileInputRef, type: 'file', accept: 'application/json', className: 'hidden', onChange: importJson }),
+                  React.createElement('button', { className: 'rounded border border-cyan-500/50 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-300 hover:bg-cyan-500/20', onClick: () => showNotice('Force Ingest dispatched (wire endpoint next).') }, 'Force Ingest')
+                )
+              ),
+
+              React.createElement('div', { className: 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4' },
+                React.createElement('div', { className: 'rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-slate-900 p-3' }, React.createElement('div', { className: 'text-[10px] uppercase tracking-wider text-amber-300' }, 'Total Steps'), React.createElement('div', { className: 'mt-1 text-3xl font-bold text-amber-200' }, String(pipelineSteps.length))),
+                React.createElement('div', { className: 'rounded-xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 to-slate-900 p-3' }, React.createElement('div', { className: 'text-[10px] uppercase tracking-wider text-emerald-300' }, 'Live'), React.createElement('div', { className: 'mt-1 text-3xl font-bold text-emerald-200' }, String(statusCounts.LIVE))),
+                React.createElement('div', { className: 'rounded-xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 to-slate-900 p-3' }, React.createElement('div', { className: 'text-[10px] uppercase tracking-wider text-cyan-300' }, 'Partial'), React.createElement('div', { className: 'mt-1 text-3xl font-bold text-cyan-200' }, String(statusCounts.PARTIAL))),
+                React.createElement('div', { className: 'rounded-xl border border-rose-500/30 bg-gradient-to-br from-rose-500/10 to-slate-900 p-3' }, React.createElement('div', { className: 'text-[10px] uppercase tracking-wider text-rose-300' }, 'Not Wired'), React.createElement('div', { className: 'mt-1 text-3xl font-bold text-rose-200' }, String(statusCounts.NOT_WIRED)))
+              ),
+
+              React.createElement('div', { className: 'grid grid-cols-1 gap-3 lg:grid-cols-2' },
+                React.createElement('div', { className: 'rounded-xl border border-slate-800 bg-slate-950/90 p-4' },
+                  React.createElement('div', { className: 'text-sm font-semibold text-slate-100' }, 'Projects Created'),
+                  React.createElement('div', { className: 'mb-3 text-xs text-slate-500' }, 'Last 30 days'),
+                  React.createElement('div', { className: 'flex h-16 items-end gap-1' }, projectBars.map((v, i) => React.createElement('div', { key: `p-${i}`, className: 'flex-1 rounded-t bg-amber-500/70', style: { height: `${Math.max(8, v * 2)}px` } })))
+                ),
+                React.createElement('div', { className: 'rounded-xl border border-slate-800 bg-slate-950/90 p-4' },
+                  React.createElement('div', { className: 'text-sm font-semibold text-slate-100' }, 'New Users'),
+                  React.createElement('div', { className: 'mb-3 text-xs text-slate-500' }, 'Last 30 days'),
+                  React.createElement('div', { className: 'flex h-16 items-end gap-1' }, userBars.map((v, i) => React.createElement('div', { key: `u-${i}`, className: 'flex-1 rounded-t bg-blue-500/80', style: { height: `${v}px` } })))
+                )
+              ),
+
+              React.createElement('div', { className: `rounded border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-200 ${notice ? '' : 'invisible'}`, role: 'status', 'aria-live': 'polite' }, notice || 'status'),
+
+              React.createElement('div', { className: 'grid min-h-0 flex-1 grid-cols-12 gap-3' },
+                React.createElement('aside', { className: 'col-span-12 rounded-xl border border-slate-700 bg-slate-900/90 p-3 lg:col-span-3' },
+                  React.createElement('div', { className: 'mb-3 flex items-center justify-between' },
+                    React.createElement('h2', { className: 'text-sm font-semibold text-slate-200' }, 'Pipeline Layers'),
+                    React.createElement('button', { className: 'text-xs text-slate-400 hover:text-slate-200', onClick: () => setShowLayers((v) => !v) }, showLayers ? 'Collapse' : 'Expand')
+                  ),
+                  showLayers && React.createElement('ul', { className: 'mb-4 space-y-2 text-xs text-slate-300' }, layers.map((layer) => React.createElement('li', { key: layer, className: 'rounded border border-slate-700 bg-slate-800/70 px-2 py-1' }, React.createElement('label', { className: 'flex cursor-pointer items-center gap-2' }, React.createElement('input', { type: 'checkbox', checked: Boolean(layerFilter[layer]), onChange: () => toggleLayer(layer), className: 'accent-cyan-400' }), React.createElement('span', null, layer))))),
+                  React.createElement('div', { className: 'mb-3 mt-2 flex items-center justify-between' },
+                    React.createElement('h2', { className: 'text-sm font-semibold text-slate-200' }, 'Node Types'),
+                    React.createElement('button', { className: 'text-xs text-slate-400 hover:text-slate-200', onClick: () => setShowNodeTypes((v) => !v) }, showNodeTypes ? 'Collapse' : 'Expand')
+                  ),
+                  showNodeTypes && React.createElement('ul', { className: 'space-y-2 text-xs text-slate-300' }, nodeTypesList.map((type) => React.createElement('li', { key: type, className: 'rounded border border-slate-700 bg-slate-800/70 px-2 py-1' }, React.createElement('label', { className: 'flex cursor-pointer items-center gap-2' }, React.createElement('input', { type: 'checkbox', checked: Boolean(typeFilter[type]), onChange: () => toggleType(type), className: 'accent-cyan-400' }), React.createElement('span', null, type))))),
+                  React.createElement('button', { className: 'mt-3 w-full rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-100 hover:bg-slate-700', onClick: resetFilters }, 'Reset Filters')
+                ),
+
+                React.createElement('section', { className: 'col-span-12 min-h-[460px] overflow-hidden rounded-xl border border-slate-700 bg-slate-950 lg:col-span-6' },
+                  React.createElement('div', { className: 'flex items-center gap-2 border-b border-slate-700 bg-slate-900/90 p-2' },
+                    React.createElement('input', { ref: searchRef, value: query, onChange: (e) => setQuery(e.target.value), placeholder: 'Search nodes (Ctrl+F)', className: 'w-full rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-400' }),
+                    React.createElement('button', { className: 'rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs text-slate-100 hover:bg-slate-700', onClick: () => reactFlowRef.current?.fitView({ duration: 300, padding: 0.25 }) }, 'Fit View')
+                  ),
+                  React.createElement('div', { className: 'h-[calc(100%-45px)]' },
+                    React.createElement(ReactFlow, { nodes, edges, nodeTypes, onNodesChange, onEdgesChange, onNodeClick: (_evt, node) => setSelectedNodeId(node.id), onPaneClick: () => setSelectedNodeId(null), fitView: true, fitViewOptions: { padding: 0.25 }, onInit: (i) => (reactFlowRef.current = i), defaultViewport: { x: 0, y: 0, zoom: 0.9 }, minZoom: 0.35, maxZoom: 1.8 },
+                      React.createElement(Background, { color: '#1e293b', gap: 20, size: 1 }),
+                      React.createElement(Controls, { showInteractive: false }),
+                      React.createElement(MiniMap, { pannable: true, zoomable: true, nodeColor: (n) => (n?.data?.status === 'LIVE' ? '#10b981' : n?.data?.status === 'PARTIAL' ? '#22d3ee' : '#64748b'), maskColor: 'rgba(2, 6, 23, 0.65)' })
+                    )
+                  )
+                ),
+
+                React.createElement('aside', { className: 'col-span-12 rounded-xl border border-slate-700 bg-slate-900/90 p-3 lg:col-span-3' },
+                  React.createElement('h2', { className: 'mb-2 text-sm font-semibold text-slate-200' }, 'Node Inspector'),
+                  !selectedNode && React.createElement('p', { className: 'text-xs text-slate-400' }, 'Click a node to inspect HMAC verification and field mapping details.'),
+                  selectedNode && React.createElement('div', { className: 'space-y-3 text-xs text-slate-300' },
+                    React.createElement('div', { className: 'rounded border border-slate-700 bg-slate-800/60 p-2' },
+                      React.createElement('div', { className: 'text-[10px] uppercase tracking-wide text-slate-500' }, `Step ${selectedNode.step}`),
+                      React.createElement('div', { className: 'mt-1 text-sm font-semibold text-white' }, selectedNode.label),
+                      React.createElement('div', { className: 'mt-1 text-slate-400' }, selectedNode.subtext),
+                      React.createElement('div', { className: 'mt-2 inline-block rounded border border-slate-600 px-2 py-0.5 text-[10px] uppercase' }, selectedNode.status)
+                    ),
+                    React.createElement('div', { className: 'rounded border border-slate-700 bg-slate-800/60 p-2' },
+                      React.createElement('div', { className: 'mb-1 text-[10px] uppercase tracking-wide text-slate-500' }, 'HMAC Verification'),
+                      React.createElement('div', { className: 'text-slate-200' }, selectedNode.hmacVerification)
+                    ),
+                    React.createElement('div', { className: 'rounded border border-slate-700 bg-slate-800/60 p-2' },
+                      React.createElement('div', { className: 'mb-1 text-[10px] uppercase tracking-wide text-slate-500' }, 'Field Mapping'),
+                      React.createElement('ul', { className: 'list-disc space-y-1 pl-4 text-slate-200' }, selectedNode.fieldMapping.map((line, idx) => React.createElement('li', { key: `${selectedNode.id}-${idx}` }, line)))
+                    )
+                  )
+                )
+              )
+            )
+          )
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(
+        React.createElement(ReactFlowProvider, null, React.createElement(App))
+      );
+    </script>
+  </body>
+</html>
