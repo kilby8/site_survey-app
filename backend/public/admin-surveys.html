@@ -73,6 +73,25 @@
         font-weight: 700;
       }
 
+      .hero-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .nav-btn {
+        border: 1px solid rgba(34, 211, 238, 0.35);
+        background: rgba(8, 47, 73, 0.5);
+        color: #67e8f9;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      .nav-btn:hover { filter: brightness(1.1); }
+
       .card {
         background: linear-gradient(180deg, rgba(16, 26, 46, 0.96), rgba(15, 32, 62, 0.94));
         border: 1px solid var(--line);
@@ -337,7 +356,10 @@
           <h1>SolarPro Admin Intelligence Console</h1>
           <p>Deep-dive synced survey visibility with production drill-down.</p>
         </div>
-        <span class="badge">Admin Only</span>
+        <div class="hero-actions">
+          <a class="nav-btn" href="/admin/bug-reports">Bug Reports Dashboard</a>
+          <span class="badge">Admin Only</span>
+        </div>
       </section>
 
       <section class="card auth-card" id="authCard">

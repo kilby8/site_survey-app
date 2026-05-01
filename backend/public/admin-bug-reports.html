@@ -36,6 +36,26 @@
         font-size: 12px;
         font-weight: 700;
       }
+
+      .hero-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .nav-btn {
+        border: 1px solid rgba(34, 211, 238, 0.35);
+        background: rgba(8, 47, 73, 0.5);
+        color: #67e8f9;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      .nav-btn:hover { filter: brightness(1.1); }
+
       .card {
         background: linear-gradient(180deg, rgba(16, 26, 46, 0.96), rgba(15, 32, 62, 0.94));
         border: 1px solid var(--line);
@@ -111,7 +131,10 @@
           <h1>Site Survey Admin • Bug Reports</h1>
           <p>Inspect user-submitted app bug reports and screenshots.</p>
         </div>
-        <span class="badge">Admin Only</span>
+        <div class="hero-actions">
+          <a class="nav-btn" href="/admin/surveys">Surveys Dashboard</a>
+          <span class="badge">Admin Only</span>
+        </div>
       </section>
 
       <section class="card" id="authCard">
