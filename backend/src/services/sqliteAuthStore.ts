@@ -60,13 +60,18 @@ function resolveSsl(connectionString: string): false | { rejectUnauthorized: fal
 function getWebsitePool(): Pool {
   if (websitePool) return websitePool;
   if (websitePool === null) {
-    throw new Error('Website database is not configured. Set WEBSITE_DATABASE_URL, SOURCE_DATABASE_URL, or DATABASE_URL.');
+    throw new Error('Website database is not configured. Set RAY_DATABASE_URL, WEBSITE_DATABASE_URL, SOURCE_DATABASE_URL, or DATABASE_URL.');
   }
 
-  const connectionString = getEnv('WEBSITE_DATABASE_URL') || getEnv('SOURCE_DATABASE_URL') || getEnv('DATABASE_URL');
+  const connectionString =
+    getEnv('RAY_DATABASE_URL') ||
+    getEnv('RAY_DB_URL') ||
+    getEnv('WEBSITE_DATABASE_URL') ||
+    getEnv('SOURCE_DATABASE_URL') ||
+    getEnv('DATABASE_URL');
   if (!connectionString) {
     websitePool = null;
-    throw new Error('Website database is not configured. Set WEBSITE_DATABASE_URL, SOURCE_DATABASE_URL, or DATABASE_URL.');
+    throw new Error('Website database is not configured. Set RAY_DATABASE_URL, WEBSITE_DATABASE_URL, SOURCE_DATABASE_URL, or DATABASE_URL.');
   }
 
   websitePool = new Pool({

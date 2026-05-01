@@ -162,7 +162,7 @@ async function main(): Promise<void> {
   const syncMissing = getArgFlag("--sync-missing");
   const syncMismatch = getArgFlag("--sync-mismatch");
 
-  const websiteUrl = requiredEnv("WEBSITE_DATABASE_URL", "SOURCE_DATABASE_URL");
+  const websiteUrl = requiredEnv("RAY_DATABASE_URL", "RAY_DB_URL", "WEBSITE_DATABASE_URL", "SOURCE_DATABASE_URL");
   const appUrl = requiredEnv("APP_DATABASE_URL", "TARGET_DATABASE_URL");
 
   const websitePool = new Pool({ connectionString: websiteUrl, ssl: resolveSsl(websiteUrl) });
