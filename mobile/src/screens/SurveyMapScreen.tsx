@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Linking, Platform } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import MapView, { Callout, Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import * as Location from 'expo-location';
 import type { Survey } from '../types';
 import { getAllSurveys } from '../database/surveyDb';
 import { solarProTheme } from '../theme/solarProTheme';
@@ -51,16 +52,33 @@ function markerColor(status: Survey['status']): string {
 
 export default function SurveyMapScreen() {
   const [surveys, setSurveys] = useState<SurveyListItem[]>([]);
+  const [canShowUserLocation, setCanShowUserLocation] = useState(false);
 
   const load = useCallback(async () => {
     const rows = await getAllSurveys();
     setSurveys(rows);
   }, []);
 
+  const resolveLocationPermission = useCallback(async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status === 'granted') {
+        setCanShowUserLocation(true);
+        return;
+      }
+
+      const requested = await Location.requestForegroundPermissionsAsync();
+      setCanShowUserLocation(requested.status === 'granted');
+    } catch {
+      setCanShowUserLocation(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       load().catch(console.error);
-    }, [load]),
+      resolveLocationPermission().catch(console.error);
+    }, [load, resolveLocationPermission]),
   );
 
   const mappable = useMemo(
@@ -103,7 +121,7 @@ export default function SurveyMapScreen() {
         style={styles.map}
         provider={mapProvider}
         initialRegion={region}
-        showsUserLocation
+        showsUserLocation={canShowUserLocation}
         showsCompass
       >
         {mappable.map((survey) => (
