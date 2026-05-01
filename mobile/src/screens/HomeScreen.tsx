@@ -12,6 +12,12 @@ import {
   View, Text, FlatList, TouchableOpacity, ActivityIndicator,
   Alert, StyleSheet, RefreshControl, Platform,
 } from 'react-native';
+import {
+  applicationName,
+  nativeApplicationVersion,
+  nativeBuildVersion,
+} from 'expo-application';
+import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import type { Survey } from '../types';
@@ -97,6 +103,17 @@ export default function HomeScreen() {
     );
   }, [deleting, loadSurveys, surveys]);
 
+  const appVersionForBugReport = useMemo(() => {
+    const name = applicationName || 'Site Survey';
+    const installedVersion = nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'unknown';
+    const installedBuild = nativeBuildVersion
+      ?? (Platform.OS === 'android'
+        ? Constants.expoConfig?.android?.versionCode?.toString()
+        : Constants.expoConfig?.ios?.buildNumber)
+      ?? 'unknown';
+    return `${name} v${installedVersion} (${installedBuild})`;
+  }, []);
+
   const handleReportBug = useCallback(() => {
     if (reportingBug) return;
 
@@ -121,7 +138,7 @@ export default function HomeScreen() {
                 description: (note || '').trim(),
                 metadata: {
                   screen: 'HomeScreen',
-                  appVersion: '1.0.0',
+                  appVersion: appVersionForBugReport,
                   deviceName: Device.modelName ?? null,
                   osName: Device.osName ?? null,
                   osVersion: Device.osVersion ?? null,
@@ -164,7 +181,7 @@ export default function HomeScreen() {
             title: 'Mobile Bug Report',
             metadata: {
               screen: 'HomeScreen',
-              appVersion: '1.0.0',
+              appVersion: appVersionForBugReport,
               deviceName: Device.modelName ?? null,
               osName: Device.osName ?? null,
               osVersion: Device.osVersion ?? null,
@@ -189,7 +206,18 @@ export default function HomeScreen() {
         }
       })().catch(console.error);
     }
-  }, [reportingBug, surveys.length, sync.isOnline, sync.pending]);
+  }, [appVersionForBugReport, reportingBug, surveys.length, sync.isOnline, sync.pending]);
+
+  const versionLabel = useMemo(() => {
+    const installedVersion = nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'unknown';
+    const installedBuild = nativeBuildVersion
+      ?? (Platform.OS === 'android'
+        ? Constants.expoConfig?.android?.versionCode?.toString()
+        : Constants.expoConfig?.ios?.buildNumber)
+      ?? 'unknown';
+
+    return `v${installedVersion} (${installedBuild})`;
+  }, []);
 
   // ----------------------------------------------------------------
   // Render
@@ -221,6 +249,7 @@ export default function HomeScreen() {
           <Text style={styles.subtitle}>
             {surveys.length} total · {sync.pending} pending sync
           </Text>
+          <Text style={styles.versionBadge}>{versionLabel}</Text>
         </View>
         <View style={styles.toolbarActions}>
           <TouchableOpacity
@@ -322,6 +351,18 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
   subtitle: { marginTop: 2, fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  versionBadge: {
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#0F1A33',
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: '700',
+    overflow: 'hidden',
+  },
   mapBtn: {
     backgroundColor: colors.inputBg,
     borderColor: colors.inputBorder,

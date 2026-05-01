@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Site Survey Admin • Bug Reports</title>
+    <style>
+      :root {
+        --bg: #070b14;
+        --card: #101a2e;
+        --line: rgba(148, 163, 184, 0.25);
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --primary: #22d3ee;
+        --primary-2: #06b6d4;
+        --danger: #ef4444;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(180deg, #060a13 0%, #090f1f 45%, #070b14 100%);
+        color: var(--text);
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .wrap { max-width: 1240px; margin: 0 auto; padding: 22px 16px 30px; }
+      .hero { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+      .hero h1 { margin: 0; font-size: clamp(1.3rem, 2.6vw, 2rem); }
+      .hero p { margin: 6px 0 0; color: var(--muted); }
+      .badge {
+        border: 1px solid rgba(34, 211, 238, 0.35);
+        background: rgba(8, 47, 73, 0.5);
+        color: #67e8f9;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .card {
+        background: linear-gradient(180deg, rgba(16, 26, 46, 0.96), rgba(15, 32, 62, 0.94));
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px;
+        margin-bottom: 12px;
+      }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      input, select, button {
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        padding: 10px 12px;
+        font-size: 14px;
+      }
+      input, select { background: rgba(15, 23, 42, 0.75); color: var(--text); min-height: 42px; }
+      input { flex: 1; min-width: 220px; }
+      button {
+        border: none;
+        background: linear-gradient(90deg, var(--primary), var(--primary-2));
+        color: #022c3a;
+        font-weight: 800;
+        min-height: 42px;
+        cursor: pointer;
+      }
+      .btn-danger { background: linear-gradient(90deg, #f87171, var(--danger)); color: #fff; }
+      .msg { min-height: 22px; margin-top: 8px; font-size: 13px; }
+      .msg.error { color: #fca5a5; }
+      .msg.ok { color: #86efac; }
+      .hidden { display: none !important; }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .stat {
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 10px;
+        background: rgba(2, 6, 23, 0.35);
+        padding: 9px 10px;
+      }
+      .stat .k { color: var(--muted); font-size: 12px; }
+      .stat .v { font-size: 18px; font-weight: 800; margin-top: 3px; }
+      .table-shell { border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 12px; overflow: auto; }
+      table { width: 100%; border-collapse: collapse; min-width: 980px; font-size: 13px; }
+      th, td {
+        text-align: left;
+        padding: 10px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+        vertical-align: top;
+      }
+      th { position: sticky; top: 0; background: #0a1224; color: #cbd5e1; z-index: 1; }
+      tr:hover td { background: rgba(148, 163, 184, 0.07); }
+      .muted { color: var(--muted); }
+      a { color: #67e8f9; }
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #020617;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        color: #dbeafe;
+        border-radius: 10px;
+        padding: 10px;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <section class="hero">
+        <div>
+          <h1>Site Survey Admin • Bug Reports</h1>
+          <p>Inspect user-submitted app bug reports and screenshots.</p>
+        </div>
+        <span class="badge">Admin Only</span>
+      </section>
+
+      <section class="card" id="authCard">
+        <h2 style="margin:0; font-size:1.2rem;">Admin Sign In</h2>
+        <p class="muted" style="margin:8px 0 14px;">Authenticate to review bug reports.</p>
+        <div class="row">
+          <input id="identifier" placeholder="Email or username" autocomplete="username" />
+          <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
+          <button id="signInBtn">Enter Dashboard</button>
+        </div>
+        <div class="msg" id="authMsg"></div>
+      </section>
+
+      <section class="card hidden" id="controlsCard">
+        <div class="row">
+          <strong id="whoami">Admin</strong>
+          <label>Limit</label>
+          <select id="limitFilter">
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="250">250</option>
+            <option value="500">500</option>
+          </select>
+          <button id="refreshBtn">Refresh</button>
+          <button id="signOutBtn" class="btn-danger">Sign out</button>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="k">Total reports</div><div class="v" id="statTotal">0</div></div>
+          <div class="stat"><div class="k">With screenshots</div><div class="v" id="statScreenshots">0</div></div>
+          <div class="stat"><div class="k">With description</div><div class="v" id="statDescriptions">0</div></div>
+        </div>
+        <div class="msg" id="dataMsg"></div>
+      </section>
+
+      <section class="card hidden" id="tableCard">
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>Created</th>
+                <th>Reporter</th>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Screenshot</th>
+                <th>Metadata</th>
+                <th>ID</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const authMsg = document.getElementById('authMsg');
+      const dataMsg = document.getElementById('dataMsg');
+      const authCard = document.getElementById('authCard');
+      const controlsCard = document.getElementById('controlsCard');
+      const tableCard = document.getElementById('tableCard');
+      const rowsEl = document.getElementById('rows');
+      const whoamiEl = document.getElementById('whoami');
+      const statTotal = document.getElementById('statTotal');
+      const statScreenshots = document.getElementById('statScreenshots');
+      const statDescriptions = document.getElementById('statDescriptions');
+
+      function setMsg(el, text, isError = false) {
+        el.textContent = text || '';
+        el.className = 'msg ' + (text ? (isError ? 'error' : 'ok') : '');
+      }
+
+      function getToken() { return localStorage.getItem('admin_bug_reports_token'); }
+      function setToken(token) { localStorage.setItem('admin_bug_reports_token', token); }
+      function clearToken() { localStorage.removeItem('admin_bug_reports_token'); }
+
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+      }
+
+      function formatDate(value) {
+        if (!value) return '-';
+        try { return new Date(value).toLocaleString(); } catch { return String(value); }
+      }
+
+      function showDataUI() {
+        authCard.classList.add('hidden');
+        controlsCard.classList.remove('hidden');
+        tableCard.classList.remove('hidden');
+      }
+
+      function showAuthUI() {
+        authCard.classList.remove('hidden');
+        controlsCard.classList.add('hidden');
+        tableCard.classList.add('hidden');
+      }
+
+      async function signIn() {
+        setMsg(authMsg, 'Authenticating...');
+        const identifier = document.getElementById('identifier').value.trim();
+        const password = document.getElementById('password').value;
+
+        const res = await fetch('/api/users/signin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier, password }),
+        });
+
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || 'Sign in failed');
+        if (body.user?.role !== 'admin') throw new Error('Admin account required');
+
+        setToken(body.token);
+        whoamiEl.textContent = body.user.email || body.user.fullName || 'Admin';
+        setMsg(authMsg, 'Access granted');
+        showDataUI();
+        await loadReports();
+      }
+
+      function renderStats(reports, total) {
+        const withScreenshots = reports.filter((r) => Boolean(r.screenshot_path)).length;
+        const withDescriptions = reports.filter((r) => Boolean((r.description || '').trim())).length;
+
+        statTotal.textContent = String(total ?? reports.length);
+        statScreenshots.textContent = String(withScreenshots);
+        statDescriptions.textContent = String(withDescriptions);
+      }
+
+      async function loadReports() {
+        const token = getToken();
+        if (!token) return;
+
+        setMsg(dataMsg, 'Loading bug reports...');
+        const limit = document.getElementById('limitFilter').value;
+        const qs = new URLSearchParams({ limit, offset: '0' });
+
+        const res = await fetch('/api/bug-reports/admin?' + qs.toString(), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401 || res.status === 403) {
+          clearToken();
+          showAuthUI();
+          throw new Error('Session expired or not authorized');
+        }
+        if (!res.ok) throw new Error(body.error || 'Failed to load bug reports');
+
+        const reports = Array.isArray(body.reports) ? body.reports : [];
+        renderStats(reports, body.total);
+
+        rowsEl.innerHTML = reports.map((r) => `
+          <tr>
+            <td>${formatDate(r.created_at)}</td>
+            <td>${escapeHtml(r.user_email || '-')}</td>
+            <td>${escapeHtml(r.title || '-')}</td>
+            <td>${escapeHtml(r.description || '-')}</td>
+            <td>${r.screenshot_path ? `<a href="${escapeHtml(r.screenshot_path)}" target="_blank" rel="noreferrer">Open</a>` : '-'}</td>
+            <td><pre>${escapeHtml(JSON.stringify(r.metadata || {}, null, 2))}</pre></td>
+            <td><code>${escapeHtml(r.id || '')}</code></td>
+          </tr>
+        `).join('');
+
+        setMsg(dataMsg, `Loaded ${reports.length} reports`);
+      }
+
+      async function init() {
+        document.getElementById('signInBtn').addEventListener('click', () => {
+          signIn().catch((err) => setMsg(authMsg, err.message || 'Sign in failed', true));
+        });
+
+        document.getElementById('refreshBtn').addEventListener('click', () => {
+          loadReports().catch((err) => setMsg(dataMsg, err.message || 'Load failed', true));
+        });
+
+        document.getElementById('signOutBtn').addEventListener('click', () => {
+          clearToken();
+          showAuthUI();
+          rowsEl.innerHTML = '';
+          setMsg(dataMsg, '');
+          setMsg(authMsg, 'Signed out');
+        });
+
+        document.getElementById('limitFilter').addEventListener('change', () => {
+          loadReports().catch((err) => setMsg(dataMsg, err.message || 'Load failed', true));
+        });
+
+        const token = getToken();
+        if (token) {
+          showDataUI();
+          loadReports().catch((err) => {
+            clearToken();
+            showAuthUI();
+            setMsg(authMsg, err.message || 'Session invalid', true);
+          });
+        }
+      }
+
+      init();
+    </script>
+  </body>
+</html>

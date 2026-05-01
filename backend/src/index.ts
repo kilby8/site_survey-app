@@ -147,6 +147,10 @@ app.get("/admin/surveys", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "admin-surveys.html"));
 });
 
+app.get("/admin/bug-reports", (_req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, "admin-bug-reports.html"));
+});
+
 app.use(fallbackSurveyRouter);
 
 // ----------------------------------------------------------------
