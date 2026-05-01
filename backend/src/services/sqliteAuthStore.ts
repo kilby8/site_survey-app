@@ -21,7 +21,7 @@ export interface RefreshTokenWithUserRecord {
 
 let refreshTableReady: Promise<void> | null = null;
 let websitePool: Pool | null | undefined;
-let websiteUsersShapeReady: Promise<{ nameColumn: 'name' | 'full_name' }> | null = null;
+let websiteUsersShapeReady: Promise<{ nameColumn: 'name' | 'full_name'; hasUsername: boolean }> | null = null;
 
 function getEnv(name: string): string | null {
   const value = process.env[name]?.trim();
@@ -159,7 +159,7 @@ function mapWebsiteUser(row: WebsiteUserRecord): AuthUserRecord {
   };
 }
 
-async function resolveWebsiteUsersShape(): Promise<{ nameColumn: 'name' | 'full_name' }> {
+async function resolveWebsiteUsersShape(): Promise<{ nameColumn: 'name' | 'full_name'; hasUsername: boolean }> {
   if (!websiteUsersShapeReady) {
     websiteUsersShapeReady = (async () => {
       const sourcePool = getWebsitePool();
@@ -172,7 +172,10 @@ async function resolveWebsiteUsersShape(): Promise<{ nameColumn: 'name' | 'full_
 
       const columns = new Set(rows.map((r) => r.column_name));
       const nameColumn: 'name' | 'full_name' = columns.has('full_name') ? 'full_name' : 'name';
-      return { nameColumn };
+      return {
+        nameColumn,
+        hasUsername: columns.has('username'),
+      };
     })().catch((error) => {
       websiteUsersShapeReady = null;
       throw error;
@@ -180,6 +183,31 @@ async function resolveWebsiteUsersShape(): Promise<{ nameColumn: 'name' | 'full_
   }
 
   return websiteUsersShapeReady;
+}
+
+async function findWebsiteUserByIdentifier(identifier: string): Promise<(AuthUserRecord & { password_hash: string }) | null> {
+  const sourcePool = getWebsitePool();
+  const shape = await resolveWebsiteUsersShape();
+  const usernamePredicate = shape.hasUsername ? ` OR lower(username::text) = lower($1::text)` : '';
+
+  const { rows } = await sourcePool.query<WebsiteUserRecord>(
+    `SELECT id::text,
+            email::text,
+            password_hash::text,
+            COALESCE(${shape.nameColumn}::text, '') AS full_name,
+            created_at::text
+       FROM users
+      WHERE lower(email::text) = lower($1::text)${usernamePredicate}
+      LIMIT 1`,
+    [identifier],
+  );
+
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ...mapWebsiteUser(row),
+    password_hash: row.password_hash,
+  };
 }
 
 async function findWebsiteUserByEmail(email: string): Promise<(AuthUserRecord & { password_hash: string }) | null> {
@@ -265,10 +293,10 @@ export async function createUser(
 }
 
 export async function verifyUserCredentials(
-  email: string,
+  identifier: string,
   password: string,
 ): Promise<AuthUserRecord | null> {
-  const websiteUser = await findWebsiteUserByEmail(email);
+  const websiteUser = await findWebsiteUserByIdentifier(identifier);
   if (!websiteUser) return null;
 
   const storedHash = websiteUser.password_hash;
@@ -309,17 +337,30 @@ export async function updateUserPasswordByEmail(
   newPassword: string,
 ): Promise<{ id: string } | null> {
   const sourcePool = getWebsitePool();
+  const hashedPassword = hashPassword(newPassword);
 
-  const { rows } = await sourcePool.query<{ id: string }>(
-    `UPDATE users
-        SET password_hash = $2,
-            updated_at = NOW()
-      WHERE lower(email::text) = lower($1::text)
-      RETURNING id::text`,
-    [email, hashPassword(newPassword)],
-  );
+  try {
+    const { rows } = await sourcePool.query<{ id: string }>(
+      `UPDATE users
+          SET password_hash = $2,
+              updated_at = NOW()
+        WHERE lower(email::text) = lower($1::text)
+        RETURNING id::text`,
+      [email, hashedPassword],
+    );
 
-  return rows[0] || null;
+    return rows[0] || null;
+  } catch {
+    const { rows } = await sourcePool.query<{ id: string }>(
+      `UPDATE users
+          SET password_hash = $2
+        WHERE lower(email::text) = lower($1::text)
+        RETURNING id::text`,
+      [email, hashedPassword],
+    );
+
+    return rows[0] || null;
+  }
 }
 
 export async function insertRefreshToken(

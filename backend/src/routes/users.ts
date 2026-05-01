@@ -187,14 +187,22 @@ function createPasswordResetToken(email: string): string {
   return token;
 }
 
+function normalizeResetToken(token?: string): string {
+  return (token || '').trim().replace(/^token[:=]/i, '').trim();
+}
+
 function isValidResetToken(email: string, token: string): boolean {
+  const normalizedToken = normalizeResetToken(token);
+  if (!normalizedToken) return false;
+
   const resetState = passwordResetMap.get(email);
   if (!resetState) return false;
   if (resetState.expiresAt <= Date.now()) {
     passwordResetMap.delete(email);
     return false;
   }
-  return resetState.tokenHash === hashResetToken(token);
+
+  return resetState.tokenHash === hashResetToken(normalizedToken);
 }
 
 /** Issues a new refresh token, persists its hash, and returns the raw value. */
@@ -438,9 +446,10 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
 router.post('/reset-password', async (req: Request, res: Response) => {
   const { email, token, new_password } = req.body as AuthBody;
   const normalizedEmail = cleanEmail(email);
+  const normalizedToken = normalizeResetToken(token);
   const nextPassword = (new_password || '').trim();
 
-  if (!normalizedEmail || !token || !nextPassword) {
+  if (!normalizedEmail || !normalizedToken || !nextPassword) {
     res.status(400).json({ error: 'Email, token, and new password are required' });
     return;
   }
@@ -453,7 +462,7 @@ router.post('/reset-password', async (req: Request, res: Response) => {
   authAudit('users.reset-password.attempt', req, normalizedEmail);
 
   try {
-    if (!isValidResetToken(normalizedEmail, token)) {
+    if (!isValidResetToken(normalizedEmail, normalizedToken)) {
       authAudit('users.reset-password.reject', req, normalizedEmail, { status: 400, reason: 'invalid-token' });
       res.status(400).json({ error: 'Invalid or expired reset token' });
       return;
