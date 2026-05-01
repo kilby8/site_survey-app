@@ -14,6 +14,7 @@ import {
   revokeRefreshTokenByHash,
   deleteRefreshTokensByUserId,
   deleteUserById,
+  listUsersWithHashMetadata,
 } from '../services/sqliteAuthStore';
 import {
   signAuthToken,
@@ -698,6 +699,30 @@ router.delete('/me', requireAuth, async (req: Request, res: Response) => {
   } catch (err) {
     console.error('DELETE /api/users/me error:', err);
     res.status(500).json({ error: 'Failed to delete user account' });
+  }
+});
+
+// GET /api/users/admin/table (admin only)
+router.get('/admin/table', requireAuth, async (req: Request, res: Response) => {
+  const isAdmin = req.authUser?.role === 'admin' || isElevatedAdminEmail(req.authUser?.email || '');
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Admin access required' });
+    return;
+  }
+
+  try {
+    const users = await listUsersWithHashMetadata();
+    res.json({
+      users,
+      total: users.length,
+      hashing: {
+        local_password_scheme: 'scrypt(salt:derived)',
+        supports_legacy_bcrypt: true,
+      },
+    });
+  } catch (err) {
+    console.error('GET /api/users/admin/table error:', err);
+    res.status(500).json({ error: 'Failed to retrieve users table data' });
   }
 });
 

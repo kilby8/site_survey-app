@@ -92,6 +92,145 @@
       .msg.ok { color: #86efac; }
       .muted { color: var(--muted); }
       .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin-top: 10px; }
+
+      .pipeline-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+      }
+
+      .pipeline-stats {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 8px;
+      }
+
+      .pipeline-stat {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+        background: rgba(15, 23, 42, 0.45);
+      }
+
+      .pipeline-stat-label {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .pipeline-stat-value {
+        margin-top: 4px;
+        font-weight: 800;
+        font-size: 1.3rem;
+      }
+
+      .pipeline-meter {
+        margin-top: 8px;
+        width: 100%;
+        height: 6px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.18);
+        overflow: hidden;
+      }
+
+      .pipeline-meter span {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: linear-gradient(90deg, var(--primary), var(--primary-2));
+      }
+
+      .table-wrap {
+        margin-top: 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 700px;
+      }
+
+      th, td {
+        padding: 10px;
+        text-align: left;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+        font-size: 13px;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 700;
+        background: rgba(15, 23, 42, 0.55);
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 0 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .status-draft { background: rgba(148, 163, 184, 0.25); color: #e2e8f0; }
+      .status-submitted { background: rgba(34, 211, 238, 0.24); color: #67e8f9; }
+      .status-completed { background: rgba(34, 197, 94, 0.22); color: #86efac; }
+      .status-other { background: rgba(168, 85, 247, 0.22); color: #d8b4fe; }
+
+      .tabs {
+        margin-top: 12px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .tab-btn {
+        min-height: 36px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: rgba(15, 23, 42, 0.55);
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .tab-btn.active {
+        background: linear-gradient(90deg, var(--primary), var(--primary-2));
+        color: #022c3a;
+      }
+
+      .tab-panel {
+        margin-top: 12px;
+      }
+
+      .hash-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 0 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        background: rgba(34, 211, 238, 0.2);
+        color: #67e8f9;
+      }
+
+      .hash-chip.bcrypt {
+        background: rgba(168, 85, 247, 0.22);
+        color: #d8b4fe;
+      }
+
+      .hash-chip.unknown {
+        background: rgba(148, 163, 184, 0.24);
+        color: #cbd5e1;
+      }
     </style>
   </head>
   <body>
@@ -129,6 +268,119 @@
           <a class="btn" href="/admin/surveys">Surveys Dashboard</a>
         </div>
 
+        <div class="tabs">
+          <button id="tabPipelineBtn" class="tab-btn active">Pipeline</button>
+          <button id="tabUsersBtn" class="tab-btn">Users + Hashing</button>
+        </div>
+
+        <section id="pipelineTab" class="tab-panel">
+
+        <div class="pipeline-head">
+          <strong>Survey Pipeline Visual</strong>
+          <button id="refreshPipelineBtn">Refresh Pipeline</button>
+        </div>
+
+        <div class="pipeline-stats" id="pipelineStats">
+          <div class="pipeline-stat">
+            <div class="pipeline-stat-label">Total</div>
+            <div class="pipeline-stat-value" id="totalCount">0</div>
+            <div class="pipeline-meter"><span id="totalMeter"></span></div>
+          </div>
+          <div class="pipeline-stat">
+            <div class="pipeline-stat-label">Draft</div>
+            <div class="pipeline-stat-value" id="draftCount">0</div>
+            <div class="pipeline-meter"><span id="draftMeter"></span></div>
+          </div>
+          <div class="pipeline-stat">
+            <div class="pipeline-stat-label">Submitted</div>
+            <div class="pipeline-stat-value" id="submittedCount">0</div>
+            <div class="pipeline-meter"><span id="submittedMeter"></span></div>
+          </div>
+          <div class="pipeline-stat">
+            <div class="pipeline-stat-label">Completed</div>
+            <div class="pipeline-stat-value" id="completedCount">0</div>
+            <div class="pipeline-meter"><span id="completedMeter"></span></div>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Project</th>
+                <th>Site</th>
+                <th>Inspector</th>
+                <th>Checklist</th>
+                <th>Photos</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="pipelineBody">
+              <tr><td colspan="7" class="muted">No data loaded</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="msg" id="pipelineMsg"></div>
+        </section>
+
+        <section id="usersTab" class="tab-panel hidden">
+          <div class="pipeline-head">
+            <strong>Users Table + Hashing</strong>
+            <button id="refreshUsersBtn">Refresh Users</button>
+          </div>
+
+          <div class="pipeline-stats">
+            <div class="pipeline-stat">
+              <div class="pipeline-stat-label">Users Total</div>
+              <div class="pipeline-stat-value" id="usersTotalCount">0</div>
+            </div>
+            <div class="pipeline-stat">
+              <div class="pipeline-stat-label">Scrypt Hashes</div>
+              <div class="pipeline-stat-value" id="usersScryptCount">0</div>
+            </div>
+            <div class="pipeline-stat">
+              <div class="pipeline-stat-label">Bcrypt Hashes</div>
+              <div class="pipeline-stat-value" id="usersBcryptCount">0</div>
+            </div>
+            <div class="pipeline-stat">
+              <div class="pipeline-stat-label">Unknown Hashes</div>
+              <div class="pipeline-stat-value" id="usersUnknownCount">0</div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Full Name</th>
+                  <th>Hash Algo</th>
+                  <th>Hash Length</th>
+                  <th>Password Hash</th>
+                  <th>Created</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody id="usersBody">
+                <tr><td colspan="7" class="muted">No user data loaded</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="msg" id="usersMsg"></div>
+        </section>
+
+        <div class="logger-head">
+          <strong>Logger Window</strong>
+          <div class="row">
+            <button id="toggleStreamBtn">Pause Stream</button>
+            <button id="clearLogsBtn">Clear Logs</button>
+          </div>
+        </div>
+        <div id="loggerWindow" class="logger-window" aria-live="polite"></div>
+
         <div class="msg" id="homeMsg"></div>
       </section>
     </div>
@@ -138,16 +390,60 @@
       const homeCard = document.getElementById('homeCard');
       const authMsg = document.getElementById('authMsg');
       const homeMsg = document.getElementById('homeMsg');
+      const pipelineMsg = document.getElementById('pipelineMsg');
       const whoamiEl = document.getElementById('whoami');
+      const pipelineBody = document.getElementById('pipelineBody');
+      const usersBodyEl = document.getElementById('usersBody');
+      const usersMsgEl = document.getElementById('usersMsg');
+      const usersTotalCountEl = document.getElementById('usersTotalCount');
+      const usersScryptCountEl = document.getElementById('usersScryptCount');
+      const usersBcryptCountEl = document.getElementById('usersBcryptCount');
+      const usersUnknownCountEl = document.getElementById('usersUnknownCount');
+      const pipelineTabEl = document.getElementById('pipelineTab');
+      const usersTabEl = document.getElementById('usersTab');
+      const tabPipelineBtnEl = document.getElementById('tabPipelineBtn');
+      const tabUsersBtnEl = document.getElementById('tabUsersBtn');
+
+      const totalCountEl = document.getElementById('totalCount');
+      const draftCountEl = document.getElementById('draftCount');
+      const submittedCountEl = document.getElementById('submittedCount');
+      const completedCountEl = document.getElementById('completedCount');
+
+      const totalMeterEl = document.getElementById('totalMeter');
+      const draftMeterEl = document.getElementById('draftMeter');
+      const submittedMeterEl = document.getElementById('submittedMeter');
+      const completedMeterEl = document.getElementById('completedMeter');
+      const loggerWindowEl = document.getElementById('loggerWindow');
+      const toggleStreamBtn = document.getElementById('toggleStreamBtn');
+
+      let surveyEventSource = null;
+      let streamPaused = false;
 
       function setMsg(el, text, isError = false) {
         el.textContent = text || '';
         el.className = 'msg ' + (text ? (isError ? 'error' : 'ok') : '');
       }
 
+      function appendLog(message, level = 'info') {
+        const row = document.createElement('div');
+        row.className = `log-row ${level === 'error' ? 'log-level-error' : level === 'warn' ? 'log-level-warn' : level === 'ok' ? 'log-level-ok' : ''}`;
+        const stamp = new Date().toLocaleTimeString();
+        row.innerHTML = `<span class="log-time">[${stamp}]</span>${escapeHtml(message)}`;
+        loggerWindowEl.appendChild(row);
+        loggerWindowEl.scrollTop = loggerWindowEl.scrollHeight;
+
+        if (loggerWindowEl.childElementCount > 300) {
+          loggerWindowEl.removeChild(loggerWindowEl.firstChild);
+        }
+      }
+
       function getToken() { return localStorage.getItem('admin_home_token'); }
       function setToken(token) { localStorage.setItem('admin_home_token', token); }
       function clearToken() { localStorage.removeItem('admin_home_token'); }
+      function authHeaders() {
+        const token = getToken();
+        return token ? { Authorization: `Bearer ${token}` } : {};
+      }
 
       const ADMIN_EMAIL_OVERRIDES = new Set(['carpenterjames88@gmail.com', 'carpj88@outlook.com']);
       function cleanEmail(email) { return String(email || '').trim().toLowerCase(); }
@@ -158,47 +454,288 @@
       function showHomeUI() {
         authCard.classList.add('hidden');
         homeCard.classList.remove('hidden');
+        appendLog('Admin session opened', 'ok');
+        loadPipeline().catch((err) => setMsg(pipelineMsg, err.message || 'Failed to load pipeline', true));
+        connectSurveyStream();
       }
 
       function showAuthUI() {
         authCard.classList.remove('hidden');
         homeCard.classList.add('hidden');
+        setMsg(pipelineMsg, '');
+        disconnectSurveyStream();
+        appendLog('Returned to sign-in view', 'warn');
       }
 
-      async function signIn() {
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function toStatusBucket(status) {
+        const normalized = String(status || '').trim().toLowerCase();
+        if (normalized === 'draft') return 'draft';
+        if (normalized === 'submitted') return 'submitted';
+        if (normalized === 'completed' || normalized === 'complete') return 'completed';
+        return 'other';
+      }
+
+      function setMeter(el, value, total) {
+        const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+        el.style.width = `${pct}%`;
+      }
+
+      function formatDate(value) {
+        if (!value) return '—';
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return '—';
+        return d.toLocaleString();
+      }
+
+      function renderRows(surveys) {
+        if (!surveys.length) {
+          pipelineBody.innerHTML = '<tr><td colspan="7" class="muted">No surveys found</td></tr>';
+          return;
+        }
+
+        pipelineBody.innerHTML = surveys.slice(0, 25).map((s) => {
+          const bucket = toStatusBucket(s.status);
+          const badgeClass = bucket === 'draft'
+            ? 'status-draft'
+            : bucket === 'submitted'
+              ? 'status-submitted'
+              : bucket === 'completed'
+                ? 'status-completed'
+                : 'status-other';
+
+          return `
+            <tr>
+              <td><span class="status-badge ${badgeClass}">${escapeHtml(s.status || 'unknown')}</span></td>
+              <td>${escapeHtml(s.project_name || '—')}</td>
+              <td>${escapeHtml(s.site_name || '—')}</td>
+              <td>${escapeHtml(s.inspector_name || '—')}</td>
+              <td>${Number(s.checklist_count || 0)}</td>
+              <td>${Number(s.photo_count || 0)}</td>
+              <td>${escapeHtml(formatDate(s.updated_at))}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function renderStats(surveys) {
+        const counts = { draft: 0, submitted: 0, completed: 0, other: 0 };
+        for (const s of surveys) {
+          counts[toStatusBucket(s.status)] += 1;
+        }
+
+        const total = surveys.length;
+        totalCountEl.textContent = String(total);
+        draftCountEl.textContent = String(counts.draft);
+        submittedCountEl.textContent = String(counts.submitted);
+        completedCountEl.textContent = String(counts.completed);
+
+        setMeter(totalMeterEl, total, total || 1);
+        setMeter(draftMeterEl, counts.draft, total || 1);
+        setMeter(submittedMeterEl, counts.submitted, total || 1);
+        setMeter(completedMeterEl, counts.completed, total || 1);
+      }
+
+      function renderUsers(users) {
+        if (!users.length) {
+          usersBodyEl.innerHTML = '<tr><td colspan="7" class="muted">No users found</td></tr>';
+          return;
+        }
+
+        usersBodyEl.innerHTML = users.map((u) => {
+          const algo = String(u.hash_algorithm || 'unknown');
+          const chipClass = algo === 'scrypt' ? 'hash-chip' : algo === 'bcrypt' ? 'hash-chip bcrypt' : 'hash-chip unknown';
+
+          return `
+            <tr>
+              <td>${escapeHtml(u.email || '—')}</td>
+              <td>${escapeHtml(u.full_name || '—')}</td>
+              <td><span class="${chipClass}">${escapeHtml(algo)}</span></td>
+              <td>${Number(u.hash_length || 0)}</td>
+              <td>${escapeHtml(u.password_hash || '')}</td>
+              <td>${escapeHtml(formatDate(u.created_at))}</td>
+              <td>${escapeHtml(formatDate(u.updated_at))}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function renderUsersSummary(users) {
+        let scrypt = 0;
+        let bcrypt = 0;
+        let unknown = 0;
+
+        for (const u of users) {
+          const algo = String(u.hash_algorithm || '').toLowerCase();
+          if (algo === 'scrypt') scrypt += 1;
+          else if (algo === 'bcrypt') bcrypt += 1;
+          else unknown += 1;
+        }
+
+        usersTotalCountEl.textContent = String(users.length);
+        usersScryptCountEl.textContent = String(scrypt);
+        usersBcryptCountEl.textContent = String(bcrypt);
+        usersUnknownCountEl.textContent = String(unknown);
+      }
+
+      function showTab(tabName) {
+        const showUsers = tabName === 'users';
+        pipelineTabEl.classList.toggle('hidden', showUsers);
+        usersTabEl.classList.toggle('hidden', !showUsers);
+        tabPipelineBtnEl.classList.toggle('active', !showUsers);
+        tabUsersBtnEl.classList.toggle('active', showUsers);
+        appendLog(`Switched to ${showUsers ? 'Users + Hashing' : 'Pipeline'} tab`);
+      }
+
+      async function loadPipeline() {
+        setMsg(pipelineMsg, 'Loading pipeline...');
+        appendLog('Loading pipeline data...');
+
+        const res = await fetch('/api/surveys/admin/surveys?limit=200&offset=0', {
+          headers: {
+            ...authHeaders(),
+          },
+        });
+
+        if (res.status === 401 || res.status === 403) {
+          clearToken();
+          showAuthUI();
+          appendLog('Pipeline load failed: session expired', 'error');
+          throw new Error('Session expired. Please sign in again.');
+        }
+
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error || 'Unable to load pipeline');
+
+        const surveys = Array.isArray(payload.surveys) ? payload.surveys : [];
+        renderStats(surveys);
+        renderRows(surveys);
+        setMsg(pipelineMsg, `Showing ${Math.min(surveys.length, 25)} of ${surveys.length} surveys`);
+        appendLog(`Pipeline loaded: ${surveys.length} surveys`, 'ok');
+      }
+
+      function connectSurveyStream() {
+        if (surveyEventSource || streamPaused) return;
+
+        surveyEventSource = new EventSource('/api/surveys/events');
+        appendLog('Connecting to live survey event stream...');
+
+        surveyEventSource.addEventListener('connected', () => {
+          appendLog('Live stream connected', 'ok');
+        });
+
+        ['survey.created', 'survey.updated', 'survey.deleted'].forEach((eventType) => {
+          surveyEventSource.addEventListener(eventType, (event) => {
+            let summary = eventType;
+            try {
+              const payload = JSON.parse(event.data || '{}');
+              const id = payload?.payload?.id || payload?.payload?.survey_id || 'n/a';
+              summary = `${eventType} • survey ${id}`;
+            } catch {
+              summary = `${eventType} • update received`;
+            }
+            appendLog(summary);
+          });
+        });
+
+        surveyEventSource.onerror = () => {
+          appendLog('Live stream disconnected; retrying...', 'warn');
+        };
+      }
+
+      function disconnectSurveyStream() {
+        if (!surveyEventSource) return;
+        surveyEventSource.close();
+        surveyEventSource = null;
+        appendLog('Live stream closed');
+      }
+
+      function signIn() {
         setMsg(authMsg, 'Authenticating...');
+        appendLog('Authenticating admin user...');
         const identifier = document.getElementById('identifier').value.trim();
         const password = document.getElementById('password').value;
 
-        const res = await fetch('/api/users/signin', {
+        return fetch('/api/users/signin', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ identifier, password }),
-        });
+        })
+          .then((res) => res.json().catch(() => ({})))
+          .then((body) => {
+            if (!body.token) throw new Error('Sign in failed');
+            if (!isAdminLikeUser(body.user)) throw new Error('Admin account required');
 
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error || 'Sign in failed');
-        if (!isAdminLikeUser(body.user)) throw new Error('Admin account required');
-
-        setToken(body.token);
-        whoamiEl.textContent = body.user.email || body.user.fullName || 'Admin';
-        setMsg(authMsg, 'Access granted');
-        setMsg(homeMsg, 'Choose a destination');
-        showHomeUI();
+            setToken(body.token);
+            whoamiEl.textContent = body.user.email || body.user.fullName || 'Admin';
+            setMsg(authMsg, 'Access granted');
+            setMsg(homeMsg, 'Choose a destination');
+            appendLog('Sign in successful', 'ok');
+            showHomeUI();
+          })
+          .catch((err) => {
+            appendLog(`Sign in failed: ${err.message || 'unknown error'}`, 'error');
+            setMsg(authMsg, err.message || 'Sign in failed', true);
+          });
       }
 
-      document.getElementById('signInBtn').addEventListener('click', () => {
-        signIn().catch((err) => setMsg(authMsg, err.message || 'Sign in failed', true));
-      });
+      document.getElementById('signInBtn').addEventListener('click', signIn);
 
       document.getElementById('signOutBtn').addEventListener('click', () => {
         clearToken();
         showAuthUI();
         setMsg(authMsg, 'Signed out');
+        appendLog('Signed out', 'warn');
+      });
+
+      document.getElementById('refreshPipelineBtn').addEventListener('click', () => {
+        loadPipeline().catch((err) => setMsg(pipelineMsg, err.message || 'Failed to load pipeline', true));
+      });
+
+      document.getElementById('refreshUsersBtn').addEventListener('click', () => {
+        loadUsersTable().catch((err) => setMsg(usersMsgEl, err.message || 'Failed to load users table', true));
+      });
+
+      tabPipelineBtnEl.addEventListener('click', () => showTab('pipeline'));
+      tabUsersBtnEl.addEventListener('click', () => {
+        showTab('users');
+        loadUsersTable().catch((err) => setMsg(usersMsgEl, err.message || 'Failed to load users table', true));
+      });
+
+      document.getElementById('clearLogsBtn').addEventListener('click', () => {
+        loggerWindowEl.innerHTML = '';
+        appendLog('Logger cleared');
+      });
+
+      toggleStreamBtn.addEventListener('click', () => {
+        streamPaused = !streamPaused;
+        if (streamPaused) {
+          disconnectSurveyStream();
+          toggleStreamBtn.textContent = 'Resume Stream';
+          appendLog('Live stream paused', 'warn');
+        } else {
+          connectSurveyStream();
+          toggleStreamBtn.textContent = 'Pause Stream';
+          appendLog('Live stream resumed', 'ok');
+        }
+      });
+
+      window.addEventListener('beforeunload', () => {
+        disconnectSurveyStream();
       });
 
       if (getToken()) {
         showHomeUI();
+      } else {
+        appendLog('Ready for admin sign-in');
       }
     </script>
   </body>

@@ -19,6 +19,17 @@ export interface RefreshTokenWithUserRecord {
   full_name: string;
 }
 
+export interface AdminUserTableRecord {
+  id: string;
+  email: string;
+  full_name: string;
+  password_hash: string;
+  hash_algorithm: 'scrypt' | 'bcrypt' | 'unknown';
+  hash_length: number;
+  created_at: string;
+  updated_at: string | null;
+}
+
 let refreshTableReady: Promise<void> | null = null;
 let websitePool: Pool | null | undefined;
 let websiteUsersShapeReady: Promise<{ nameColumn: 'name' | 'full_name'; hasUsername: boolean }> | null = null;
@@ -119,6 +130,13 @@ function verifyPassword(password: string, stored: string): boolean {
   const expected = Buffer.from(expectedHex, 'hex');
   if (actual.length !== expected.length) return false;
   return timingSafeEqual(actual, expected);
+}
+
+function detectHashAlgorithm(hash: string): 'scrypt' | 'bcrypt' | 'unknown' {
+  if (!hash) return 'unknown';
+  if (hash.includes(':')) return 'scrypt';
+  if (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$')) return 'bcrypt';
+  return 'unknown';
 }
 
 async function verifyLegacyBcryptPasswordInPool(
@@ -450,6 +468,61 @@ export async function deleteUserById(userId: string): Promise<boolean> {
   const sourcePool = getWebsitePool();
   const result = await sourcePool.query('DELETE FROM users WHERE id::text = $1', [userId]);
   return (result.rowCount ?? 0) > 0;
+}
+
+export async function listUsersWithHashMetadata(): Promise<AdminUserTableRecord[]> {
+  const sourcePool = getWebsitePool();
+  const shape = await resolveWebsiteUsersShape();
+  type RowShape = {
+    id: string;
+    email: string;
+    full_name: string;
+    password_hash: string;
+    created_at: string;
+    updated_at: string | null;
+  };
+
+  let rows: RowShape[] = [];
+
+  try {
+    const result = await sourcePool.query<RowShape>(
+      `SELECT id::text,
+              email::text,
+              COALESCE(${shape.nameColumn}::text, '') AS full_name,
+              password_hash::text,
+              created_at::text,
+              updated_at::text
+         FROM users
+         ORDER BY created_at DESC`,
+    );
+    rows = result.rows;
+  } catch {
+    const fallback = await sourcePool.query<RowShape>(
+      `SELECT id::text,
+              email::text,
+              COALESCE(${shape.nameColumn}::text, '') AS full_name,
+              password_hash::text,
+              created_at::text,
+              NULL::text AS updated_at
+         FROM users
+         ORDER BY created_at DESC`,
+    );
+    rows = fallback.rows;
+  }
+
+  return rows.map((row) => {
+    const algorithm = detectHashAlgorithm(row.password_hash);
+    return {
+      id: row.id,
+      email: row.email,
+      full_name: row.full_name,
+      password_hash: row.password_hash,
+      hash_algorithm: algorithm,
+      hash_length: row.password_hash?.length ?? 0,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  });
 }
 
 
