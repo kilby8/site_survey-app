@@ -32,6 +32,20 @@
       .hero { margin-bottom: 14px; }
       .hero h1 { margin: 0; font-size: clamp(1.4rem, 2.8vw, 2.1rem); }
       .hero p { margin: 8px 0 0; color: var(--muted); }
+      .hero-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+      .hero-actions .btn-link {
+        border: none;
+        background: linear-gradient(90deg, var(--primary), var(--primary-2));
+        color: #022c3a;
+        font-weight: 800;
+        min-height: 40px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
 
       .card {
         background: linear-gradient(180deg, rgba(16, 26, 46, 0.96), rgba(15, 32, 62, 0.94));
@@ -85,11 +99,16 @@
       <section class="hero">
         <h1>SolarPro Admin Home</h1>
         <p>Sign in once, then launch the tools you need.</p>
+        <div class="hero-actions">
+          <a class="btn-link" href="https://solar-pro.app/" target="_blank" rel="noopener noreferrer">
+            Open Main Login Page
+          </a>
+        </div>
       </section>
 
       <section class="card" id="authCard">
         <h2 style="margin:0; font-size:1.1rem;">Admin Sign In</h2>
-        <p class="muted" style="margin:8px 0 12px;">Use your admin credentials to open dashboards.</p>
+        <p class="muted" style="margin:8px 0 12px;">Use your SolarPro website/admin credentials to open dashboards.</p>
         <div class="row">
           <input id="identifier" placeholder="Email or username" autocomplete="username" />
           <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
