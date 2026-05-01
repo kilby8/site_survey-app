@@ -62,9 +62,30 @@
           transform 0.2s ease;
       }
 
+      .btn-row {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+      }
+
+      .btn--secondary {
+        background: #1f2937;
+      }
+
       .btn:hover {
         background: var(--accent-hover);
         transform: translateY(-1px);
+      }
+
+      .btn--secondary:hover {
+        background: #111827;
+      }
+
+      @media (max-width: 520px) {
+        .btn-row {
+          flex-direction: column;
+        }
       }
     </style>
   </head>
@@ -72,9 +93,14 @@
     <main class="card">
       <h1>SolarPro Site Survey App</h1>
       <p>Professional roof and electrical assessments made easy.</p>
-      <a class="btn" href="https://expo.dev/@kilby/site-survey-app">
-        Download the App
-      </a>
+      <div class="btn-row">
+        <a class="btn" href="https://expo.dev/@kilby/site-survey-app">
+          Download the App
+        </a>
+        <a class="btn btn--secondary" href="/admin/home">
+          Admin Home Login
+        </a>
+      </div>
     </main>
   </body>
 </html>
