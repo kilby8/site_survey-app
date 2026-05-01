@@ -137,27 +137,28 @@ function uniqueStrings(values: Array<string | null>): string[] {
 }
 
 const configuredApiUrl = normalizeApiUrl(process.env.EXPO_PUBLIC_API_URL);
+const bundledApiUrl = readExpoExtraApiUrl();
+const resolvedConfiguredApiUrl = configuredApiUrl ?? bundledApiUrl;
 
 const developmentFallbackCandidates = isDevelopmentRuntime
   ? uniqueStrings([
-      readExpoExtraApiUrl(),
       inferLanApiUrlFromExpoHost(),
       Platform.OS === "android" ? "http://10.0.2.2:3001" : null,
       "http://localhost:3001",
     ])
   : [];
 
-export const API_URL = configuredApiUrl ?? developmentFallbackCandidates[0] ?? "";
+export const API_URL = resolvedConfiguredApiUrl ?? developmentFallbackCandidates[0] ?? "";
 
 const API_CANDIDATES = uniqueStrings([
-  configuredApiUrl,
+  resolvedConfiguredApiUrl,
   ...developmentFallbackCandidates,
 ]);
 
 const API_NETWORK_ERROR =
   API_CANDIDATES.length > 0
     ? `Cannot reach API. Tried: ${API_CANDIDATES.join(", ")}.${isDevelopmentRuntime ? " Ensure backend is running and your phone is on the same Wi-Fi as this machine." : ""}`
-    : "API is not configured for this build. Set EXPO_PUBLIC_API_URL for your production EAS environment, then rebuild or publish an update.";
+    : "API is not configured for this build. Set EXPO_PUBLIC_API_URL or expo.extra.apiUrl for your production EAS environment, then rebuild or publish an update.";
 
 function withTimeoutSignal(init: RequestInit, timeoutMs = 5_000): RequestInit {
   if (init.signal || typeof AbortController === "undefined") {
