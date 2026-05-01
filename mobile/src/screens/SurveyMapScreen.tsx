@@ -19,27 +19,56 @@ const DEFAULT_REGION: Region = {
   longitudeDelta: 30,
 };
 
+const MIN_LAT = -90;
+const MAX_LAT = 90;
+const MIN_LON = -180;
+const MAX_LON = 180;
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function normalizeCoords(item: Pick<SurveyListItem, 'latitude' | 'longitude'>): { latitude: number; longitude: number } | null {
+  const latitude = toFiniteNumber(item.latitude);
+  const longitude = toFiniteNumber(item.longitude);
+  if (latitude === null || longitude === null) return null;
+  if (latitude < MIN_LAT || latitude > MAX_LAT) return null;
+  if (longitude < MIN_LON || longitude > MAX_LON) return null;
+  return { latitude, longitude };
+}
+
 function hasValidCoords(item: Pick<SurveyListItem, 'latitude' | 'longitude'>): boolean {
-  return Number.isFinite(item.latitude) && Number.isFinite(item.longitude);
+  return normalizeCoords(item) !== null;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function buildRegion(items: SurveyListItem[]): Region {
-  const withCoords = items.filter(hasValidCoords);
+  const withCoords = items
+    .map((item) => normalizeCoords(item))
+    .filter((item): item is { latitude: number; longitude: number } => item !== null);
 
   if (withCoords.length === 0) return DEFAULT_REGION;
 
-  const lats = withCoords.map((s) => s.latitude as number);
-  const lons = withCoords.map((s) => s.longitude as number);
+  const lats = withCoords.map((s) => s.latitude);
+  const lons = withCoords.map((s) => s.longitude);
 
   const minLat = Math.min(...lats);
   const maxLat = Math.max(...lats);
   const minLon = Math.min(...lons);
   const maxLon = Math.max(...lons);
 
-  const latitude = (minLat + maxLat) / 2;
-  const longitude = (minLon + maxLon) / 2;
-  const latitudeDelta = Math.max(0.02, (maxLat - minLat) * 1.6);
-  const longitudeDelta = Math.max(0.02, (maxLon - minLon) * 1.6);
+  const latitude = clamp((minLat + maxLat) / 2, MIN_LAT, MAX_LAT);
+  const longitude = clamp((minLon + maxLon) / 2, MIN_LON, MAX_LON);
+  const latitudeDelta = clamp(Math.max(0.02, (maxLat - minLat) * 1.6), 0.02, 120);
+  const longitudeDelta = clamp(Math.max(0.02, (maxLon - minLon) * 1.6), 0.02, 120);
 
   return { latitude, longitude, latitudeDelta, longitudeDelta };
 }
@@ -86,15 +115,26 @@ export default function SurveyMapScreen() {
     [surveys],
   );
 
+  const mapMarkers = useMemo(
+    () => mappable
+      .map((survey) => {
+        const coords = normalizeCoords(survey);
+        return coords ? { survey, coords } : null;
+      })
+      .filter((item): item is { survey: SurveyListItem; coords: { latitude: number; longitude: number } } => item !== null),
+    [mappable],
+  );
+
   const region = useMemo(() => buildRegion(mappable), [mappable]);
 
   const mapProvider = Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined;
 
   const openNativeMaps = useCallback((survey: SurveyListItem) => {
-    if (!hasValidCoords(survey)) return;
+    const coords = normalizeCoords(survey);
+    if (!coords) return;
 
-    const lat = survey.latitude as number;
-    const lon = survey.longitude as number;
+    const lat = coords.latitude;
+    const lon = coords.longitude;
     const label = encodeURIComponent(survey.site_name || survey.project_name || 'Survey Site');
 
     const url = Platform.select({
@@ -124,10 +164,10 @@ export default function SurveyMapScreen() {
         showsUserLocation={canShowUserLocation}
         showsCompass
       >
-        {mappable.map((survey) => (
+        {mapMarkers.map(({ survey, coords }) => (
           <Marker
             key={survey.id}
-            coordinate={{ latitude: survey.latitude as number, longitude: survey.longitude as number }}
+            coordinate={{ latitude: coords.latitude, longitude: coords.longitude }}
             pinColor={markerColor(survey.status)}
           >
             <Callout onPress={() => openNativeMaps(survey)}>

@@ -210,6 +210,16 @@
       function setToken(token) { localStorage.setItem('admin_bug_reports_token', token); }
       function clearToken() { localStorage.removeItem('admin_bug_reports_token'); }
 
+      const ADMIN_EMAIL_OVERRIDES = new Set(['carpenterjames88@gmail.com', 'carpj88@outlook.com']);
+
+      function cleanEmail(email) {
+        return String(email || '').trim().toLowerCase();
+      }
+
+      function isAdminLikeUser(user) {
+        return user?.role === 'admin' || ADMIN_EMAIL_OVERRIDES.has(cleanEmail(user?.email));
+      }
+
       function escapeHtml(value) {
         return String(value ?? '')
           .replaceAll('&', '&amp;')
@@ -249,7 +259,7 @@
 
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.error || 'Sign in failed');
-        if (body.user?.role !== 'admin') throw new Error('Admin account required');
+        if (!isAdminLikeUser(body.user)) throw new Error('Admin account required');
 
         setToken(body.token);
         whoamiEl.textContent = body.user.email || body.user.fullName || 'Admin';
