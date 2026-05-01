@@ -145,6 +145,10 @@ app.get("/view/:surveyId", (_req, res) => {
 });
 
 app.get("/admin", (_req, res) => {
+  res.redirect(302, "https://solar-pro.app/");
+});
+
+app.get("/admin/home", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "admin-home.html"));
 });
 
