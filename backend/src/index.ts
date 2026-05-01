@@ -24,6 +24,7 @@ import openApiRouter from "./routes/openapi";
 import bugReportsRouter from "./routes/bugReports";
 import webhooksRouter from "./routes/webhooks";
 import { requireAuth } from "./middleware/auth";
+import { adminOverrideDebug } from "./middleware/adminOverrideDebug";
 import { pool } from "./database";
 import { uploadFile, isS3Mode } from "./utils/storageClient";
 import { startWebhookWorker } from "./services/webhookService";
@@ -143,12 +144,20 @@ app.get("/view/:surveyId", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "index.html"));
 });
 
+app.get("/admin", (_req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, "admin-home.html"));
+});
+
 app.get("/admin/surveys", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "admin-surveys.html"));
 });
 
 app.get("/admin/bug-reports", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "admin-bug-reports.html"));
+});
+
+app.get("/tools/map-simulator", (_req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, "map-simulator.html"));
 });
 
 app.use(fallbackSurveyRouter);
@@ -232,7 +241,7 @@ app.get("/api/metrics", requireAuth, (req, res) => {
 // API routes
 // ----------------------------------------------------------------
 app.use("/api/webhooks", webhooksRouter);
-app.use("/api/surveys", requireAuth, surveysRouter);
+app.use("/api/surveys", requireAuth, adminOverrideDebug, surveysRouter);
 app.use("/api/categories", requireAuth, categoriesRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/handoff", handoffRouter);

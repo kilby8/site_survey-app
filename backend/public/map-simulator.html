@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SolarPro Map Simulator</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <style>
+      :root {
+        --bg: #070b14;
+        --card: #0f172a;
+        --line: rgba(148, 163, 184, 0.35);
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --accent: #22d3ee;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: linear-gradient(180deg, #060a13 0%, #0a1224 100%);
+        color: var(--text);
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 16px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+      }
+
+      h1 { margin: 0; font-size: 1.2rem; }
+      p { margin: 8px 0 0; color: var(--muted); }
+
+      #map {
+        height: 48vh;
+        min-height: 320px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 170px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: #020617;
+        color: var(--text);
+        padding: 10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+      }
+
+      .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+      button {
+        border: none;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        background: linear-gradient(90deg, var(--accent), #06b6d4);
+        color: #022c3a;
+      }
+
+      pre {
+        margin: 0;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: #020617;
+        color: #cbd5e1;
+        padding: 10px;
+        min-height: 140px;
+        max-height: 280px;
+        overflow: auto;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <section class="card">
+        <h1>SolarPro Site Survey • Map Simulator</h1>
+        <p>Paste JSON array data, validate coordinates, and render only safe map markers.</p>
+      </section>
+
+      <section class="card">
+        <div id="map"></div>
+      </section>
+
+      <section class="card">
+        <textarea id="jsonInput">[
+  { "latitude": 34.0522, "longitude": -118.2437, "label": "LA" },
+  { "latitude": "40.7128", "longitude": "-74.0060", "label": "NYC" },
+  { "latitude": 120, "longitude": 10, "label": "BadLat" },
+  { "latitude": null, "longitude": -80, "label": "NaNCase" }
+]</textarea>
+        <div class="row" style="margin-top:10px;">
+          <button id="plotBtn">Validate + Plot</button>
+          <button id="clearBtn">Clear Map</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <strong>Validation Log</strong>
+        <pre id="log">Ready.</pre>
+      </section>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script>
+      const MIN_LAT = -90;
+      const MAX_LAT = 90;
+      const MIN_LON = -180;
+      const MAX_LON = 180;
+
+      const inputEl = document.getElementById('jsonInput');
+      const logEl = document.getElementById('log');
+
+      const map = L.map('map').setView([39.8283, -98.5795], 4);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      const markers = L.layerGroup().addTo(map);
+
+      function toFiniteNumber(value) {
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        if (typeof value === 'string') {
+          const parsed = Number.parseFloat(value);
+          return Number.isFinite(parsed) ? parsed : null;
+        }
+        return null;
+      }
+
+      function normalizeCoord(item) {
+        const lat = toFiniteNumber(item?.latitude);
+        const lon = toFiniteNumber(item?.longitude);
+
+        if (lat === null || lon === null) {
+          return { ok: false, reason: 'NaN/invalid latitude or longitude' };
+        }
+        if (lat < MIN_LAT || lat > MAX_LAT) {
+          return { ok: false, reason: `latitude out of range (${lat})` };
+        }
+        if (lon < MIN_LON || lon > MAX_LON) {
+          return { ok: false, reason: `longitude out of range (${lon})` };
+        }
+
+        return { ok: true, lat, lon };
+      }
+
+      function setLog(lines) {
+        logEl.textContent = lines.length ? lines.join('\n') : 'No validation issues.';
+      }
+
+      function plot() {
+        markers.clearLayers();
+
+        let parsed;
+        try {
+          parsed = JSON.parse(inputEl.value);
+        } catch (err) {
+          setLog([`JSON parse error: ${err?.message || err}`]);
+          return;
+        }
+
+        if (!Array.isArray(parsed)) {
+          setLog(['Input must be a JSON array.']);
+          return;
+        }
+
+        const valid = [];
+        const rejected = [];
+
+        parsed.forEach((item, index) => {
+          const result = normalizeCoord(item);
+          const label = item?.label || `Point ${index}`;
+          if (!result.ok) {
+            rejected.push(`Rejected [${index}] ${label}: ${result.reason}`);
+            return;
+          }
+
+          valid.push({
+            lat: result.lat,
+            lon: result.lon,
+            label,
+          });
+        });
+
+        valid.forEach((point) => {
+          L.marker([point.lat, point.lon])
+            .addTo(markers)
+            .bindPopup(`${point.label}<br/>lat=${point.lat}, lon=${point.lon}`);
+        });
+
+        if (valid.length > 0) {
+          const bounds = L.latLngBounds(valid.map((point) => [point.lat, point.lon]));
+          map.fitBounds(bounds.pad(0.2));
+        }
+
+        setLog([
+          `Accepted: ${valid.length}`,
+          `Rejected: ${rejected.length}`,
+          ...rejected,
+        ]);
+      }
+
+      document.getElementById('plotBtn').addEventListener('click', plot);
+      document.getElementById('clearBtn').addEventListener('click', () => {
+        markers.clearLayers();
+        setLog(['Map cleared.']);
+      });
+    </script>
+  </body>
+</html>

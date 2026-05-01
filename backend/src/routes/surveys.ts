@@ -413,8 +413,29 @@ async function insertInferenceLog(input: InferenceLogInput): Promise<void> {
 }
 
 function requireAdmin(req: Request, res: Response): boolean {
-  const email = cleanEmail(req.authUser?.email);
-  if (req.authUser?.role === "admin" || ADMIN_EMAIL_OVERRIDES.has(email)) {
+  const rawEmail = req.authUser?.email;
+  const email = cleanEmail(rawEmail);
+  const role = req.authUser?.role ?? null;
+  const isRoleAdmin = role === "admin";
+  const isOverrideAdmin = ADMIN_EMAIL_OVERRIDES.has(email);
+
+  console.info(
+    JSON.stringify({
+      type: "admin_guard_check",
+      route: req.originalUrl,
+      method: req.method,
+      auth_header_present: Boolean(req.headers.authorization),
+      auth_user_present: Boolean(req.authUser),
+      auth_user_id: req.authUser?.userId ?? null,
+      auth_user_role: role,
+      auth_user_email_raw: rawEmail ?? null,
+      auth_user_email_normalized: email,
+      override_match: isOverrideAdmin,
+      allowed: isRoleAdmin || isOverrideAdmin,
+    }),
+  );
+
+  if (isRoleAdmin || isOverrideAdmin) {
     return true;
   }
 
