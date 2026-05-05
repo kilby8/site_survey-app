@@ -28,7 +28,9 @@
     "docker:up:build": "docker compose up --build -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
-    "docker:db": "docker compose up -d db"
+    "docker:db": "docker compose up -d db",
+    "deploy:backend": "pwsh scripts/deploy-render.ps1",
+    "deploy:all": "npm run deploy:backend && cd mobile && npx eas update --branch production --message \"deploy:all\""
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
