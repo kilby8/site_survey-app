@@ -4,6 +4,7 @@ import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AppBootstrapProvider, useAppBootstrap } from '../src/context/AppBootstrapContext';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
+import { BugReportProvider, BugReportFloatingButton } from '../src/context/BugReportContext';
 import { solarProTheme } from '../src/theme/solarProTheme';
 
 const { colors } = solarProTheme;
@@ -85,30 +86,33 @@ export default function RootLayout() {
   return (
     <AppBootstrapProvider>
       <AuthProvider>
-        <StatusBar style="light" />
-        <BootstrapGate>
-          <AuthGate>
-            <View style={styles.rootShell}>
-              <Stack
-                screenOptions={{
-                  headerStyle: { backgroundColor: colors.card },
-                  headerTintColor: colors.textPrimary,
-                  headerTitleStyle: { fontWeight: '700', fontSize: 18 },
-                  contentStyle: { backgroundColor: colors.background },
-                }}
-              >
-                <Stack.Screen name="index" options={{ title: 'Site Surveys', headerShown: false }} />
-                <Stack.Screen name="login" options={{ title: 'Sign In', headerShown: false }} />
-                <Stack.Screen name="register" options={{ title: 'Create Account', headerShown: false }} />
-                <Stack.Screen name="forgot-password" options={{ title: 'Reset Password', headerShown: false }} />
-                <Stack.Screen name="new-survey" options={{ title: 'New Survey', headerShown: true }} />
-                <Stack.Screen name="map" options={{ title: 'Survey Map', headerShown: true }} />
-                <Stack.Screen name="survey/[id]" options={{ title: 'Survey Details', headerShown: true }} />
-              </Stack>
-              <FloatingHomeButton />
-            </View>
-          </AuthGate>
-        </BootstrapGate>
+        <BugReportProvider>
+          <StatusBar style="light" />
+          <BootstrapGate>
+            <AuthGate>
+              <View style={styles.rootShell}>
+                <Stack
+                  screenOptions={{
+                    headerStyle: { backgroundColor: colors.card },
+                    headerTintColor: colors.textPrimary,
+                    headerTitleStyle: { fontWeight: '700', fontSize: 18 },
+                    contentStyle: { backgroundColor: colors.background },
+                  }}
+                >
+                  <Stack.Screen name="index" options={{ title: 'Site Surveys', headerShown: false }} />
+                  <Stack.Screen name="login" options={{ title: 'Sign In', headerShown: false }} />
+                  <Stack.Screen name="register" options={{ title: 'Create Account', headerShown: false }} />
+                  <Stack.Screen name="forgot-password" options={{ title: 'Reset Password', headerShown: false }} />
+                  <Stack.Screen name="new-survey" options={{ title: 'New Survey', headerShown: true }} />
+                  <Stack.Screen name="map" options={{ title: 'Survey Map', headerShown: true }} />
+                  <Stack.Screen name="survey/[id]" options={{ title: 'Survey Details', headerShown: true }} />
+                </Stack>
+                <FloatingHomeButton />
+                <BugReportFloatingButton />
+              </View>
+            </AuthGate>
+          </BootstrapGate>
+        </BugReportProvider>
       </AuthProvider>
     </AppBootstrapProvider>
   );

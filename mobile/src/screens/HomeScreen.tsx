@@ -13,7 +13,6 @@ import {
   Alert, StyleSheet, RefreshControl, Platform,
 } from 'react-native';
 import {
-  applicationName,
   nativeApplicationVersion,
   nativeBuildVersion,
 } from 'expo-application';
@@ -27,10 +26,8 @@ import SyncStatusBar       from '../components/SyncStatusBar';
 import SurveyCard          from '../components/SurveyCard';
 import { useAppBootstrap } from '../context/AppBootstrapContext';
 import { useAuth }         from '../context/AuthContext';
+import { useBugReport } from '../context/BugReportContext';
 import { solarProTheme }   from '../theme/solarProTheme';
-import { captureScreen } from 'react-native-view-shot';
-import * as Device from 'expo-device';
-import { submitBugReport } from '../api/client';
 
 const { colors } = solarProTheme;
 
@@ -38,11 +35,11 @@ export default function HomeScreen() {
   const router = useRouter();
   const { ready: dbReady } = useAppBootstrap();
   const { signOut } = useAuth();
+  const { openBugReport, reportingBug } = useBugReport();
   const [surveys,      setSurveys]      = useState<Omit<Survey, 'checklist' | 'photos'>[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
   const [deleting,     setDeleting]     = useState(false);
-  const [reportingBug, setReportingBug] = useState(false);
 
   const sync = useSyncManager(dbReady);
 
@@ -103,111 +100,6 @@ export default function HomeScreen() {
     );
   }, [deleting, loadSurveys, surveys]);
 
-  const appVersionForBugReport = useMemo(() => {
-    const name = applicationName || 'Site Survey';
-    const installedVersion = nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'unknown';
-    const installedBuild = nativeBuildVersion
-      ?? (Platform.OS === 'android'
-        ? Constants.expoConfig?.android?.versionCode?.toString()
-        : Constants.expoConfig?.ios?.buildNumber)
-      ?? 'unknown';
-    return `${name} v${installedVersion} (${installedBuild})`;
-  }, []);
-
-  const handleReportBug = useCallback(() => {
-    if (reportingBug) return;
-
-    Alert.prompt?.(
-      'Bug Report',
-      'Optional note to include with screenshot:',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send',
-          onPress: async (note?: string) => {
-            setReportingBug(true);
-            try {
-              const screenshotUri = await captureScreen({
-                format: 'jpg',
-                quality: 0.8,
-              });
-
-              const result = await submitBugReport({
-                screenshotUri,
-                title: 'Mobile Bug Report',
-                description: (note || '').trim(),
-                metadata: {
-                  screen: 'HomeScreen',
-                  appVersion: appVersionForBugReport,
-                  deviceName: Device.modelName ?? null,
-                  osName: Device.osName ?? null,
-                  osVersion: Device.osVersion ?? null,
-                  totalSurveys: surveys.length,
-                  pendingSync: sync.pending,
-                  isOnline: sync.isOnline,
-                  reportedAt: new Date().toISOString(),
-                },
-              });
-
-              Alert.alert(
-                'Bug report sent',
-                `Report ${result.id} uploaded successfully.`,
-              );
-            } catch (err) {
-              Alert.alert(
-                'Bug report failed',
-                err instanceof Error ? err.message : 'Unable to send bug report.',
-              );
-            } finally {
-              setReportingBug(false);
-            }
-          },
-        },
-      ],
-      'plain-text',
-    );
-
-    if (!Alert.prompt) {
-      (async () => {
-        setReportingBug(true);
-        try {
-          const screenshotUri = await captureScreen({
-            format: 'jpg',
-            quality: 0.8,
-          });
-
-          const result = await submitBugReport({
-            screenshotUri,
-            title: 'Mobile Bug Report',
-            metadata: {
-              screen: 'HomeScreen',
-              appVersion: appVersionForBugReport,
-              deviceName: Device.modelName ?? null,
-              osName: Device.osName ?? null,
-              osVersion: Device.osVersion ?? null,
-              totalSurveys: surveys.length,
-              pendingSync: sync.pending,
-              isOnline: sync.isOnline,
-              reportedAt: new Date().toISOString(),
-            },
-          });
-
-          Alert.alert(
-            'Bug report sent',
-            `Report ${result.id} uploaded successfully.`,
-          );
-        } catch (err) {
-          Alert.alert(
-            'Bug report failed',
-            err instanceof Error ? err.message : 'Unable to send bug report.',
-          );
-        } finally {
-          setReportingBug(false);
-        }
-      })().catch(console.error);
-    }
-  }, [appVersionForBugReport, reportingBug, surveys.length, sync.isOnline, sync.pending]);
-
   const versionLabel = useMemo(() => {
     const installedVersion = nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'unknown';
     const installedBuild = nativeBuildVersion
@@ -260,7 +152,16 @@ export default function HomeScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.bugBtn, reportingBug && styles.bugBtnDisabled]}
-            onPress={handleReportBug}
+            onPress={() => {
+              openBugReport({
+                metadata: {
+                  screen: 'HomeScreen',
+                  totalSurveys: surveys.length,
+                  pendingSync: sync.pending,
+                  isOnline: sync.isOnline,
+                },
+              });
+            }}
             disabled={reportingBug}
           >
             {reportingBug

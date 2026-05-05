@@ -52,6 +52,8 @@ interface PasswordResetState {
   expiresAt: number;
 }
 
+let authStateTablesReady: Promise<void> | null = null;
+
 function getIntEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -68,9 +70,41 @@ const ME_MAX_REQUESTS = getIntEnv('USERS_ME_MAX_REQUESTS', 120);
 const ME_WINDOW_MS = getIntEnv('USERS_ME_WINDOW_MINUTES', 1) * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = getIntEnv('PASSWORD_RESET_TTL_MINUTES', 30) * 60 * 1000;
 const PASSWORD_RESET_EXPOSE_TOKEN = process.env.PASSWORD_RESET_EXPOSE_TOKEN === 'true';
-const signInAttemptMap = new Map<string, SignInAttemptState>();
-const passwordResetMap = new Map<string, PasswordResetState>();
 const SUPPORTED_SOCIAL_PROVIDERS = new Set(['google', 'microsoft', 'apple']);
+
+function ensureAuthStateTables(): Promise<void> {
+  if (!authStateTablesReady) {
+    authStateTablesReady = (async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS signin_attempts (
+          attempt_key TEXT PRIMARY KEY,
+          failures INT NOT NULL DEFAULT 0,
+          first_failure_at TIMESTAMPTZ NOT NULL,
+          locked_until TIMESTAMPTZ,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+          email TEXT PRIMARY KEY,
+          token_hash TEXT NOT NULL,
+          expires_at TIMESTAMPTZ NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+
+      await pool.query('CREATE INDEX IF NOT EXISTS signin_attempts_locked_until_idx ON signin_attempts(locked_until)');
+      await pool.query('CREATE INDEX IF NOT EXISTS password_reset_tokens_expires_idx ON password_reset_tokens(expires_at)');
+    })().catch((error) => {
+      authStateTablesReady = null;
+      throw error;
+    });
+  }
+
+  return authStateTablesReady;
+}
 
 function getAdminPassword(): string {
   if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
@@ -102,19 +136,53 @@ function attemptKey(req: Request, email: string): string {
   return `${getClientIp(req)}:${email}`;
 }
 
-function getSignInState(key: string): SignInAttemptState {
+async function getSignInState(key: string): Promise<SignInAttemptState> {
+  await ensureAuthStateTables();
   const now = Date.now();
-  const existing = signInAttemptMap.get(key);
 
-  if (!existing) {
-    const state: SignInAttemptState = { failures: 0, firstFailureAt: now };
-    signInAttemptMap.set(key, state);
-    return state;
+  const { rows } = await pool.query<{
+    failures: number;
+    first_failure_at: string;
+    locked_until: string | null;
+  }>(
+    `SELECT failures, first_failure_at::text, locked_until::text
+       FROM signin_attempts
+      WHERE attempt_key = $1
+      LIMIT 1`,
+    [key],
+  );
+
+  const row = rows[0];
+
+  if (!row) {
+    await pool.query(
+      `INSERT INTO signin_attempts (attempt_key, failures, first_failure_at, locked_until, updated_at)
+       VALUES ($1, 0, NOW(), NULL, NOW())
+       ON CONFLICT (attempt_key) DO NOTHING`,
+      [key],
+    );
+    return { failures: 0, firstFailureAt: now };
   }
+
+  const firstFailureAt = new Date(row.first_failure_at).getTime();
+  const lockedUntil = row.locked_until ? new Date(row.locked_until).getTime() : undefined;
+  const existing: SignInAttemptState = {
+    failures: Number(row.failures) || 0,
+    firstFailureAt,
+    lockedUntil,
+  };
 
   if (existing.firstFailureAt + SIGNIN_WINDOW_MS < now) {
     const reset: SignInAttemptState = { failures: 0, firstFailureAt: now };
-    signInAttemptMap.set(key, reset);
+    await pool.query(
+      `UPDATE signin_attempts
+          SET failures = 0,
+              first_failure_at = NOW(),
+              locked_until = NULL,
+              updated_at = NOW()
+        WHERE attempt_key = $1`,
+      [key],
+    );
     return reset;
   }
 
@@ -125,15 +193,34 @@ function isSignInLocked(state: SignInAttemptState): boolean {
   return typeof state.lockedUntil === 'number' && state.lockedUntil > Date.now();
 }
 
-function recordSignInFailure(state: SignInAttemptState): void {
+async function recordSignInFailure(key: string, state: SignInAttemptState): Promise<void> {
+  await ensureAuthStateTables();
   state.failures += 1;
   if (state.failures >= SIGNIN_MAX_FAILURES) {
     state.lockedUntil = Date.now() + SIGNIN_LOCK_MS;
   }
+
+  await pool.query(
+    `INSERT INTO signin_attempts (attempt_key, failures, first_failure_at, locked_until, updated_at)
+     VALUES ($1, $2, to_timestamp($3 / 1000.0), $4, NOW())
+     ON CONFLICT (attempt_key)
+     DO UPDATE SET
+       failures = EXCLUDED.failures,
+       first_failure_at = EXCLUDED.first_failure_at,
+       locked_until = EXCLUDED.locked_until,
+       updated_at = NOW()`,
+    [
+      key,
+      state.failures,
+      state.firstFailureAt,
+      state.lockedUntil ? new Date(state.lockedUntil).toISOString() : null,
+    ],
+  );
 }
 
-function clearSignInFailures(key: string): void {
-  signInAttemptMap.delete(key);
+async function clearSignInFailures(key: string): Promise<void> {
+  await ensureAuthStateTables();
+  await pool.query('DELETE FROM signin_attempts WHERE attempt_key = $1', [key]);
 }
 
 const registerRateLimit = createRateLimiter({
@@ -180,12 +267,22 @@ function hashResetToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-function createPasswordResetToken(email: string): string {
+async function createPasswordResetToken(email: string): Promise<string> {
+  await ensureAuthStateTables();
   const token = randomBytes(24).toString('hex');
-  passwordResetMap.set(email, {
-    tokenHash: hashResetToken(token),
-    expiresAt: Date.now() + PASSWORD_RESET_TTL_MS,
-  });
+  const expiresAtIso = new Date(Date.now() + PASSWORD_RESET_TTL_MS).toISOString();
+
+  await pool.query(
+    `INSERT INTO password_reset_tokens (email, token_hash, expires_at, created_at, updated_at)
+     VALUES ($1, $2, $3::timestamptz, NOW(), NOW())
+     ON CONFLICT (email)
+     DO UPDATE SET
+       token_hash = EXCLUDED.token_hash,
+       expires_at = EXCLUDED.expires_at,
+       updated_at = NOW()`,
+    [email, hashResetToken(token), expiresAtIso],
+  );
+
   return token;
 }
 
@@ -193,14 +290,30 @@ function normalizeResetToken(token?: string): string {
   return (token || '').trim().replace(/^token[:=]/i, '').trim();
 }
 
-function isValidResetToken(email: string, token: string): boolean {
+async function isValidResetToken(email: string, token: string): Promise<boolean> {
+  await ensureAuthStateTables();
   const normalizedToken = normalizeResetToken(token);
   if (!normalizedToken) return false;
 
-  const resetState = passwordResetMap.get(email);
+  const { rows } = await pool.query<PasswordResetState & { expires_at: string }>(
+    `SELECT token_hash AS "tokenHash", expires_at::text AS expires_at
+       FROM password_reset_tokens
+      WHERE email = $1
+      LIMIT 1`,
+    [email],
+  );
+
+  const row = rows[0];
+  const resetState = row
+    ? {
+        tokenHash: row.tokenHash,
+        expiresAt: new Date(row.expires_at).getTime(),
+      }
+    : null;
+
   if (!resetState) return false;
   if (resetState.expiresAt <= Date.now()) {
-    passwordResetMap.delete(email);
+    await pool.query('DELETE FROM password_reset_tokens WHERE email = $1', [email]);
     return false;
   }
 
@@ -339,7 +452,7 @@ router.post('/signin', async (req: Request, res: Response) => {
 
   try {
     const key = attemptKey(req, normalizedIdentifier);
-    const state = getSignInState(key);
+    const state = await getSignInState(key);
 
     if (isSignInLocked(state)) {
       authAudit('users.signin.locked', req, normalizedIdentifier, { status: 429, reason: 'active-lockout' });
@@ -348,7 +461,7 @@ router.post('/signin', async (req: Request, res: Response) => {
     }
 
     if (isAdminIdentifier(normalizedIdentifier) && password === ADMIN_USER.password) {
-      clearSignInFailures(key);
+      await clearSignInFailures(key);
       const token = signAuthToken({
         userId: ADMIN_USER.id,
         username: ADMIN_USER.username,
@@ -363,7 +476,7 @@ router.post('/signin', async (req: Request, res: Response) => {
     const user = await verifyUserCredentials(normalizedIdentifier, password);
 
     if (!user) {
-      recordSignInFailure(state);
+      await recordSignInFailure(key, state);
       if (isSignInLocked(state)) {
         authAudit('users.signin.locked', req, normalizedIdentifier, { status: 429, reason: 'lockout-threshold-reached' });
         res.status(429).json({ error: 'Too many sign-in attempts. Please try again later.' });
@@ -374,7 +487,7 @@ router.post('/signin', async (req: Request, res: Response) => {
       return;
     }
 
-    clearSignInFailures(key);
+    await clearSignInFailures(key);
     const isAdmin = isElevatedAdminEmail(user.email);
     const token = signAuthToken({ userId: user.id, email: user.email, role: isAdmin ? 'admin' : 'user' });
     const refreshToken = await issueRefreshToken(user.id, user.email, user.full_name);
@@ -415,7 +528,7 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
 
     const user = await getUserByEmail(normalizedEmail);
     if (user) {
-      const resetToken = createPasswordResetToken(normalizedEmail);
+      const resetToken = await createPasswordResetToken(normalizedEmail);
       let delivery: 'sent' | 'failed' = 'sent';
 
       try {
@@ -469,7 +582,7 @@ router.post('/reset-password', async (req: Request, res: Response) => {
   authAudit('users.reset-password.attempt', req, normalizedEmail);
 
   try {
-    if (!isValidResetToken(normalizedEmail, normalizedToken)) {
+    if (!(await isValidResetToken(normalizedEmail, normalizedToken))) {
       authAudit('users.reset-password.reject', req, normalizedEmail, { status: 400, reason: 'invalid-token' });
       res.status(400).json({ error: 'Invalid or expired reset token' });
       return;
@@ -477,7 +590,7 @@ router.post('/reset-password', async (req: Request, res: Response) => {
 
     const user = await updateUserPasswordByEmail(normalizedEmail, nextPassword);
 
-    passwordResetMap.delete(normalizedEmail);
+    await pool.query('DELETE FROM password_reset_tokens WHERE email = $1', [normalizedEmail]);
 
     if (!user) {
       authAudit('users.reset-password.reject', req, normalizedEmail, { status: 404, reason: 'user-not-found' });

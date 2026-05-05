@@ -100,10 +100,6 @@ Example payload shape:
   "occurred_at": "ISO-8601 timestamp",
   "survey_id": "uuid",
   "status": "submitted",
-  "project_id": "uuid|null",
-  "project_name": "string",
-  "inspector_name": "string",
-  "site_name": "string",
   "completed_at": "ISO-8601 timestamp"
 }
 ```

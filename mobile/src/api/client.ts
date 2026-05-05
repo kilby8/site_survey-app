@@ -13,11 +13,6 @@ import type {
   SurveyFormData,
   ApiSyncResponse,
   ApiPhotoUploadResponse,
-  ARDetectionPayload,
-  ARDetectionResponse,
-  ARDetectionListResponse,
-  PhotoInferenceRequest,
-  PhotoInferenceResponse,
 } from "../types";
 
 export interface AuthUser {
@@ -530,71 +525,6 @@ export async function deleteReport(
   return handleResponse<{ message: string }>(res);
 }
 
-// ----------------------------------------------------------------
-// AR Detection
-// ----------------------------------------------------------------
-
-/**
- * POST /api/surveys/:id/ar-detection
- * Submits an AR detection payload for a survey.
- * If a main service panel (class === "panel") is present the backend
- * will auto-escalate the survey to "submitted" (Ready for Engineering)
- * and append a pass checklist item.
- */
-export async function submitARDetection(
-  surveyId: string,
-  payload: ARDetectionPayload,
-  token: string,
-): Promise<ARDetectionResponse> {
-  const res = await fetchWithFallback(`/api/surveys/${surveyId}/ar-detection`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(payload),
-  });
-  return handleResponse<ARDetectionResponse>(res);
-}
-
-/**
- * GET /api/surveys/:id/ar-detections
- * Returns all AR detection records for a survey, newest-first.
- */
-export async function fetchARDetections(
-  surveyId: string,
-  token: string,
-): Promise<ARDetectionListResponse> {
-  const res = await fetchWithFallback(
-    `/api/surveys/${surveyId}/ar-detections`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  return handleResponse<ARDetectionListResponse>(res);
-}
-
-/**
- * POST /api/surveys/:id/photos/:photoId/infer
- * Runs Roboflow inference for a stored survey photo.
- */
-export async function inferSurveyPhoto(
-  surveyId: string,
-  photoId: string,
-  token: string,
-  payload: PhotoInferenceRequest = {},
-): Promise<PhotoInferenceResponse> {
-  const res = await fetchWithFallback(
-    `/api/surveys/${surveyId}/photos/${photoId}/infer`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-    },
-  );
-  return handleResponse<PhotoInferenceResponse>(res);
-}
 
 /**
  * POST /api/users/refresh
@@ -656,6 +586,50 @@ export async function fetchHandoffToken(
 ): Promise<HandoffPayload> {
   const res = await fetchWithFallback(`/api/handoff/${encodeURIComponent(token)}`, {});
   return handleResponse<HandoffPayload>(res);
+}
+
+// ----------------------------------------------------------------
+// Mobile Clients & Projects (SolarPro project picker)
+// ----------------------------------------------------------------
+
+export interface MobileClient {
+  id: string;
+  name: string;
+}
+
+export interface MobileProject {
+  id: string;
+  name: string;
+  client_id: string;
+}
+
+/**
+ * GET /api/mobile/clients
+ * Returns the list of SolarPro clients visible to the authenticated user.
+ */
+export async function fetchMobileClients(): Promise<MobileClient[]> {
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithFallback("/api/mobile/clients", {
+    headers: authHeaders,
+  });
+  const data = await handleResponse<{ clients: MobileClient[] }>(res);
+  return data.clients;
+}
+
+/**
+ * GET /api/mobile/clients/:clientId/projects
+ * Returns the list of projects for a given client.
+ */
+export async function fetchMobileClientProjects(
+  clientId: string,
+): Promise<MobileProject[]> {
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithFallback(
+    `/api/mobile/clients/${encodeURIComponent(clientId)}/projects`,
+    { headers: authHeaders },
+  );
+  const data = await handleResponse<{ projects: MobileProject[] }>(res);
+  return data.projects;
 }
 
 // ----------------------------------------------------------------

@@ -122,6 +122,15 @@ function AuthScreen({ onAuthenticated, initialMessage = null }: AuthScreenProps)
             and survey history.
           </p>
 
+          <div className="auth-admin-home-link-wrap">
+            <a
+              className="auth-admin-home-link"
+              href="https://site-survey-api-bpyz.onrender.com/admin/home"
+            >
+              Open Admin Home Login
+            </a>
+          </div>
+
           <div className="auth-feature-list" aria-hidden="true">
             <div className="auth-feature-item">
               <strong>Protected survey data</strong>

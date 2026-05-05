@@ -1,4 +1,4 @@
-/**
+﻿/**
  * backend/src/routes/surveys.ts
  *
  * All survey-related API endpoints.
@@ -13,11 +13,6 @@ import { pool } from "../database";
 import { solarSurveySchema } from "../models/Survey";
 import { stringify as csvStringify } from "csv-stringify/sync";
 import { generateReport, toMarkdown } from "../utils/reportGenerator";
-import {
-  dataUrlToBuffer,
-  inferRoboflowFromBuffer,
-  inferRoboflowFromPath,
-} from "../utils/roboflowClient";
 import { uploadFile } from "../utils/storageClient";
 import {
   enqueueSurveyCompleteWebhook,
@@ -176,7 +171,7 @@ function requireUuidParam(
 }
 
 // ----------------------------------------------------------------
-// SSE — real-time survey event broadcasting
+// SSE â€” real-time survey event broadcasting
 // ----------------------------------------------------------------
 type SseEventType = "survey.created" | "survey.updated" | "survey.deleted";
 
@@ -206,13 +201,13 @@ export function broadcastSurveyEvent(type: SseEventType, payload: unknown): void
     try {
       client.res.write(`event: ${type}\ndata: ${data}\n\n`);
     } catch {
-      // Client disconnected mid-write — will be cleaned up on "close"
+      // Client disconnected mid-write â€” will be cleaned up on "close"
     }
   }
 }
 
 // ----------------------------------------------------------------
-// Multer — memory storage; storageClient handles final destination
+// Multer â€” memory storage; storageClient handles final destination
 // ----------------------------------------------------------------
 // Only allow image MIME types
 const imageFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
@@ -242,7 +237,7 @@ interface ChecklistItemInput {
 interface PhotoInput {
   filename?: string;
   label?: string;
-  data_url?: string; // base64 — used by mobile sync
+  data_url?: string; // base64 â€” used by mobile sync
   mime_type?: string;
   captured_at?: string;
 }
@@ -285,19 +280,6 @@ type SurveyMetadata =
   | RoofMountMetadata
   | SolarFencingMetadata;
 
-interface InferenceLogInput {
-  surveyId: string;
-  photoId: string;
-  modelId: string | null;
-  options: {
-    confidence?: number;
-    overlap?: number;
-    elec_classes?: string[];
-    material_classes?: string[];
-  };
-  inference: unknown;
-}
-
 interface SurveyInput {
   project_name: string;
   project_id?: string;
@@ -306,7 +288,7 @@ interface SurveyInput {
   inspector_name: string;
   site_name: string;
   site_address?: string;
-  /** GeoJSON Point — takes priority over latitude/longitude fields */
+  /** GeoJSON Point â€” takes priority over latitude/longitude fields */
   location?: GeoJsonPoint;
   latitude?: number;
   longitude?: number;
@@ -325,92 +307,6 @@ interface SurveyInput {
   photos?: PhotoInput[];
 }
 
-let inferenceLogsTableReady: Promise<void> | null = null;
-
-async function ensureInferenceLogsTable(): Promise<void> {
-  if (!inferenceLogsTableReady) {
-    inferenceLogsTableReady = pool
-      .query(
-        `
-        CREATE TABLE IF NOT EXISTS photo_inference_logs (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          survey_id UUID NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
-          photo_id UUID NOT NULL REFERENCES survey_photos(id) ON DELETE CASCADE,
-          model_id VARCHAR(255),
-          request_options JSONB NOT NULL DEFAULT '{}',
-          inference JSONB NOT NULL,
-          prediction_count INT NOT NULL DEFAULT 0,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      `,
-      )
-      .then(() => undefined)
-      .catch((error) => {
-        inferenceLogsTableReady = null;
-        throw error;
-      });
-  }
-
-  await inferenceLogsTableReady;
-}
-
-function normalizeInferenceForStorage(inference: unknown): unknown {
-  if (inference === null || inference === undefined) {
-    return { raw: null };
-  }
-  if (typeof inference === "object") {
-    return inference;
-  }
-  return { raw: inference };
-}
-
-function getPredictionCount(inference: unknown): number {
-  if (!inference || typeof inference !== "object") return 0;
-  const root = inference as Record<string, unknown>;
-
-  if (Array.isArray(root.predictions)) {
-    return root.predictions.length;
-  }
-
-  if (
-    Array.isArray(root.outputs) &&
-    root.outputs.length > 0 &&
-    root.outputs[0] &&
-    typeof root.outputs[0] === "object"
-  ) {
-    const firstOutput = root.outputs[0] as Record<string, unknown>;
-    if (Array.isArray(firstOutput.predictions)) {
-      return firstOutput.predictions.length;
-    }
-  }
-
-  if (root.result && typeof root.result === "object") {
-    const nestedResult = root.result as Record<string, unknown>;
-    if (Array.isArray(nestedResult.predictions)) {
-      return nestedResult.predictions.length;
-    }
-  }
-
-  return 0;
-}
-
-async function insertInferenceLog(input: InferenceLogInput): Promise<void> {
-  await ensureInferenceLogsTable();
-
-  await pool.query(
-    `INSERT INTO photo_inference_logs
-      (survey_id, photo_id, model_id, request_options, inference, prediction_count)
-     VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)`,
-    [
-      input.surveyId,
-      input.photoId,
-      input.modelId,
-      JSON.stringify(input.options),
-      JSON.stringify(normalizeInferenceForStorage(input.inference)),
-      getPredictionCount(input.inference),
-    ],
-  );
-}
 
 function requireAdmin(req: Request, res: Response): boolean {
   const rawEmail = req.authUser?.email;
@@ -661,7 +557,7 @@ router.post("/validate/solar", async (req: Request, res: Response) => {
 });
 
 // ================================================================
-// EXPORT ROUTES — must be declared BEFORE /:id to avoid shadowing
+// EXPORT ROUTES â€” must be declared BEFORE /:id to avoid shadowing
 // ================================================================
 
 /**
@@ -745,7 +641,7 @@ router.get("/export/geojson", async (req: Request, res: Response) => {
         survey_date: row.survey_date,
         status: row.status,
         notes: row.notes,
-        /** Category-specific metadata — Ground Mount, Roof Mount, or Solar Fencing fields */
+        /** Category-specific metadata â€” Ground Mount, Roof Mount, or Solar Fencing fields */
         metadata: row.metadata ?? null,
         checklist: row.checklist ?? [],
         created_at: row.created_at,
@@ -1240,20 +1136,12 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
       id: string;
       status: string;
       project_id: string | null;
-      project_name: string;
-      inspector_name: string;
-      site_name: string;
-      solarpro_user_id: string | null;
-      solarpro_project_id: string | null;
-      solarpro_email: string | null;
-      solarpro_org_id: string | null;
     }>(
       `UPDATE surveys
           SET status = 'submitted',
               updated_at = NOW()
         WHERE id = $1 AND deleted_at IS NULL
-        RETURNING id::text, status, project_id::text, project_name, inspector_name, site_name,
-                  solarpro_user_id, solarpro_project_id, solarpro_email, solarpro_org_id`,
+        RETURNING id::text, status, project_id::text`,
       [surveyId],
     );
 
@@ -1267,20 +1155,7 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
     const eventId = await enqueueSurveyCompleteWebhook({
       survey_id: survey.id,
       status: "submitted",
-      project_id:
-        typeof survey.project_id === "string"
-          ? survey.project_id
-          : survey.project_id === null
-            ? null
-            : null,
-      project_name: survey.project_name,
-      inspector_name: survey.inspector_name,
-      site_name: survey.site_name,
       completed_at: completedAt,
-      solarpro_user_id: survey.solarpro_user_id ?? null,
-      solarpro_project_id: survey.solarpro_project_id ?? null,
-      solarpro_email: survey.solarpro_email ?? null,
-      solarpro_org_id: survey.solarpro_org_id ?? null,
     });
 
     await processWebhookQueue(10);
@@ -1708,9 +1583,9 @@ router.post("/", async (req: Request, res: Response) => {
       body.inspector_name.trim(),
       body.site_name.trim(),
       body.site_address ?? null,
-      coords?.lat ?? null, // $9  — latitude  column
-      coords?.lon ?? null, // $10 — longitude column
-      coords?.accuracy ?? null, // $11 — gps_accuracy column
+      coords?.lat ?? null, // $9  â€” latitude  column
+      coords?.lon ?? null, // $10 â€” longitude column
+      coords?.accuracy ?? null, // $11 â€” gps_accuracy column
     ];
 
     // $12 onwards: geography expression or NULL
@@ -1992,474 +1867,6 @@ router.post(
   },
 );
 
-/**
- * POST /api/surveys/:id/photos/:photoId/infer
- *
- * Runs Roboflow inference against a stored survey photo.
- * Uses `file_path` when available and falls back to base64 `data_url`.
- *
- * Optional body:
- *   {
- *     model_id?: string,
- *     confidence?: number,
- *     overlap?: number,
- *     elec_classes?: string[],
- *     material_classes?: string[]
- *   }
- */
-router.post(
-  "/:id/photos/:photoId/infer",
-  async (req: Request, res: Response) => {
-    if (!requireUuidParam(req, res, "id")) return;
-    if (!requireUuidParam(req, res, "photoId")) return;
-    const { id, photoId } = req.params;
-    const { model_id, confidence, overlap, elec_classes, material_classes } =
-      req.body as {
-        model_id?: string;
-        confidence?: number;
-        overlap?: number;
-        elec_classes?: string[];
-        material_classes?: string[];
-      };
-
-    if (
-      confidence !== undefined &&
-      (typeof confidence !== "number" || confidence < 0 || confidence > 100)
-    ) {
-      res
-        .status(400)
-        .json({ error: "`confidence` must be a number between 0 and 100" });
-      return;
-    }
-    if (
-      overlap !== undefined &&
-      (typeof overlap !== "number" || overlap < 0 || overlap > 100)
-    ) {
-      res
-        .status(400)
-        .json({ error: "`overlap` must be a number between 0 and 100" });
-      return;
-    }
-
-    if (
-      elec_classes !== undefined &&
-      (!Array.isArray(elec_classes) ||
-        elec_classes.some((v) => typeof v !== "string" || !v.trim()))
-    ) {
-      res.status(400).json({
-        error:
-          "`elec_classes` must be an array of non-empty class-name strings",
-      });
-      return;
-    }
-
-    if (
-      material_classes !== undefined &&
-      (!Array.isArray(material_classes) ||
-        material_classes.some((v) => typeof v !== "string" || !v.trim()))
-    ) {
-      res.status(400).json({
-        error:
-          "`material_classes` must be an array of non-empty class-name strings",
-      });
-      return;
-    }
-
-    const { rows } = await pool.query(
-      `SELECT id, file_path, data_url
-     FROM survey_photos
-     WHERE id = $1 AND survey_id = $2`,
-      [photoId, id],
-    );
-
-    if (rows.length === 0) {
-      res.status(404).json({ error: "Photo not found for this survey" });
-      return;
-    }
-
-    const photo = rows[0] as {
-      file_path?: string | null;
-      data_url?: string | null;
-    };
-
-    try {
-      const inferenceResult = photo.file_path
-        ? await inferRoboflowFromPath(photo.file_path, {
-            modelId: model_id,
-            confidence,
-            overlap,
-            elecClasses: elec_classes,
-            materialClasses: material_classes,
-          })
-        : photo.data_url
-          ? await inferRoboflowFromBuffer(dataUrlToBuffer(photo.data_url), {
-              modelId: model_id,
-              confidence,
-              overlap,
-              elecClasses: elec_classes,
-              materialClasses: material_classes,
-            })
-          : null;
-
-      if (!inferenceResult) {
-        res
-          .status(400)
-          .json({ error: "Photo has neither file_path nor data_url" });
-        return;
-      }
-
-      const resolvedModelId = model_id ?? process.env.ROBOFLOW_MODEL_ID ?? null;
-
-      try {
-        await insertInferenceLog({
-          surveyId: id,
-          photoId,
-          modelId: resolvedModelId,
-          options: {
-            confidence,
-            overlap,
-            elec_classes,
-            material_classes,
-          },
-          inference: inferenceResult,
-        });
-      } catch (logError) {
-        // Keep inference API available even if telemetry persistence fails.
-        console.error(
-          "POST /api/surveys/:id/photos/:photoId/infer log write error:",
-          logError,
-        );
-      }
-
-      res.status(200).json({
-        survey_id: id,
-        photo_id: photoId,
-        model_id: resolvedModelId,
-        inference: inferenceResult,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown Roboflow error";
-      console.error(
-        "POST /api/surveys/:id/photos/:photoId/infer error:",
-        error,
-      );
-      res.status(502).json({ error: message });
-    }
-  },
-);
-
-/**
- * GET /api/surveys/inference-logs/recent
- *
- * Admin-only telemetry view over recent stored inference results.
- * Query params:
- *   limit?: number       default 25, max 100
- *   survey_id?: string   filter by survey
- *   photo_id?: string    filter by photo
- *   model_id?: string    filter by model
- *   include_inference?: boolean  when true include raw inference JSON
- */
-router.get("/inference-logs/recent", async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) {
-    return;
-  }
-
-  try {
-    await ensureInferenceLogsTable();
-
-    const {
-      limit = "25",
-      survey_id,
-      photo_id,
-      model_id,
-      include_inference,
-    } = req.query as Record<string, string | undefined>;
-
-    const parsedLimit = Number.parseInt(limit, 10);
-    const safeLimit = Number.isFinite(parsedLimit)
-      ? Math.min(Math.max(parsedLimit, 1), 100)
-      : 25;
-
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-
-    if (survey_id) {
-      conditions.push(`logs.survey_id = $${params.push(survey_id)}`);
-    }
-    if (photo_id) {
-      conditions.push(`logs.photo_id = $${params.push(photo_id)}`);
-    }
-    if (model_id) {
-      conditions.push(`logs.model_id = $${params.push(model_id)}`);
-    }
-
-    const where =
-      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    const includeInference = include_inference === "true";
-
-    params.push(safeLimit);
-
-    const { rows } = await pool.query(
-      `SELECT
-         logs.id,
-         logs.survey_id,
-         logs.photo_id,
-         logs.model_id,
-         logs.request_options,
-         logs.prediction_count,
-         logs.created_at,
-         surveys.project_name,
-         surveys.site_name,
-         photos.label AS photo_label,
-         ${includeInference ? "logs.inference" : "NULL::jsonb AS inference"}
-       FROM photo_inference_logs logs
-       JOIN surveys ON surveys.id = logs.survey_id
-       JOIN survey_photos photos ON photos.id = logs.photo_id
-       ${where}
-       ORDER BY logs.created_at DESC
-       LIMIT $${params.length}`,
-      params,
-    );
-
-    res.json({
-      logs: rows,
-      total: rows.length,
-      filters: {
-        survey_id: survey_id ?? null,
-        photo_id: photo_id ?? null,
-        model_id: model_id ?? null,
-        include_inference: includeInference,
-        limit: safeLimit,
-      },
-    });
-  } catch (error) {
-    console.error("GET /api/surveys/inference-logs/recent error:", error);
-    res.status(500).json({ error: "Failed to retrieve inference telemetry" });
-  }
-});
-
-/**
- * POST /api/surveys/:id/ar-detection
- *
- * Stores a structured AR detection payload from the mobile app.
- * Each item in `electrical` carries a ByteTracker-assigned track_id
- * so the same physical object (MSP, meter, …) keeps a stable AR tag
- * even when the camera pans away and returns.
- * `exterior` holds structural/exterior detections (roof, conduit, etc.).
- * `distances` holds depth-anchored spatial readings from the Depth
- * Estimation model so AR labels are pinned to the panel surface.
- * When a main service panel is detected the survey is automatically
- * escalated to "submitted" (Ready for Engineering) and a pass-status
- * checklist item is appended.
- */
-interface ARElectricalDetection {
-  class: string;
-  confidence: number;
-  track_id: number;
-  depth_m?: number;
-  ar_label?: string;
-}
-
-interface ARExteriorDetection {
-  class: string;
-  confidence: number;
-  track_id: number;
-  depth_m?: number;
-  ar_label?: string;
-}
-
-interface ARDetectionBody {
-  project_id?: string;
-  electrical: ARElectricalDetection[];
-  exterior?: ARExteriorDetection[];
-  distances?: Record<string, string>;
-  track_ids?: number[];
-  measurements?: Record<string, string>;
-  roof_type?: string;
-  /** ISO-8601 client-side capture time; stored as detected_at. Defaults to NOW(). */
-  timestamp?: string;
-}
-
-/**
- * Escalates the survey to "submitted" status and appends a pass-status
- * checklist item so the engineering pipeline can pick it up.
- * Called when a Main Service Panel is detected in the AR session.
- */
-async function triggerPipeline(surveyId: string, event: string): Promise<void> {
-  await pool.query(
-    `UPDATE surveys SET status = 'submitted', updated_at = NOW()
-     WHERE id = $1 AND status = 'draft'`,
-    [surveyId],
-  );
-
-  await pool.query(
-    `INSERT INTO checklist_items (survey_id, label, status, notes, sort_order)
-     SELECT $1::uuid, $2::text, 'pass', $3::text,
-            COALESCE((SELECT MAX(sort_order) + 1 FROM checklist_items WHERE survey_id = $1::uuid), 0)
-     WHERE NOT EXISTS (
-       SELECT 1 FROM checklist_items WHERE survey_id = $1::uuid AND label = $2::text
-     )`,
-    [
-      surveyId,
-      "MSP Detected — Ready for Engineering",
-      `AR pipeline event: ${event}`,
-    ],
-  );
-}
-
-router.post("/:id/ar-detection", async (req: Request, res: Response) => {
-  if (!requireUuidParam(req, res, "id")) return;
-  const { id } = req.params;
-  const body = req.body as ARDetectionBody;
-
-  // --- input validation ---
-  if (!Array.isArray(body.electrical) || body.electrical.length === 0) {
-    res.status(400).json({ error: "`electrical` must be a non-empty array" });
-    return;
-  }
-
-  for (const item of body.electrical) {
-    if (typeof item.class !== "string" || !item.class) {
-      res
-        .status(400)
-        .json({ error: "Each detection must have a `class` string" });
-      return;
-    }
-    if (
-      typeof item.confidence !== "number" ||
-      item.confidence < 0 ||
-      item.confidence > 1
-    ) {
-      res
-        .status(400)
-        .json({ error: "`confidence` must be a number between 0 and 1" });
-
-      return;
-    }
-    if (typeof item.track_id !== "number" || !Number.isInteger(item.track_id)) {
-      res.status(400).json({ error: "`track_id` must be an integer" });
-      return;
-    }
-  }
-
-  if (
-    body.measurements !== undefined &&
-    (typeof body.measurements !== "object" || Array.isArray(body.measurements))
-  ) {
-    res
-      .status(400)
-      .json({ error: "`measurements` must be a key/value object" });
-    return;
-  }
-
-  if (
-    body.distances !== undefined &&
-    (typeof body.distances !== "object" || Array.isArray(body.distances))
-  ) {
-    res.status(400).json({ error: "`distances` must be a key/value object" });
-    return;
-  }
-
-  if (
-    body.track_ids !== undefined &&
-    (!Array.isArray(body.track_ids) ||
-      body.track_ids.some((t) => typeof t !== "number" || !Number.isInteger(t)))
-  ) {
-    res
-      .status(400)
-      .json({ error: "`track_ids` must be an array of integers" });
-    return;
-  }
-
-  // validate optional ISO timestamp
-  let detectedAt: Date | null = null;
-  if (body.timestamp !== undefined) {
-    detectedAt = new Date(body.timestamp);
-    if (isNaN(detectedAt.getTime())) {
-      res
-        .status(400)
-        .json({ error: "`timestamp` must be a valid ISO-8601 date string" });
-      return;
-    }
-  }
-
-  // --- verify survey exists ---
-  const { rows: surveyRows } = await pool.query(
-    "SELECT id FROM surveys WHERE id = $1",
-    [id],
-  );
-  if (surveyRows.length === 0) {
-    res.status(404).json({ error: "Survey not found" });
-    return;
-  }
-
-  // --- derive track_ids: use explicit list if provided, else union from electrical + exterior ---
-  const resolvedTrackIds: number[] =
-    body.track_ids ??
-    [
-      ...body.electrical.map((d) => d.track_id),
-      ...(body.exterior ?? []).map((d) => d.track_id),
-    ].filter((v, i, a) => a.indexOf(v) === i); // deduplicate
-
-  // --- persist detection ---
-  await pool.query(
-    `INSERT INTO ar_detections
-       (survey_id, project_id, electrical, exterior, distances, track_ids,
-        measurements, roof_type, detected_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [
-      id,
-      body.project_id ?? null,
-      JSON.stringify(body.electrical),
-      JSON.stringify(body.exterior ?? []),
-      JSON.stringify(body.distances ?? {}),
-      JSON.stringify(resolvedTrackIds),
-      JSON.stringify(body.measurements ?? {}),
-      body.roof_type ?? null,
-      detectedAt ?? new Date(),
-    ],
-  );
-
-  // --- tag MSP and trigger engineering pipeline ---
-  const hasPanel = body.electrical.some((det) => det.class === "panel");
-  if (hasPanel) {
-    await triggerPipeline(id, "electrical_detected");
-  }
-
-  res
-    .status(200)
-    .json({ status: "success", message: "AR data synced to pipeline" });
-});
-
-// ----------------------------------------------------------------
-// GET /api/surveys/:id/ar-detections
-//
-// Returns all AR detection records for a survey, ordered newest-first.
-// ----------------------------------------------------------------
-router.get("/:id/ar-detections", async (req: Request, res: Response) => {
-  const { id } = req.params;
-
-  const { rows: surveyRows } = await pool.query(
-    "SELECT id FROM surveys WHERE id = $1",
-    [id],
-  );
-  if (surveyRows.length === 0) {
-    res.status(404).json({ error: "Survey not found" });
-    return;
-  }
-
-  const { rows } = await pool.query(
-    `SELECT id, survey_id, project_id, electrical, exterior, distances,
-            measurements, roof_type, detected_at
-     FROM ar_detections
-     WHERE survey_id = $1
-     ORDER BY detected_at DESC`,
-    [id],
-  );
-
-  res.json({ detections: rows, total: rows.length });
-});
 
 export { ensureSurveySoftDeleteColumn };
 export default router;

@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import MapView, { Callout, Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
@@ -82,6 +82,7 @@ function markerColor(status: Survey['status']): string {
 export default function SurveyMapScreen() {
   const [surveys, setSurveys] = useState<SurveyListItem[]>([]);
   const [canShowUserLocation, setCanShowUserLocation] = useState(false);
+  const [isMapReady, setIsMapReady] = useState(false);
 
   const load = useCallback(async () => {
     const rows = await getAllSurveys();
@@ -103,11 +104,22 @@ export default function SurveyMapScreen() {
     }
   }, []);
 
+  const refreshMapData = useCallback(async () => {
+    setIsMapReady(false);
+    try {
+      await Promise.all([
+        load(),
+        resolveLocationPermission(),
+      ]);
+    } finally {
+      setIsMapReady(true);
+    }
+  }, [load, resolveLocationPermission]);
+
   useFocusEffect(
     useCallback(() => {
-      load().catch(console.error);
-      resolveLocationPermission().catch(console.error);
-    }, [load, resolveLocationPermission]),
+      refreshMapData().catch(console.error);
+    }, [refreshMapData]),
   );
 
   const mappable = useMemo(
@@ -157,30 +169,37 @@ export default function SurveyMapScreen() {
         <Text style={styles.subtitle}>{mappable.length} mapped of {surveys.length} total</Text>
       </View>
 
-      <MapView
-        style={styles.map}
-        provider={mapProvider}
-        initialRegion={region}
-        showsUserLocation={canShowUserLocation}
-        showsCompass
-      >
-        {mapMarkers.map(({ survey, coords }) => (
-          <Marker
-            key={survey.id}
-            coordinate={{ latitude: coords.latitude, longitude: coords.longitude }}
-            pinColor={markerColor(survey.status)}
-          >
-            <Callout onPress={() => openNativeMaps(survey)}>
-              <View style={styles.callout}>
-                <Text style={styles.calloutTitle}>{survey.site_name || 'Unnamed site'}</Text>
-                <Text style={styles.calloutLine}>Project: {survey.project_name}</Text>
-                <Text style={styles.calloutLine}>Inspector: {survey.inspector_name}</Text>
-                <Text style={styles.calloutLink}>Open in Maps</Text>
-              </View>
-            </Callout>
-          </Marker>
-        ))}
-      </MapView>
+      {!isMapReady ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading map...</Text>
+        </View>
+      ) : (
+        <MapView
+          style={styles.map}
+          provider={mapProvider}
+          initialRegion={region}
+          showsUserLocation={canShowUserLocation}
+          showsCompass
+        >
+          {mapMarkers.map(({ survey, coords }) => (
+            <Marker
+              key={survey.id}
+              coordinate={{ latitude: coords.latitude, longitude: coords.longitude }}
+              pinColor={markerColor(survey.status)}
+            >
+              <Callout onPress={() => openNativeMaps(survey)}>
+                <View style={styles.callout}>
+                  <Text style={styles.calloutTitle}>{survey.site_name || 'Unnamed site'}</Text>
+                  <Text style={styles.calloutLine}>Project: {survey.project_name}</Text>
+                  <Text style={styles.calloutLine}>Inspector: {survey.inspector_name}</Text>
+                  <Text style={styles.calloutLink}>Open in Maps</Text>
+                </View>
+              </Callout>
+            </Marker>
+          ))}
+        </MapView>
+      )}
 
       <View style={styles.legend}>
         <Text style={styles.legendText}>● Draft</Text>
@@ -188,7 +207,7 @@ export default function SurveyMapScreen() {
         <Text style={[styles.legendText, { color: '#16a34a' }]}>● Synced</Text>
       </View>
 
-      <TouchableOpacity style={styles.refreshBtn} onPress={() => load().catch(console.error)}>
+      <TouchableOpacity style={styles.refreshBtn} onPress={() => refreshMapData().catch(console.error)}>
         <Text style={styles.refreshBtnText}>Refresh Pins</Text>
       </TouchableOpacity>
     </SafeAreaView>
@@ -207,6 +226,13 @@ const styles = StyleSheet.create({
   title: { color: colors.textPrimary, fontSize: 20, fontWeight: '800' },
   subtitle: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
   map: { flex: 1 },
+  loadingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  loadingText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
   callout: { minWidth: 180, maxWidth: 220 },
   calloutTitle: { fontWeight: '700', marginBottom: 4, color: '#0B1220' },
   calloutLine: { fontSize: 12, color: '#1f2937' },

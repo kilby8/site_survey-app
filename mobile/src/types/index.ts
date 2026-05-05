@@ -26,7 +26,7 @@ export interface RoofMountMetadata {
   rafter_size: "2x4" | "2x6" | "2x8" | null;
   rafter_spacing: "16in" | "24in" | null;
   roof_age_years: number | null;
-  azimuth: number | null;
+  azimuth: "N" | "S" | "E" | "W" | null;
   rafter_photo_uri?: string | null;
 }
 
@@ -213,99 +213,3 @@ export const SURVEY_CATEGORIES = [
   { id: "commercial_3phase", name: "Commercial 3-Phase Solar" },
 ];
 
-// ------------------------------------------------------------------
-// AR Detection types
-// Used by the mobile AR inspection workflow.
-// Each detected object carries a ByteTracker-assigned `track_id`
-// which remains stable across camera frames, letting the AR engine
-// re-anchor the label to the same physical object (MSP, meter, etc.)
-// when the camera pans away and returns.
-// The optional `depth_m` is supplied by the Depth Estimation model
-// so the label is pinned to the actual surface of the panel, not
-// floating in mid-air.
-// ------------------------------------------------------------------
-
-export interface ARElectricalDetection {
-  /** Object class label, e.g. "panel" | "meter" | "breaker" | "disconnect" */
-  class: string;
-  /** Model confidence score in [0, 1] */
-  confidence: number;
-  /** Stable ByteTracker ID assigned across frames */
-  track_id: number;
-  /** Depth from camera to object surface in metres (Depth Estimation model) */
-  depth_m?: number;
-  /** Human-readable AR overlay label, e.g. "MSP — 200A" */
-  ar_label?: string;
-}
-
-export interface ARExteriorDetection {
-  /** Object class label, e.g. "roof" | "conduit" | "weatherhead" | "disconnect" */
-  class: string;
-  /** Model confidence score in [0, 1] */
-  confidence: number;
-  /** Stable ByteTracker ID assigned across frames */
-  track_id: number;
-  depth_m?: number;
-  ar_label?: string;
-}
-
-export interface ARMeasurements {
-  meter_to_panel_distance?: string;
-  [key: string]: string | undefined;
-}
-
-/** Depth-anchored spatial readings from the Depth Estimation model */
-export interface ARDistances {
-  [key: string]: string | undefined;
-}
-
-/** Payload sent to POST /api/surveys/:id/ar-detection */
-export interface ARDetectionPayload {
-  /** Matches the survey's project_id on the server */
-  project_id: string;
-  electrical: ARElectricalDetection[];
-  /** Structural / exterior detections (roof, conduit, weatherhead, etc.) */
-  exterior?: ARExteriorDetection[];
-  /** Depth-anchored spatial distances from the AR Depth Estimation model */
-  distances?: ARDistances;
-  /**
-   * Flat list of all active ByteTracker IDs in the session.
-   * If omitted the backend derives it from the union of electrical + exterior track_ids.
-   */
-  track_ids?: number[];
-  measurements?: ARMeasurements;
-  /** ISO-8601 client-side capture timestamp. Backend stores it as detected_at. */
-  timestamp?: string;
-  roof_type?: string;
-}
-
-/** Response from POST /api/surveys/:id/ar-detection */
-export interface ARDetectionResponse {
-  status: string;
-  message: string;
-}
-
-/** Response from GET /api/surveys/:id/ar-detections */
-export interface ARDetectionListResponse {
-  detections: ARDetectionResponse[];
-  total: number;
-}
-
-// ------------------------------------------------------------------
-// Survey Photo Inference (Roboflow)
-// ------------------------------------------------------------------
-
-export interface PhotoInferenceRequest {
-  model_id?: string;
-  confidence?: number;
-  overlap?: number;
-  elec_classes?: string[];
-  material_classes?: string[];
-}
-
-export interface PhotoInferenceResponse {
-  survey_id: string;
-  photo_id: string;
-  model_id: string | null;
-  inference: unknown;
-}

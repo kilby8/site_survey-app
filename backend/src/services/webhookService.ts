@@ -9,15 +9,7 @@ interface SurveyCompletePayload {
   occurred_at: string;
   survey_id: string;
   status: string;
-  project_id: string | null;
-  project_name: string;
-  inspector_name: string;
-  site_name: string;
   completed_at: string;
-  solarpro_user_id: string | null;
-  solarpro_project_id: string | null;
-  solarpro_email: string | null;
-  solarpro_org_id: string | null;
 }
 
 interface WebhookDeliveryRow {
@@ -84,15 +76,7 @@ function nextAttemptAt(attemptCount: number): Date | null {
 export async function enqueueSurveyCompleteWebhook(params: {
   survey_id: string;
   status: string;
-  project_id: string | null;
-  project_name: string;
-  inspector_name: string;
-  site_name: string;
   completed_at: string;
-  solarpro_user_id: string | null;
-  solarpro_project_id: string | null;
-  solarpro_email: string | null;
-  solarpro_org_id: string | null;
 }): Promise<string> {
   await ensureWebhookDeliveriesTable();
 
@@ -103,15 +87,7 @@ export async function enqueueSurveyCompleteWebhook(params: {
     occurred_at: new Date().toISOString(),
     survey_id: params.survey_id,
     status: params.status,
-    project_id: params.project_id,
-    project_name: params.project_name,
-    inspector_name: params.inspector_name,
-    site_name: params.site_name,
     completed_at: params.completed_at,
-    solarpro_user_id: params.solarpro_user_id,
-    solarpro_project_id: params.solarpro_project_id,
-    solarpro_email: params.solarpro_email,
-    solarpro_org_id: params.solarpro_org_id,
   };
 
   await pool.query(
@@ -175,6 +151,26 @@ function buildSignature(payloadText: string, timestamp: string, secret: string):
   return `sha256=${digest}`;
 }
 
+function isNonRetriableStatus(status: number): boolean {
+  return status === 400 || status === 401 || status === 501;
+}
+
+async function markFailed(
+  id: string,
+  attemptCount: number,
+  errorMessage: string,
+): Promise<void> {
+  await pool.query(
+    `UPDATE webhook_deliveries
+        SET status = 'failed',
+            attempt_count = $2,
+            last_error = $3,
+            updated_at = NOW()
+      WHERE id = $1`,
+    [id, attemptCount, errorMessage],
+  );
+}
+
 async function deliverOne(row: WebhookDeliveryRow): Promise<void> {
   const url = getWebhookUrl();
   const secret = getWebhookSecret();
@@ -216,11 +212,25 @@ async function deliverOne(row: WebhookDeliveryRow): Promise<void> {
       return;
     }
 
-    await markRetry(
-      row.id,
-      nextAttempt,
-      `HTTP ${response.status}`,
-    );
+    if (isNonRetriableStatus(response.status)) {
+      await markFailed(row.id, nextAttempt, `HTTP ${response.status}`);
+      incrementMetric("webhook_failed_total");
+      console.warn(
+        JSON.stringify({
+          type: "webhook_delivery",
+          delivery_id: row.id,
+          survey_id: row.survey_id,
+          event_id: row.event_id,
+          status: "failed",
+          attempt: nextAttempt,
+          http_status: response.status,
+          non_retriable: true,
+        }),
+      );
+      return;
+    }
+
+    await markRetry(row.id, nextAttempt, `HTTP ${response.status}`);
     incrementMetric("webhook_failed_total");
     console.warn(
       JSON.stringify({

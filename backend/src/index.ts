@@ -1,4 +1,4 @@
-import path from "path";
+﻿import path from "path";
 import fs from "fs";
 
 // Load .env before anything else
@@ -17,11 +17,12 @@ import multer from "multer";
 import surveysRouter from "./routes/surveys";
 import categoriesRouter from "./routes/categories";
 import usersRouter from "./routes/users";
-import roboflowProxyRouter from "./routes/roboflowProxy";
+
 import handoffRouter from "./routes/handoff";
 import fallbackSurveyRouter from "./routes/fallbackSurvey";
 import openApiRouter from "./routes/openapi";
 import bugReportsRouter from "./routes/bugReports";
+import mobileClientsRouter from "./routes/mobileClients";
 import webhooksRouter from "./routes/webhooks";
 import { requireAuth } from "./middleware/auth";
 import { adminOverrideDebug } from "./middleware/adminOverrideDebug";
@@ -47,7 +48,7 @@ if (!isS3Mode() && !fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// Use memory storage — storageClient handles the final destination
+// Use memory storage â€” storageClient handles the final destination
 const upload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => {
@@ -173,7 +174,7 @@ app.use(fallbackSurveyRouter);
 // ----------------------------------------------------------------
 // Serve uploaded photos statically
 // ----------------------------------------------------------------
-// Serve uploaded photos statically — local mode only
+// Serve uploaded photos statically â€” local mode only
 // ----------------------------------------------------------------
 if (!isS3Mode()) {
   app.use("/uploads", express.static(UPLOADS_DIR));
@@ -255,7 +256,7 @@ app.use("/api/users", usersRouter);
 app.use("/api/handoff", handoffRouter);
 app.use("/api", openApiRouter);
 app.use("/api/bug-reports", requireAuth, bugReportsRouter);
-app.use("/api/roboflow", requireAuth, roboflowProxyRouter);
+app.use("/api/mobile", requireAuth, mobileClientsRouter);
 
 
 // ----------------------------------------------------------------

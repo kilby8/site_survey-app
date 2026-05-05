@@ -31,6 +31,7 @@
     "docker:db": "docker compose up -d db"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "eslint": "^10.3.0"
   }
 }

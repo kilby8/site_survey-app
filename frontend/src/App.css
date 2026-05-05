@@ -101,6 +101,28 @@
   line-height: 1.6;
 }
 
+.auth-admin-home-link-wrap {
+  margin-top: 18px;
+}
+
+.auth-admin-home-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-admin-home-link:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
 .auth-feature-list {
   display: grid;
   gap: 14px;
