@@ -73,17 +73,70 @@ $headers = @{
   "Content-Type"  = "application/json"
 }
 
+function Get-JsonResponse([string]$Uri) {
+  $resp = Invoke-WebRequest -Method Get -Uri $Uri -Headers $headers -UseBasicParsing
+  if (-not $resp.Content) { return $null }
+  return $resp.Content | ConvertFrom-Json
+}
+
+function Find-RecentDeployId([datetime]$TriggeredAtUtc) {
+  for ($attempt = 0; $attempt -lt 12; $attempt++) {
+    $recent = Get-JsonResponse "https://api.render.com/v1/services/$SERVICE_ID/deploys?limit=10"
+    foreach ($item in @($recent)) {
+      $deploy = $item.deploy
+      if (-not $deploy) { continue }
+
+      $createdAt = $null
+      try { $createdAt = [datetime]$deploy.createdAt } catch { $createdAt = $null }
+
+      if ($createdAt -and $createdAt.ToUniversalTime() -ge $TriggeredAtUtc.AddSeconds(-5)) {
+        return $deploy.id
+      }
+    }
+
+    Start-Sleep -Seconds 5
+  }
+
+  return $null
+}
+
 # Trigger deploy
 Write-Host "`nTriggering Render deploy for service $SERVICE_ID ..." -ForegroundColor Cyan
 
-$deployResp = Invoke-RestMethod `
+$triggeredAtUtc = [datetime]::UtcNow
+
+$deployResp = Invoke-WebRequest `
   -Method Post `
   -Uri "https://api.render.com/v1/services/$SERVICE_ID/deploys" `
   -Headers $headers `
   -Body '{}' `
-  -ContentType "application/json"
+  -ContentType "application/json" `
+  -UseBasicParsing
 
-$deployId  = $deployResp.id
+$deployBody = $null
+if ($deployResp.Content) {
+  try {
+    $deployBody = $deployResp.Content | ConvertFrom-Json
+  } catch {
+    $deployBody = $null
+  }
+}
+
+$deployId = $null
+if ($deployBody -and $deployBody.id) {
+  $deployId = $deployBody.id
+} elseif ($deployBody -and $deployBody.deploy -and $deployBody.deploy.id) {
+  $deployId = $deployBody.deploy.id
+} else {
+  Write-Host "Deploy accepted without ID in response; locating newest deploy ..." -ForegroundColor Yellow
+  $deployId = Find-RecentDeployId $triggeredAtUtc
+}
+
+if (-not $deployId) {
+  Write-Error "Render accepted the deploy request, but no deploy ID could be located afterward. Check the dashboard manually."
+  exit 1
+}
+
 $deployUrl = "https://dashboard.render.com/web/$SERVICE_ID/deploys/$deployId"
 
 Write-Host "Deploy triggered: $deployId" -ForegroundColor Green
@@ -102,12 +155,21 @@ while ($elapsed -lt $maxWait) {
   $elapsed += $pollInterval
 
   try {
-    $statusResp = Invoke-RestMethod `
-      -Method Get `
-      -Uri "https://api.render.com/v1/services/$SERVICE_ID/deploys/$deployId" `
-      -Headers $headers
+    $deploys = Get-JsonResponse "https://api.render.com/v1/services/$SERVICE_ID/deploys?limit=20"
+    $status = $null
 
-    $status = $statusResp.status
+    foreach ($item in @($deploys)) {
+      if ($item.deploy -and $item.deploy.id -eq $deployId) {
+        $status = $item.deploy.status
+        break
+      }
+    }
+
+    if (-not $status) {
+      Write-Host "   [$($elapsed)s] status: pending_lookup"
+      continue
+    }
+
     Write-Host "   [$($elapsed)s] status: $status"
 
     if ($terminalStates -contains $status) {
