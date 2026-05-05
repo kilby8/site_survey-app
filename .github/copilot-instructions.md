@@ -17,6 +17,7 @@
 - For credential incidents, default to hash-sync-only remediation between website and app databases unless explicitly instructed otherwise.
 - Do not rotate exposed keys/secrets unless the user explicitly requests rotation.
 - For UI tasks, the target is the public solar-pro.app landing page with the 'Download the App' button, not the authenticated app screen.
+- For Android Play Store releases, always target Closed Testing (`alpha` track), ensure `versionCode` is incremented above the current live/active version before submission, and assume Managed Publishing is OFF (send for review immediately; publish automatically after approval).
 
 ## Topography Dashboard Guidelines
 - Prefer a React Flow node-graph Mission Control layout with a triple-pane UI and a dark Slate theme.
