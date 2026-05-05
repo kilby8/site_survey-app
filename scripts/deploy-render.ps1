@@ -26,8 +26,9 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# ── Load .env from repo root ──────────────────────────────────────────────────
-$envFile = Join-Path $PSScriptRoot ".." ".env"
+# Load .env from repo root
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$envFile = Join-Path $repoRoot ".env"
 if (Test-Path $envFile) {
   Get-Content $envFile | ForEach-Object {
     if ($_ -match '^\s*([^#][^=]+?)\s*=\s*(.*)$') {
@@ -40,7 +41,7 @@ if (Test-Path $envFile) {
   }
 }
 
-# ── Validate required vars ────────────────────────────────────────────────────
+# Validate required vars
 $API_KEY    = $env:RENDER_API_KEY
 $SERVICE_ID = $env:RENDER_SERVICE_ID
 
@@ -72,8 +73,8 @@ $headers = @{
   "Content-Type"  = "application/json"
 }
 
-# ── Trigger deploy ────────────────────────────────────────────────────────────
-Write-Host "`n🚀  Triggering Render deploy for service $SERVICE_ID ..." -ForegroundColor Cyan
+# Trigger deploy
+Write-Host "`nTriggering Render deploy for service $SERVICE_ID ..." -ForegroundColor Cyan
 
 $deployResp = Invoke-RestMethod `
   -Method Post `
@@ -85,16 +86,16 @@ $deployResp = Invoke-RestMethod `
 $deployId  = $deployResp.id
 $deployUrl = "https://dashboard.render.com/web/$SERVICE_ID/deploys/$deployId"
 
-Write-Host "✅  Deploy triggered: $deployId" -ForegroundColor Green
+Write-Host "Deploy triggered: $deployId" -ForegroundColor Green
 Write-Host "    Dashboard: $deployUrl`n"
 
-# ── Poll status ───────────────────────────────────────────────────────────────
+# Poll status
 $terminalStates = @("live", "deactivated", "failed", "canceled", "build_failed", "pre_deploy_failed", "update_failed")
 $pollInterval   = 10   # seconds
 $maxWait        = 600  # 10 minutes
 
 $elapsed = 0
-Write-Host "⏳  Polling deploy status (checks every ${pollInterval}s, timeout ${maxWait}s)..." -ForegroundColor Yellow
+Write-Host "Polling deploy status (checks every ${pollInterval}s, timeout ${maxWait}s)..." -ForegroundColor Yellow
 
 while ($elapsed -lt $maxWait) {
   Start-Sleep -Seconds $pollInterval
@@ -111,10 +112,10 @@ while ($elapsed -lt $maxWait) {
 
     if ($terminalStates -contains $status) {
       if ($status -eq "live") {
-        Write-Host "`n🎉  Deploy succeeded — service is LIVE!" -ForegroundColor Green
+        Write-Host "`nDeploy succeeded - service is LIVE!" -ForegroundColor Green
         exit 0
       } else {
-        Write-Error "`n❌  Deploy ended with status: $status`nCheck logs: $deployUrl"
+        Write-Error "`nDeploy ended with status: $status`nCheck logs: $deployUrl"
         exit 1
       }
     }
@@ -123,6 +124,6 @@ while ($elapsed -lt $maxWait) {
   }
 }
 
-Write-Host "`n⚠️  Timed out after ${maxWait}s — check manually: $deployUrl" -ForegroundColor Yellow
+Write-Host "`nTimed out after ${maxWait}s - check manually: $deployUrl" -ForegroundColor Yellow
 exit 1
 
