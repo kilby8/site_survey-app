@@ -601,6 +601,12 @@ export interface MobileProject {
   id: string;
   name: string;
   client_id: string;
+  project_name?: string | null;
+  site_name?: string | null;
+  siteName?: string | null;
+  site_address?: string | null;
+  siteAddress?: string | null;
+  address?: string | null;
 }
 
 /**

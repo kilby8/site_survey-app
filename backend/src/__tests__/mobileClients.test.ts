@@ -153,7 +153,7 @@ describe("mobile clients pipeline proxy", () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
     process.env.SOLARPRO_API_KEY = "test-service-key";
 
-    global.fetch = jest.fn().mockResolvedValue({
+    const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         clients: [
@@ -161,7 +161,8 @@ describe("mobile clients pipeline proxy", () => {
           { id: "client-2", name: "GridWorks" },
         ],
       }),
-    }) as unknown as typeof fetch;
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
 
     const res = await request(app)
       .get("/api/mobile/clients")
@@ -172,20 +173,23 @@ describe("mobile clients pipeline proxy", () => {
       { id: "client-1", name: "Acme Solar" },
       { id: "client-2", name: "GridWorks" },
     ]);
+    const fetchHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(fetchHeaders["X-Mobile-User-Email"]).toBe("mobile-clients@example.com");
   });
 
   it("returns upstream projects payload for a selected client", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
     process.env.SOLARPRO_API_KEY = "test-service-key";
 
-    global.fetch = jest.fn().mockResolvedValue({
+    const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         projects: [
           { id: "project-1", name: "Warehouse Roof", client_id: "client-1" },
         ],
       }),
-    }) as unknown as typeof fetch;
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
 
     const res = await request(app)
       .get("/api/mobile/clients/client-1/projects")
@@ -195,6 +199,8 @@ describe("mobile clients pipeline proxy", () => {
     expect(res.body.projects).toEqual([
       { id: "project-1", name: "Warehouse Roof", client_id: "client-1" },
     ]);
+    const fetchHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(fetchHeaders["X-Mobile-User-Email"]).toBe("mobile-clients@example.com");
   });
 
   it("passes correct clientId in upstream URL for projects request", async () => {

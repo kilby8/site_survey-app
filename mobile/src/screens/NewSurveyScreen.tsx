@@ -201,6 +201,7 @@ export default function NewSurveyScreen() {
 
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null);
+  const [projectDataHint, setProjectDataHint] = useState<string | null>(null);
 
   const [clientModalVisible, setClientModalVisible] = useState(false);
   const [projectModalVisible, setProjectModalVisible] = useState(false);
@@ -234,13 +235,44 @@ export default function NewSurveyScreen() {
     setSolarproOrgId(client.id);       // maps to solarpro_org_id
     setSelectedProjectId(null);
     setSelectedProjectName(null);
+    setProjectId(null);
     setSolarproProjectId(null);        // reset project when client changes
+    setProjectDataHint(null);
     setClientModalVisible(false);
   }
 
   function handleProjectSelect(project: MobileProject) {
+    const upstreamProjectName = project.project_name?.trim() || project.name?.trim() || "";
+    const upstreamSiteName = project.site_name?.trim() || project.siteName?.trim() || "";
+    const upstreamSiteAddress =
+      project.site_address?.trim() ||
+      project.siteAddress?.trim() ||
+      project.address?.trim() ||
+      "";
+
     setSelectedProjectId(project.id);
     setSelectedProjectName(project.name);
+    setProjectId(project.id);
+    if (upstreamProjectName) {
+      setProjectName(upstreamProjectName);
+    }
+    // Keep manual values unless upstream explicitly provides a site value.
+    if (upstreamSiteName) {
+      setSiteName(upstreamSiteName);
+    }
+    if (upstreamSiteAddress) {
+      setSiteAddress(upstreamSiteAddress);
+    }
+
+    const missingParts: string[] = [];
+    if (!upstreamSiteName) missingParts.push("site name");
+    if (!upstreamSiteAddress) missingParts.push("site address");
+    setProjectDataHint(
+      missingParts.length > 0
+        ? `Project data is missing ${missingParts.join(" and ")}. You can fill it manually below.`
+        : null,
+    );
+
     setSolarproProjectId(project.id);  // maps to solarpro_project_id
     setProjectModalVisible(false);
   }
@@ -939,6 +971,12 @@ export default function NewSurveyScreen() {
               {selectedProjectId === null && !clientsLoading && (
                 <View style={styles.requiredHint}>
                   <Text style={styles.requiredHintText}>⚠ Select a client and project to continue</Text>
+                </View>
+              )}
+
+              {projectDataHint && (
+                <View style={styles.infoHint}>
+                  <Text style={styles.infoHintText}>{projectDataHint}</Text>
                 </View>
               )}
 
@@ -1709,6 +1747,32 @@ const styles = StyleSheet.create({
     color: '#FFD98A',
 
     fontSize: 14,
+
+    fontWeight: '600',
+
+  },
+
+  infoHint: {
+
+    backgroundColor: '#13263C',
+
+    borderColor: '#3A6EA5',
+
+    borderWidth: 1,
+
+    borderRadius: 10,
+
+    padding: 12,
+
+    marginTop: 10,
+
+  },
+
+  infoHintText: {
+
+    color: '#B9D6F5',
+
+    fontSize: 13,
 
     fontWeight: '600',
 

@@ -85,8 +85,6 @@ function validateConfig(res: Response): boolean {
 /**
  * Proxy a request to SolarPro and forward the response.
  * Passes the authenticated user's email as X-Mobile-User-Email.
- *
- * @returns true if response was sent (success or upstream error)
  */
 async function proxyToSolarPro(
   pathname: string,
@@ -155,7 +153,6 @@ async function proxyToSolarPro(
  * SolarPro scopes the DB query to that user via X-Mobile-User-Email header.
  */
 router.get("/clients", async (req: Request, res: Response) => {
-  // requireAuth middleware guarantees req.authUser is set
   const userEmail = req.authUser?.email;
 
   if (!userEmail) {
@@ -222,3 +219,4 @@ router.get("/clients/:clientId/projects", async (req: Request, res: Response) =>
 });
 
 export default router;
+
