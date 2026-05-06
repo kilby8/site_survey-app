@@ -3,7 +3,7 @@ import {
   Survey, ChecklistItem, ChecklistStatus,
   Photo, GpsCoordinates, DEFAULT_CHECKLIST_ITEMS,
 } from '../types/survey';
-import { createSurvey, updateSurvey, fetchSurvey } from '../api/surveyApi';
+import { createSurvey, updateSurvey, fetchSurvey, completeSurvey } from '../api/surveyApi';
 import './SurveyFormV2.css';
 
 // ─────────────────────────────────────────────────────────────
@@ -428,8 +428,20 @@ export default function SurveyFormV2({ surveyId, onSaved, onCancel }: Props) {
         survey = await updateSurvey(savedIdRef.current, payload);
       } else {
         survey = await createSurvey(payload);
+        savedIdRef.current = survey.id;
       }
       setSaveStatus('saved');
+
+      // Fire the completion webhook to SolarPro.
+      // This triggers the ingest pipeline that creates the project + photos
+      // in SolarPro. Non-fatal — survey is already saved even if this fails.
+      try {
+        await completeSurvey(savedIdRef.current!);
+      } catch (webhookErr) {
+        // Log but don't block the success screen — the survey IS saved.
+        console.warn('[SurveyFormV2] completeSurvey webhook failed:', webhookErr);
+      }
+
       setSubmittedSurvey(survey);
       setSubmitted(true);
     } catch {

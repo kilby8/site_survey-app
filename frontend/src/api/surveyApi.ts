@@ -96,6 +96,22 @@ export async function fetchFallbackProjectTemplates(): Promise<FallbackProjectTe
   return (data.projects ?? []) as FallbackProjectTemplate[];
 }
 
+/**
+ * POST /api/surveys/:id/complete
+ *
+ * Marks a survey as completed and fires the webhook to SolarPro.
+ * Must be called AFTER the survey has been saved with status='submitted'.
+ * The backend deduplicates — calling it twice is safe.
+ */
+export async function completeSurvey(id: string): Promise<{ survey_id: string; status: string; event_id: string }> {
+  const res = await apiFetch(`/surveys/${id}/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) handleApiError(res, `Failed to complete survey: ${res.statusText}`);
+  return res.json() as Promise<{ survey_id: string; status: string; event_id: string }>;
+}
+
 export async function checkHealth(): Promise<boolean> {
   try {
     const res = await apiFetch('/health', {}, { includeAuth: false, notifyOnUnauthorized: false });
