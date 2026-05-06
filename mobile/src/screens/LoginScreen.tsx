@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -43,6 +44,17 @@ export default function LoginScreen() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleSolarProSignIn() {
+    const state = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const redirectUri = encodeURIComponent('sitesurvey://login');
+    const authorizeUrl =
+      `https://solarpro.solutions/api/auth/authorize` +
+      `?redirect_uri=${redirectUri}` +
+      `&state=${state}`;
+
+    void Linking.openURL(authorizeUrl);
   }
 
   return (
@@ -102,6 +114,21 @@ export default function LoginScreen() {
                   <Text style={styles.linkText}>Forgot password?</Text>
                 </TouchableOpacity>
               </View>
+
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <TouchableOpacity
+                style={styles.ssoButton}
+                onPress={handleSolarProSignIn}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in with SolarPro account"
+              >
+                <Text style={styles.ssoButtonText}>Use SolarPro Account</Text>
+              </TouchableOpacity>
 
               <Text style={styles.apiHint}>{API_URL}</Text>
             </View>
@@ -169,5 +196,39 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   linkText: { color: BRAND_PRIMARY, fontSize: 13, fontWeight: '600' },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 18,
+    marginBottom: 14,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    marginHorizontal: 12,
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  ssoButton: {
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: BRAND_PRIMARY,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ssoButtonText: {
+    color: BRAND_PRIMARY,
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
   apiHint: { marginTop: 16, fontSize: 11, color: colors.textMuted, textAlign: 'center' },
 });

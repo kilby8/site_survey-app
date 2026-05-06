@@ -396,6 +396,23 @@ VALUES
   }
 }
 
+async function deleteSurveyFromSqlServer(sqlPool: any, surveyId: string): Promise<void> {
+  await sqlPool.request().input("survey_id", surveyId).query(`
+DELETE FROM dbo.ss_ar_detections WHERE survey_id = @survey_id;
+DELETE FROM dbo.ss_survey_photos WHERE survey_id = @survey_id;
+DELETE FROM dbo.ss_checklist_items WHERE survey_id = @survey_id;
+DELETE FROM dbo.ss_surveys WHERE id = @survey_id;
+`);
+}
+
+export async function syncSurveyDeletionToSqlServer(surveyId: string): Promise<void> {
+  if (!isEnabled()) return;
+
+  const sqlPool = await getSqlServerPool();
+  await ensureSqlServerTables(sqlPool);
+  await deleteSurveyFromSqlServer(sqlPool, surveyId);
+}
+
 export async function processSqlServerSync(limit = 50): Promise<void> {
   if (!isEnabled()) return;
   if (running) return;
@@ -441,11 +458,15 @@ export async function processSqlServerSync(limit = 50): Promise<void> {
     let maxUpdatedAt = checkpoint;
 
     for (const survey of rows) {
-      const children = await fetchSurveyChildren(survey.id);
-      await upsertSurvey(sqlPool, survey);
-      await replaceChecklist(sqlPool, survey.id, children.checklist);
-      await replacePhotos(sqlPool, survey.id, children.photos);
-      await replaceDetections(sqlPool, survey.id, children.detections);
+      if (survey.deleted_at) {
+        await deleteSurveyFromSqlServer(sqlPool, survey.id);
+      } else {
+        const children = await fetchSurveyChildren(survey.id);
+        await upsertSurvey(sqlPool, survey);
+        await replaceChecklist(sqlPool, survey.id, children.checklist);
+        await replacePhotos(sqlPool, survey.id, children.photos);
+        await replaceDetections(sqlPool, survey.id, children.detections);
+      }
 
       if (new Date(survey.updated_at).getTime() > new Date(maxUpdatedAt).getTime()) {
         maxUpdatedAt = survey.updated_at;

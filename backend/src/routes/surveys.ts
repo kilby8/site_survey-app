@@ -24,6 +24,7 @@ import {
   incrementMetric,
   recordTiming,
 } from "../services/metrics";
+import { syncSurveyDeletionToSqlServer } from "../services/sqlServerSyncService";
 
 let surveysSoftDeleteReady: Promise<void> | null = null;
 
@@ -1560,6 +1561,41 @@ router.get("/:id", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("GET /api/surveys/:id error:", err);
     res.status(500).json({ error: "Failed to retrieve survey" });
+  }
+});
+
+/** DELETE /api/surveys/:id */
+router.delete("/:id", async (req: Request, res: Response) => {
+  if (!requireUuidParam(req, res, "id")) return;
+
+  const { id } = req.params;
+
+  try {
+    await ensureSurveySoftDeleteColumn();
+
+    const { rows: existing } = await pool.query<{ id: string }>(
+      `SELECT id::text FROM surveys WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+      [id],
+    );
+
+    if (existing.length === 0) {
+      res.status(404).json({ error: "Survey not found" });
+      return;
+    }
+
+    await softDeleteSurveyAndQueueCleanup(id);
+
+    try {
+      await syncSurveyDeletionToSqlServer(id);
+    } catch (syncError) {
+      console.warn("DELETE /api/surveys/:id SQL Server mirror delete skipped:", syncError);
+    }
+
+    broadcastSurveyEvent("survey.deleted", { id });
+    res.status(204).send();
+  } catch (err) {
+    console.error("DELETE /api/surveys/:id error:", err);
+    res.status(500).json({ error: "Failed to delete survey" });
   }
 });
 

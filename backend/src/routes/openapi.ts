@@ -164,7 +164,11 @@ router.get("/openapi.json", (_req: Request, res: Response) => {
         delete: {
           summary: "Delete survey",
           security: [{ bearerAuth: [] }],
-          responses: { "204": { description: "Deleted" } },
+          responses: {
+            "204": { description: "Deleted" },
+            "404": { description: "Not found" },
+            "422": { description: "Validation failed" },
+          },
         },
       },
       "/surveys/{id}/complete": {
