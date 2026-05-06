@@ -1,96 +1,224 @@
 /**
  * routes/mobileClients.ts
  *
- * Client/project lookup endpoints for the mobile app.
+ * PHASE 4.15.4 — USER-SCOPED MOBILE DATA (HARDENED)
  *
- * Supported mode:
- * - Proxy to Raymond's website pipeline API when SOLARPRO_API_URL is configured.
+ * Client/project lookup endpoints for the mobile app.
+ * Proxies to SolarPro's /api/mobile/* with strict user scoping.
+ *
+ * Auth model:
+ *   - Mobile app authenticates with this Render backend via JWT (requireAuth middleware)
+ *   - This backend proxies to SolarPro using:
+ *       Authorization: Bearer <SOLARPRO_API_KEY>   (service-to-service key)
+ *       X-Mobile-User-Email: <req.authUser.email>  (CRITICAL — scopes data to correct user)
+ *
+ * Without X-Mobile-User-Email, SolarPro falls back to the service account user
+ * and returns that user's data instead of the authenticated user's data.
  *
  * Environment variables:
- *   SOLARPRO_API_URL   – (optional) base URL of Raymond's SolarPro backend
- *   SOLARPRO_API_KEY   – (optional) bearer token for service-to-service auth
+ *   SOLARPRO_API_URL   — base URL of SolarPro backend (required)
+ *   SOLARPRO_API_KEY   — service-to-service bearer token (required)
  */
+
 import { Router, type Request, type Response } from "express";
 
 const router = Router();
 
-function getPartnerApiUrl(): string {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function getSolarProUrl(): string {
   return (process.env.SOLARPRO_API_URL ?? "").trim().replace(/\/$/, "");
 }
 
-function getPartnerApiKey(): string {
+function getSolarProApiKey(): string {
   return (process.env.SOLARPRO_API_KEY ?? "").trim();
 }
 
-function partnerHeaders(): Record<string, string> {
+/**
+ * Build proxy headers for SolarPro service-to-service requests.
+ * CRITICAL: X-Mobile-User-Email scopes the SolarPro query to the correct user.
+ */
+function buildProxyHeaders(userEmail: string): Record<string, string> {
+  const apiKey = getSolarProApiKey();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json",
+    // Scope the SolarPro query to this specific user — without this header,
+    // SolarPro falls back to the service account and returns wrong user's data.
+    "X-Mobile-User-Email": userEmail.trim().toLowerCase(),
   };
-  const partnerApiKey = getPartnerApiKey();
-  if (partnerApiKey) {
-    headers["Authorization"] = `Bearer ${partnerApiKey}`;
+  if (apiKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
   }
   return headers;
 }
 
-function partnerIntegrationMissing(res: Response): void {
-  res.status(503).json({
-    error: "SolarPro pipeline API is not configured",
-  });
-}
+/**
+ * Validates that SOLARPRO_API_URL and SOLARPRO_API_KEY are configured.
+ * Returns true if valid, false + sends 503 if not.
+ */
+function validateConfig(res: Response): boolean {
+  const url = getSolarProUrl();
+  const key = getSolarProApiKey();
 
-async function proxyPartnerJson(pathname: string, res: Response): Promise<boolean> {
-  const partnerApiUrl = getPartnerApiUrl();
-
-  if (!partnerApiUrl) {
-    partnerIntegrationMissing(res);
-    return true;
+  if (!url) {
+    res.status(503).json({
+      error: "configuration_error",
+      message: "SOLARPRO_API_URL is not configured on this server.",
+    });
+    return false;
   }
 
+  if (!key) {
+    res.status(503).json({
+      error: "configuration_error",
+      message: "SOLARPRO_API_KEY is not configured on this server.",
+    });
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Proxy a request to SolarPro and forward the response.
+ * Passes the authenticated user's email as X-Mobile-User-Email.
+ *
+ * @returns true if response was sent (success or upstream error)
+ */
+async function proxyToSolarPro(
+  pathname: string,
+  userEmail: string,
+  res: Response,
+): Promise<void> {
+  const solarProUrl = getSolarProUrl();
+
   try {
-    const upstream = await fetch(`${partnerApiUrl}${pathname}`, {
-      headers: partnerHeaders(),
+    const upstream = await fetch(`${solarProUrl}${pathname}`, {
+      method: "GET",
+      headers: buildProxyHeaders(userEmail),
       signal: AbortSignal.timeout(8_000),
     });
 
     if (!upstream.ok) {
       const text = await upstream.text().catch(() => "");
-      console.error(`[mobileClients] upstream ${pathname} error ${upstream.status}: ${text}`);
+      console.error(
+        `[MOBILE_PROXY] upstream ${pathname} error ${upstream.status}: ${text.slice(0, 200)}`,
+      );
+
+      if (upstream.status === 401 || upstream.status === 403) {
+        res.status(502).json({
+          error: "upstream_auth_failed",
+          message: "SolarPro pipeline API rejected backend authentication.",
+        });
+        return;
+      }
+
+      if (upstream.status === 404) {
+        res.status(404).json({
+          error: "not_found",
+          message: "Resource not found.",
+        });
+        return;
+      }
+
       res.status(502).json({
-        error: upstream.status === 401 || upstream.status === 403
-          ? "SolarPro pipeline API rejected backend authentication"
-          : "Failed to fetch data from SolarPro pipeline API",
+        error: "upstream_error",
+        message: "Failed to fetch data from SolarPro pipeline API.",
       });
-      return true;
+      return;
     }
 
     const data = await upstream.json() as unknown;
     res.json(data);
-    return true;
   } catch (err) {
-    console.error(`[mobileClients] upstream ${pathname} fetch error:`, err);
-    res.status(502).json({ error: "SolarPro pipeline API is unreachable" });
-    return true;
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[MOBILE_PROXY] upstream ${pathname} fetch error: ${msg}`);
+    res.status(502).json({
+      error: "upstream_unreachable",
+      message: "SolarPro pipeline API is unreachable.",
+    });
   }
 }
 
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
+
 /**
  * GET /api/mobile/clients
- * Returns a list of { id, name } clients from Raymond's website pipeline.
+ *
+ * Returns ONLY clients belonging to the authenticated user.
+ * User identity comes from req.authUser.email (set by requireAuth middleware).
+ * SolarPro scopes the DB query to that user via X-Mobile-User-Email header.
  */
-router.get("/clients", async (_req: Request, res: Response) => {
-  await proxyPartnerJson("/api/mobile/clients", res);
+router.get("/clients", async (req: Request, res: Response) => {
+  // requireAuth middleware guarantees req.authUser is set
+  const userEmail = req.authUser?.email;
+
+  if (!userEmail) {
+    res.status(400).json({
+      error: "missing_user_email",
+      message: "Authenticated user has no email in token.",
+    });
+    return;
+  }
+
+  const normalizedEmail = userEmail.trim().toLowerCase();
+
+  if (!validateConfig(res)) return;
+
+  console.log(
+    `[MOBILE_SCOPE] GET /clients ` +
+    `incomingEmail=${normalizedEmail} source=mobile_api`,
+  );
+
+  await proxyToSolarPro("/api/mobile/clients", normalizedEmail, res);
 });
 
 /**
  * GET /api/mobile/clients/:clientId/projects
- * Returns a list of { id, name, client_id } projects for a given client.
+ *
+ * Returns ONLY projects for the specified client IF it belongs to the
+ * authenticated user. SolarPro enforces the user_id scoping — if the
+ * client doesn't belong to the user, SolarPro returns 404.
  */
 router.get("/clients/:clientId/projects", async (req: Request, res: Response) => {
+  const userEmail = req.authUser?.email;
   const { clientId } = req.params;
-  await proxyPartnerJson(`/api/mobile/clients/${encodeURIComponent(clientId)}/projects`, res);
+
+  if (!userEmail) {
+    res.status(400).json({
+      error: "missing_user_email",
+      message: "Authenticated user has no email in token.",
+    });
+    return;
+  }
+
+  if (!clientId || typeof clientId !== "string" || !clientId.trim()) {
+    res.status(400).json({
+      error: "invalid_client_id",
+      message: "clientId path parameter is required.",
+    });
+    return;
+  }
+
+  const normalizedEmail = userEmail.trim().toLowerCase();
+
+  if (!validateConfig(res)) return;
+
+  console.log(
+    `[MOBILE_SCOPE] GET /clients/${clientId}/projects ` +
+    `incomingEmail=${normalizedEmail} source=mobile_api`,
+  );
+
+  await proxyToSolarPro(
+    `/api/mobile/clients/${encodeURIComponent(clientId)}/projects`,
+    normalizedEmail,
+    res,
+  );
 });
 
 export default router;
-
