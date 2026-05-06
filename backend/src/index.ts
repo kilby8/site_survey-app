@@ -250,6 +250,42 @@ app.get("/api/metrics", requireAuth, (req, res) => {
 // API routes
 // ----------------------------------------------------------------
 app.use("/api/webhooks", webhooksRouter);
+
+// Public photo serving — no auth required.
+// Photos are identified by UUID (unguessable). Must be registered BEFORE
+// the requireAuth middleware on /api/surveys so the route is reachable
+// without a Bearer token (SolarPro fetches photo URLs directly).
+app.get("/api/surveys/photos/:photoId", async (req, res) => {
+  const { photoId } = req.params;
+  if (!photoId || !/^[0-9a-f-]{36}$/i.test(photoId)) {
+    res.status(400).json({ error: "Invalid photo id" });
+    return;
+  }
+  try {
+    const { rows } = await pool.query(
+      "SELECT photo_data, mime_type, filename FROM survey_photos WHERE id = $1 LIMIT 1",
+      [photoId],
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: "Photo not found" });
+      return;
+    }
+    const row = rows[0] as { photo_data: Buffer | null; mime_type: string; filename: string };
+    if (!row.photo_data) {
+      res.status(404).json({ error: "Photo binary not available" });
+      return;
+    }
+    res.setHeader("Content-Type", row.mime_type || "image/jpeg");
+    res.setHeader("Content-Length", row.photo_data.length);
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.setHeader("Content-Disposition", `inline; filename="${row.filename || "photo.jpg"}"`);
+    res.send(row.photo_data);
+  } catch (err) {
+    console.error("[GET /api/surveys/photos/:photoId]", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.use("/api/surveys", requireAuth, adminOverrideDebug, surveysRouter);
 app.use("/api/categories", requireAuth, categoriesRouter);
 app.use("/api/users", usersRouter);
