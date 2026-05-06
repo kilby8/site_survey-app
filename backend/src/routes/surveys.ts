@@ -1136,12 +1136,18 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
       id: string;
       status: string;
       project_id: string | null;
+      solarpro_user_id: string | null;
+      solarpro_project_id: string | null;
+      solarpro_email: string | null;
+      inspector_name: string | null;
     }>(
       `UPDATE surveys
           SET status = 'submitted',
               updated_at = NOW()
         WHERE id = $1 AND deleted_at IS NULL
-        RETURNING id::text, status, project_id::text`,
+        RETURNING id::text, status, project_id::text,
+                  solarpro_user_id, solarpro_project_id, solarpro_email,
+                  inspector_name`,
       [surveyId],
     );
 
@@ -1156,6 +1162,12 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
       survey_id: survey.id,
       status: "submitted",
       completed_at: completedAt,
+      // F-06: Pass ownership claims so SolarPro routes the ingest to the
+      // correct user rather than falling back to SURVEY_INGEST_DEFAULT_USER_ID.
+      solarpro_user_id: survey.solarpro_user_id ?? null,
+      solarpro_project_id: survey.solarpro_project_id ?? null,
+      solarpro_email: survey.solarpro_email ?? null,
+      inspector_name: survey.inspector_name ?? null,
     });
 
     await processWebhookQueue(10);

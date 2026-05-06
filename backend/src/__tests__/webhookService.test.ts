@@ -110,3 +110,96 @@ describe("webhookService non-retriable delivery behavior", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// F-06: Ownership routing — solarpro_* fields must be in webhook payload
+// ---------------------------------------------------------------------------
+describe("enqueueSurveyCompleteWebhook — F-06 ownership fields", () => {
+  afterEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+  });
+
+  it("includes solarpro_user_id, solarpro_project_id, solarpro_email in payload", async () => {
+    let insertedPayload: Record<string, unknown> | null = null;
+
+    const queryMock = jest.fn(async (sql: string, params?: unknown[]): Promise<{ rows: unknown[] }> => {
+      const text = sql.replace(/\s+/g, " ").trim();
+      if (text.includes("CREATE TABLE IF NOT EXISTS webhook_deliveries")) {
+        return { rows: [] };
+      }
+      if (text.includes("INSERT INTO webhook_deliveries")) {
+        // params: [survey_id, event_type, event_id, payload_json]
+        const payloadJson = (params as string[])?.[3];
+        if (payloadJson) {
+          insertedPayload = JSON.parse(payloadJson) as Record<string, unknown>;
+        }
+        return { rows: [] };
+      }
+      return { rows: [] };
+    });
+
+    jest.doMock("../database", () => ({
+      pool: { query: queryMock },
+    }));
+
+    const { enqueueSurveyCompleteWebhook } = await import("../services/webhookService");
+
+    await enqueueSurveyCompleteWebhook({
+      survey_id: "survey-abc",
+      status: "submitted",
+      completed_at: "2026-05-02T00:00:00.000Z",
+      solarpro_user_id: "user-uuid-123",
+      solarpro_project_id: "project-uuid-456",
+      solarpro_email: "ray@example.com",
+      inspector_name: "Ray Test",
+    });
+
+    expect(insertedPayload).not.toBeNull();
+    expect(insertedPayload!.solarpro_user_id).toBe("user-uuid-123");
+    expect(insertedPayload!.solarpro_project_id).toBe("project-uuid-456");
+    expect(insertedPayload!.solarpro_email).toBe("ray@example.com");
+    expect(insertedPayload!.inspector_name).toBe("Ray Test");
+    expect(insertedPayload!.survey_id).toBe("survey-abc");
+    expect(insertedPayload!.event).toBe("survey.completed");
+  });
+
+  it("sends null for missing ownership fields (no fallback to undefined)", async () => {
+    let insertedPayload: Record<string, unknown> | null = null;
+
+    const queryMock = jest.fn(async (sql: string, params?: unknown[]): Promise<{ rows: unknown[] }> => {
+      const text = sql.replace(/\s+/g, " ").trim();
+      if (text.includes("CREATE TABLE IF NOT EXISTS webhook_deliveries")) {
+        return { rows: [] };
+      }
+      if (text.includes("INSERT INTO webhook_deliveries")) {
+        const payloadJson = (params as string[])?.[3];
+        if (payloadJson) {
+          insertedPayload = JSON.parse(payloadJson) as Record<string, unknown>;
+        }
+        return { rows: [] };
+      }
+      return { rows: [] };
+    });
+
+    jest.doMock("../database", () => ({
+      pool: { query: queryMock },
+    }));
+
+    const { enqueueSurveyCompleteWebhook } = await import("../services/webhookService");
+
+    await enqueueSurveyCompleteWebhook({
+      survey_id: "survey-xyz",
+      status: "submitted",
+      completed_at: "2026-05-02T00:00:00.000Z",
+      // No solarpro_* fields — simulates standalone survey with no handoff JWT
+    });
+
+    expect(insertedPayload).not.toBeNull();
+    // Fields must be present (null) — not absent — so SolarPro ownerResolver
+    // can distinguish "sent null" from "field missing entirely"
+    expect(insertedPayload).toHaveProperty("solarpro_user_id", null);
+    expect(insertedPayload).toHaveProperty("solarpro_project_id", null);
+    expect(insertedPayload).toHaveProperty("solarpro_email", null);
+  });
+});
+

@@ -142,11 +142,15 @@ export default function NewSurveyScreen() {
 
   const [projectId, setProjectId] = useState<string | null>(null);
 
-  const [solarproUserId, setSolarproUserId] = useState<string | null>(null);
+  // F-06: Pre-populate from the logged-in user so the webhook can scope
+  // the SolarPro ingest to the correct account even without a handoff JWT.
+  // user.id IS the SolarPro user UUID (they log in with SolarPro credentials).
+  // These are overwritten if a handoff JWT is present (lines below).
+  const [solarproUserId, setSolarproUserId] = useState<string | null>(user?.id ?? null);
 
   const [solarproProjectId, setSolarproProjectId] = useState<string | null>(null);
 
-  const [solarproEmail, setSolarproEmail] = useState<string | null>(null);
+  const [solarproEmail, setSolarproEmail] = useState<string | null>(user?.email ?? null);
 
   const [solarproOrgId, setSolarproOrgId] = useState<string | null>(null);
 

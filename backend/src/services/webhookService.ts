@@ -10,6 +10,18 @@ interface SurveyCompletePayload {
   survey_id: string;
   status: string;
   completed_at: string;
+  // F-06: Ownership routing — populated from survey record so SolarPro
+  // can scope the ingest to the correct user instead of falling back to
+  // the service account (SURVEY_INGEST_DEFAULT_USER_ID).
+  solarpro_user_id?: string | null;
+  solarpro_project_id?: string | null;
+  solarpro_email?: string | null;
+  // Inspector identity — used as fallback ownership resolution
+  inspector_name?: string | null;
+  inspector_email?: string | null;
+  // On-device picker selections (standalone surveys)
+  solarpro_selected_project_id?: string | null;
+  solarpro_selected_client_id?: string | null;
 }
 
 interface WebhookDeliveryRow {
@@ -77,6 +89,15 @@ export async function enqueueSurveyCompleteWebhook(params: {
   survey_id: string;
   status: string;
   completed_at: string;
+  // F-06: Ownership routing fields — must be passed so SolarPro scopes
+  // the ingest to the correct user rather than the service account fallback.
+  solarpro_user_id?: string | null;
+  solarpro_project_id?: string | null;
+  solarpro_email?: string | null;
+  inspector_name?: string | null;
+  inspector_email?: string | null;
+  solarpro_selected_project_id?: string | null;
+  solarpro_selected_client_id?: string | null;
 }): Promise<string> {
   await ensureWebhookDeliveriesTable();
 
@@ -88,6 +109,14 @@ export async function enqueueSurveyCompleteWebhook(params: {
     survey_id: params.survey_id,
     status: params.status,
     completed_at: params.completed_at,
+    // F-06: Include ownership claims so SolarPro resolves the correct user
+    solarpro_user_id: params.solarpro_user_id ?? null,
+    solarpro_project_id: params.solarpro_project_id ?? null,
+    solarpro_email: params.solarpro_email ?? null,
+    inspector_name: params.inspector_name ?? null,
+    inspector_email: params.inspector_email ?? null,
+    solarpro_selected_project_id: params.solarpro_selected_project_id ?? null,
+    solarpro_selected_client_id: params.solarpro_selected_client_id ?? null,
   };
 
   await pool.query(
