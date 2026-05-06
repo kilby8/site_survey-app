@@ -813,7 +813,7 @@ export default function NewSurveyScreen() {
 
           <Text style={styles.stepHint}>
 
-            Step {currentStep} of 4 Â· {stepLabels[currentStep - 1]}
+            Step {currentStep} of 4 · {stepLabels[currentStep - 1]}
 
           </Text>
 
@@ -1137,7 +1137,7 @@ export default function NewSurveyScreen() {
 
                 <Text style={styles.reviewKey}>Project</Text>
 
-                <Text style={styles.reviewVal}>{projectName || 'â€“'}</Text>
+                <Text style={styles.reviewVal}>{projectName || '—'}</Text>
 
               </View>
 
@@ -1145,7 +1145,7 @@ export default function NewSurveyScreen() {
 
                 <Text style={styles.reviewKey}>Inspector</Text>
 
-                <Text style={styles.reviewVal}>{inspectorName || 'â€“'}</Text>
+                <Text style={styles.reviewVal}>{inspectorName || '—'}</Text>
 
               </View>
 
@@ -1153,7 +1153,7 @@ export default function NewSurveyScreen() {
 
                 <Text style={styles.reviewKey}>Site</Text>
 
-                <Text style={styles.reviewVal}>{siteName || 'â€“'}</Text>
+                <Text style={styles.reviewVal}>{siteName || '—'}</Text>
 
               </View>
 
@@ -1213,7 +1213,7 @@ export default function NewSurveyScreen() {
 
               >
 
-                <Text style={styles.secondaryBtnText}>â† Back</Text>
+                <Text style={styles.secondaryBtnText}>{"<- Back"}</Text>
 
               </TouchableOpacity>
 
@@ -1247,7 +1247,7 @@ export default function NewSurveyScreen() {
 
               >
 
-                <Text style={styles.btnText}>Next â†’</Text>
+                <Text style={styles.btnText}>Next →</Text>
 
               </TouchableOpacity>
 
