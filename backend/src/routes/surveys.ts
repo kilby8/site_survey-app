@@ -443,7 +443,8 @@ async function fetchSurveyFull(id: string) {
   );
 
   const { rows: photos } = await pool.query(
-    `SELECT id, survey_id, filename, label, file_path, mime_type, captured_at, created_at
+    `SELECT id, survey_id, filename, label, file_path, mime_type, captured_at, created_at,
+            CASE WHEN photo_data IS NOT NULL THEN true ELSE false END as has_photo_data
        FROM survey_photos
       WHERE survey_id = $1
       ORDER BY captured_at`,
@@ -514,10 +515,22 @@ async function upsertPhotos(
       }
     }
 
+    // Also store raw binary in photo_data for persistent DB-backed serving
+    let photoDataBuffer: Buffer | null = null;
+    if (p.data_url) {
+      try {
+        let base64Data2 = p.data_url;
+        const dataUriMatch2 = p.data_url.match(/^data:([^;]+);base64,(.+)$/s);
+        if (dataUriMatch2) base64Data2 = dataUriMatch2[2];
+        const buf2 = Buffer.from(base64Data2, "base64");
+        if (buf2.length > 0) photoDataBuffer = buf2;
+      } catch { /* non-fatal */ }
+    }
+
     await client.query(
       `INSERT INTO survey_photos
-         (survey_id, filename, label, data_url, file_path, mime_type, captured_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+         (survey_id, filename, label, data_url, file_path, mime_type, captured_at, photo_data)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         surveyId,
         p.filename ?? null,
@@ -526,6 +539,7 @@ async function upsertPhotos(
         filePath,
         p.mime_type ?? "image/jpeg",
         p.captured_at ? new Date(p.captured_at) : new Date(),
+        photoDataBuffer,
       ],
     );
   }
@@ -1503,28 +1517,29 @@ async function mapSurveyPhotosWithRemoteUrls(
 ): Promise<Array<Record<string, unknown>>> {
   if (photos.length === 0) return photos;
 
-  if (!process.env.STORAGE_BACKEND || process.env.STORAGE_BACKEND === "local") {
-    return photos.map((photo) => {
-      const filePath =
-        typeof photo.file_path === "string" ? (photo.file_path as string) : "";
-      const remoteUrl = filePath.startsWith("http")
-        ? filePath
-        : filePath.startsWith("/")
-          ? filePath
-          : `/uploads/${filePath}`;
-
-      return { ...photo, remote_url: remoteUrl };
-    });
-  }
-
   return photos.map((photo) => {
+    const photoId = typeof photo.id === "string" ? photo.id : "";
+    const hasPhotoData = photo.has_photo_data === true;
+
+    // If photo binary is stored in DB, serve via the /api/surveys/photos/:id endpoint.
+    // This is always accessible regardless of Render disk state.
+    if (hasPhotoData && photoId) {
+      const serveUrl = `/api/surveys/photos/${photoId}`;
+      return { ...photo, remote_url: serveUrl, file_path: serveUrl };
+    }
+
+    // Fallback: use file_path as-is (legacy local disk or S3 presigned URL)
     const filePath =
       typeof photo.file_path === "string" ? (photo.file_path as string) : "";
-    return {
-      ...photo,
-      remote_url: filePath,
-      signed_url: filePath,
-    };
+    const remoteUrl = filePath.startsWith("http")
+      ? filePath
+      : filePath.startsWith("/")
+        ? filePath
+        : filePath
+          ? `/uploads/${filePath}`
+          : "";
+
+    return { ...photo, remote_url: remoteUrl };
   });
 }
 
@@ -1537,6 +1552,58 @@ function requireSurveyReadAccess(req: Request, res: Response): boolean {
   res.status(403).json({ error: "Forbidden" });
   return false;
 }
+
+/**
+ * GET /api/surveys/photos/:photoId
+ *
+ * Serves a photo binary stored in survey_photos.photo_data (bytea).
+ * This is the persistent photo serving endpoint — works regardless of
+ * whether Render's ephemeral /uploads/ disk has been wiped.
+ *
+ * No auth required for serving (photos are identified by UUID — guessing
+ * is not practical). This matches how static file serving works.
+ */
+router.get("/photos/:photoId", async (req: Request, res: Response) => {
+  const { photoId } = req.params;
+  if (!photoId || !/^[0-9a-f-]{36}$/.test(photoId)) {
+    res.status(400).json({ error: "Invalid photo id" });
+    return;
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT photo_data, mime_type, filename FROM survey_photos WHERE id = $1 LIMIT 1`,
+      [photoId],
+    );
+
+    if (rows.length === 0) {
+      res.status(404).json({ error: "Photo not found" });
+      return;
+    }
+
+    const row = rows[0] as { photo_data: Buffer | null; mime_type: string; filename: string };
+
+    if (!row.photo_data) {
+      res.status(404).json({ error: "Photo binary not available" });
+      return;
+    }
+
+    const mimeType = row.mime_type || "image/jpeg";
+    const filename = row.filename || "photo.jpg";
+
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Length", row.photo_data.length);
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${filename}"`,
+    );
+    res.send(row.photo_data);
+  } catch (err) {
+    console.error("[GET /photos/:photoId] error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 /** GET /api/surveys/:id */
 router.get("/:id", async (req: Request, res: Response) => {
@@ -1929,8 +1996,8 @@ router.post(
 
       const { rows: photoRows } = await pool.query(
         `INSERT INTO survey_photos
-         (survey_id, filename, label, file_path, mime_type, captured_at)
-       VALUES ($1, $2, $3, $4, $5, $6)
+         (survey_id, filename, label, file_path, mime_type, captured_at, photo_data)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
         [
           id,
@@ -1939,6 +2006,7 @@ router.post(
           storedPath, // URL returned by storageClient (local path or S3 presigned URL)
           file.mimetype,
           captured_at,
+          file.buffer, // store raw binary for persistent DB-backed serving
         ],
       );
       inserted.push(photoRows[0]);
