@@ -481,15 +481,48 @@ async function upsertPhotos(
     surveyId,
   ]);
   for (const p of photos) {
+    // If the photo was sent as base64 data_url, persist it to storage
+    // (local /uploads/ or S3) and store the resulting path in file_path.
+    // This ensures fetchSurveyFull() and extractFilesLegacy() can build a
+    // public URL for each photo so SolarPro can ingest them.
+    let filePath: string | null = null;
+    if (p.data_url) {
+      try {
+        // data_url may be a bare base64 string or a data URI like
+        // "data:image/jpeg;base64,/9j/4AAQ..."
+        const mimeType = p.mime_type ?? "image/jpeg";
+        let base64Data = p.data_url;
+        const dataUriMatch = p.data_url.match(/^data:([^;]+);base64,(.+)$/s);
+        if (dataUriMatch) {
+          base64Data = dataUriMatch[2];
+        }
+        const buffer = Buffer.from(base64Data, "base64");
+        if (buffer.length > 0) {
+          const ext = mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+          const filename =
+            p.filename ??
+            `${surveyId}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+          filePath = await uploadFile(buffer, filename, mimeType);
+        }
+      } catch (uploadErr) {
+        // Non-fatal: store data_url only, file_path remains null.
+        console.warn(
+          `[upsertPhotos] Failed to persist base64 photo to storage for survey ${surveyId}:`,
+          uploadErr,
+        );
+      }
+    }
+
     await client.query(
       `INSERT INTO survey_photos
-         (survey_id, filename, label, data_url, mime_type, captured_at)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+         (survey_id, filename, label, data_url, file_path, mime_type, captured_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         surveyId,
         p.filename ?? null,
         p.label ?? null,
         p.data_url ?? null,
+        filePath,
         p.mime_type ?? "image/jpeg",
         p.captured_at ? new Date(p.captured_at) : new Date(),
       ],
