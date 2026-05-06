@@ -237,10 +237,14 @@ interface ChecklistItemInput {
 
 interface PhotoInput {
   filename?: string;
+  name?: string;       // camelCase alias - mobile sends `name` for the filename
   label?: string;
-  data_url?: string; // base64 â€” used by mobile sync
-  mime_type?: string;
-  captured_at?: string;
+  data_url?: string;   // base64 - used by mobile sync (snake_case)
+  dataUrl?: string;    // base64 - camelCase alias sent by mobile frontend
+  mime_type?: string;  // snake_case
+  mimeType?: string;   // camelCase alias
+  captured_at?: string; // snake_case
+  capturedAt?: string;  // camelCase alias
 }
 
 /** GeoJSON Point accepted as the `location` field in a request body. */
@@ -473,7 +477,11 @@ async function upsertChecklist(
   }
 }
 
-/** Replace all photos (base64 variant) for a survey within a transaction client. */
+/** Replace all photos (base64 variant) for a survey within a transaction client.
+ *
+ * Accepts both snake_case (backend canonical) and camelCase (mobile frontend)
+ * field names so either client can call this without a transform layer.
+ */
 async function upsertPhotos(
   client: import("pg").PoolClient,
   surveyId: string,
@@ -483,18 +491,26 @@ async function upsertPhotos(
     surveyId,
   ]);
   for (const p of photos) {
+    // Normalise camelCase fields sent by the mobile frontend to snake_case.
+    // Mobile sends: { name, dataUrl, mimeType, capturedAt }
+    // Backend expects: { filename, data_url, mime_type, captured_at }
+    const rawDataUrl   = p.data_url   ?? p.dataUrl   ?? null;
+    const rawMimeType  = p.mime_type  ?? p.mimeType  ?? "image/jpeg";
+    const rawFilename  = p.filename   ?? p.name      ?? null;
+    const rawCaptured  = p.captured_at ?? p.capturedAt ?? null;
+
     // If the photo was sent as base64 data_url, persist it to storage
     // (local /uploads/ or S3) and store the resulting path in file_path.
     // This ensures fetchSurveyFull() and extractFilesLegacy() can build a
     // public URL for each photo so SolarPro can ingest them.
     let filePath: string | null = null;
-    if (p.data_url) {
+    if (rawDataUrl) {
       try {
-        // data_url may be a bare base64 string or a data URI like
+        // rawDataUrl may be a bare base64 string or a data URI like
         // "data:image/jpeg;base64,/9j/4AAQ..."
-        const mimeType = p.mime_type ?? "image/jpeg";
-        let base64Data = p.data_url;
-        const dataUriMatch = p.data_url.match(/^data:([^;]+);base64,(.+)$/s);
+        const mimeType = rawMimeType;
+        let base64Data = rawDataUrl;
+        const dataUriMatch = rawDataUrl.match(/^data:([^;]+);base64,(.+)$/s);
         if (dataUriMatch) {
           base64Data = dataUriMatch[2];
         }
@@ -502,7 +518,7 @@ async function upsertPhotos(
         if (buffer.length > 0) {
           const ext = mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
           const filename =
-            p.filename ??
+            rawFilename ??
             `${surveyId}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
           filePath = await uploadFile(buffer, filename, mimeType);
         }
@@ -517,15 +533,26 @@ async function upsertPhotos(
 
     // Also store raw binary in photo_data for persistent DB-backed serving
     let photoDataBuffer: Buffer | null = null;
-    if (p.data_url) {
+    if (rawDataUrl) {
       try {
-        let base64Data2 = p.data_url;
-        const dataUriMatch2 = p.data_url.match(/^data:([^;]+);base64,(.+)$/s);
+        let base64Data2 = rawDataUrl;
+        const dataUriMatch2 = rawDataUrl.match(/^data:([^;]+);base64,(.+)$/s);
         if (dataUriMatch2) base64Data2 = dataUriMatch2[2];
         const buf2 = Buffer.from(base64Data2, "base64");
         if (buf2.length > 0) photoDataBuffer = buf2;
       } catch { /* non-fatal */ }
     }
+
+    console.info(JSON.stringify({
+      type: "upsert_photo",
+      survey_id: surveyId,
+      filename: rawFilename,
+      has_data_url: Boolean(rawDataUrl),
+      data_url_length: rawDataUrl?.length ?? 0,
+      has_photo_data: Boolean(photoDataBuffer),
+      photo_data_bytes: photoDataBuffer?.length ?? 0,
+      file_path: filePath,
+    }));
 
     await client.query(
       `INSERT INTO survey_photos
@@ -533,12 +560,12 @@ async function upsertPhotos(
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         surveyId,
-        p.filename ?? null,
+        rawFilename,
         p.label ?? null,
-        p.data_url ?? null,
+        rawDataUrl,
         filePath,
-        p.mime_type ?? "image/jpeg",
-        p.captured_at ? new Date(p.captured_at) : new Date(),
+        rawMimeType,
+        rawCaptured ? new Date(rawCaptured) : new Date(),
         photoDataBuffer,
       ],
     );
@@ -911,7 +938,9 @@ router.post("/sync", async (req: Request, res: Response) => {
   const client = await pool.connect();
 
   try {
-    for (const { action, survey } of surveys) {
+    for (const { action, survey: rawSurvey } of surveys) {
+      // Normalise camelCase keys from mobile frontend to snake_case
+      const survey = normalizeSurveyInput(rawSurvey as unknown as Record<string, unknown>);
       try {
         await client.query("BEGIN");
 
@@ -1667,6 +1696,67 @@ router.delete("/:id", async (req: Request, res: Response) => {
 });
 
 /**
+ * Normalise a request body that may use camelCase keys (sent by the mobile
+ * frontend) into the snake_case SurveyInput shape expected by the backend.
+ *
+ * Mobile frontend sends:
+ *   { title, siteName, siteAddress, inspectorName, dateTime,
+ *     gpsCoordinates: { latitude, longitude, accuracy },
+ *     photos: [{ name, dataUrl, mimeType, capturedAt }], ... }
+ *
+ * Backend expects:
+ *   { project_name, site_name, site_address, inspector_name, survey_date,
+ *     latitude, longitude, gps_accuracy,
+ *     photos: [{ filename, data_url, mime_type, captured_at }], ... }
+ */
+function normalizeSurveyInput(raw: Record<string, unknown>): SurveyInput & { id?: string } {
+  // Coerce coordinates from gpsCoordinates object if present
+  const gps = raw.gpsCoordinates as { latitude?: number; longitude?: number; accuracy?: number } | undefined;
+
+  // Coerce photos: mobile sends camelCase Photo objects
+  let photos: PhotoInput[] | undefined = undefined;
+  if (Array.isArray(raw.photos)) {
+    photos = (raw.photos as Record<string, unknown>[]).map((p) => ({
+      filename:    (p.filename   ?? p.name)        as string | undefined,
+      name:        p.name                          as string | undefined,
+      label:       p.label                         as string | undefined,
+      data_url:    (p.data_url   ?? p.dataUrl)     as string | undefined,
+      dataUrl:     p.dataUrl                       as string | undefined,
+      mime_type:   (p.mime_type  ?? p.mimeType)    as string | undefined,
+      mimeType:    p.mimeType                      as string | undefined,
+      captured_at: (p.captured_at ?? p.capturedAt) as string | undefined,
+      capturedAt:  p.capturedAt                    as string | undefined,
+    }));
+  }
+
+  return {
+    // Prefer snake_case, fall back to camelCase from mobile
+    id:             raw.id                                                    as string | undefined,
+    project_name:   ((raw.project_name ?? raw.title ?? raw.siteName) as string | undefined) ?? "",
+    project_id:     raw.project_id                                            as string | undefined,
+    category_id:    raw.category_id                                           as string | undefined,
+    category_name:  raw.category_name                                         as string | undefined,
+    inspector_name: (raw.inspector_name ?? raw.inspectorName)                 as string,
+    site_name:      (raw.site_name      ?? raw.siteName)                      as string,
+    site_address:   (raw.site_address   ?? raw.siteAddress)                   as string | undefined,
+    latitude:       (raw.latitude  ?? gps?.latitude)                          as number | undefined,
+    longitude:      (raw.longitude ?? gps?.longitude)                         as number | undefined,
+    gps_accuracy:   (raw.gps_accuracy ?? gps?.accuracy)                       as number | undefined,
+    survey_date:    (raw.survey_date    ?? raw.dateTime)                       as string | undefined,
+    notes:          raw.notes                                                  as string | undefined,
+    status:         raw.status                                                 as string | undefined,
+    device_id:      raw.device_id                                              as string | undefined,
+    solarpro_user_id:     raw.solarpro_user_id                                as string | null | undefined,
+    solarpro_project_id:  raw.solarpro_project_id                             as string | null | undefined,
+    solarpro_email:       raw.solarpro_email                                  as string | null | undefined,
+    solarpro_org_id:      raw.solarpro_org_id                                 as string | null | undefined,
+    metadata:       raw.metadata                                               as SurveyMetadata | null | undefined,
+    checklist:      raw.checklist                                              as ChecklistItemInput[] | undefined,
+    photos,
+  };
+}
+
+/**
  * POST /api/surveys
  *
  * Accepts location as either:
@@ -1676,9 +1766,12 @@ router.delete("/:id", async (req: Request, res: Response) => {
  *
  * The geography column is populated with:
  *   ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography
+ *
+ * Also accepts camelCase keys from the mobile frontend (siteName, siteAddress,
+ * inspectorName, dateTime, gpsCoordinates, photos[].dataUrl etc.).
  */
 router.post("/", async (req: Request, res: Response) => {
-  const body = req.body as SurveyInput & { id?: string };
+  const body = normalizeSurveyInput(req.body as Record<string, unknown>);
 
   if (body.id && !isValidUuid(body.id)) {
     respondValidationError(res, "id must be a valid UUID", "id");
@@ -1830,7 +1923,8 @@ router.post("/", async (req: Request, res: Response) => {
 router.put("/:id", async (req: Request, res: Response) => {
   if (!requireUuidParam(req, res, "id")) return;
   const { id } = req.params;
-  const body = req.body as Partial<SurveyInput>;
+  // Normalise camelCase keys from mobile frontend to snake_case
+  const body = normalizeSurveyInput(req.body as Record<string, unknown>) as Partial<SurveyInput>;
 
   await ensureSurveySoftDeleteColumn();
 
