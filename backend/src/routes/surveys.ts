@@ -1217,6 +1217,8 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
       solarpro_project_id: string | null;
       solarpro_email: string | null;
       inspector_name: string | null;
+      site_name: string | null;
+      project_name: string | null;
     }>(
       `UPDATE surveys
           SET status = 'submitted',
@@ -1224,7 +1226,7 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
         WHERE id = $1 AND deleted_at IS NULL
         RETURNING id::text, status, project_id::text,
                   solarpro_user_id, solarpro_project_id, solarpro_email,
-                  inspector_name`,
+                  inspector_name, site_name, project_name`,
       [surveyId],
     );
 
@@ -1245,6 +1247,9 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
       solarpro_project_id: survey.solarpro_project_id ?? null,
       solarpro_email: survey.solarpro_email ?? null,
       inspector_name: survey.inspector_name ?? null,
+      // Survey naming: include so SolarPro can show "ray test" not the UUID
+      project_name: survey.project_name ?? null,
+      site_name: survey.site_name ?? null,
     });
 
     await processWebhookQueue(10);

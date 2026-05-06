@@ -22,6 +22,10 @@ interface SurveyCompletePayload {
   // On-device picker selections (standalone surveys)
   solarpro_selected_project_id?: string | null;
   solarpro_selected_client_id?: string | null;
+  // Survey naming — sent in thin event so SolarPro can show the human-readable
+  // name even in degraded mode (when fetchFullPayload returns null).
+  project_name?: string | null;
+  site_name?: string | null;
 }
 
 interface WebhookDeliveryRow {
@@ -98,6 +102,9 @@ export async function enqueueSurveyCompleteWebhook(params: {
   inspector_email?: string | null;
   solarpro_selected_project_id?: string | null;
   solarpro_selected_client_id?: string | null;
+  // Survey naming fields
+  project_name?: string | null;
+  site_name?: string | null;
 }): Promise<string> {
   await ensureWebhookDeliveriesTable();
 
@@ -117,6 +124,9 @@ export async function enqueueSurveyCompleteWebhook(params: {
     inspector_email: params.inspector_email ?? null,
     solarpro_selected_project_id: params.solarpro_selected_project_id ?? null,
     solarpro_selected_client_id: params.solarpro_selected_client_id ?? null,
+    // Survey naming: pass through so SolarPro shows the human-readable name
+    project_name: params.project_name ?? null,
+    site_name: params.site_name ?? null,
   };
 
   await pool.query(
