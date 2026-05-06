@@ -281,8 +281,9 @@ app.get("/api/surveys/photos/:photoId", async (req, res) => {
     res.setHeader("Content-Disposition", `inline; filename="${row.filename || "photo.jpg"}"`);
     res.send(row.photo_data);
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error("[GET /api/surveys/photos/:photoId]", err);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: "Internal server error", detail: msg });
   }
 });
 
