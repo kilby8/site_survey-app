@@ -26,8 +26,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 
   // Static partner API key bypass — allows server-to-server calls from SolarPro
   // without a short-lived JWT. Set PARTNER_API_KEY on the Render backend.
+  // Also accepts SOLARPRO_API_KEY as an alias (used in some deploy configs).
   // The token must be a long random string (min 32 chars) — never a user JWT.
-  const partnerApiKey = process.env.PARTNER_API_KEY;
+  const partnerApiKey = process.env.PARTNER_API_KEY || process.env.SOLARPRO_API_KEY;
   if (partnerApiKey && partnerApiKey.length >= 32 && rawToken === partnerApiKey) {
     req.authUser = {
       userId: 'partner-service-account',
