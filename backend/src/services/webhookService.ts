@@ -234,6 +234,29 @@ async function deliverOne(row: WebhookDeliveryRow): Promise<void> {
       body: payloadText,
     });
 
+    // ── SOLARPRO_WEBHOOK_SEND ──────────────────────────────────────────────
+    // Emitted after every delivery attempt so we can see the URL called,
+    // the HTTP status SolarPro returned, and the first 500 chars of the
+    // response body. Search Render logs for: SOLARPRO_WEBHOOK_SEND
+    let responseBodySnippet = "";
+    try {
+      const cloned = response.clone();
+      const text = await cloned.text();
+      responseBodySnippet = text.slice(0, 500);
+    } catch { /* non-fatal */ }
+    console.info(
+      JSON.stringify({
+        tag:          "SOLARPRO_WEBHOOK_SEND",
+        timestamp:    new Date().toISOString(),
+        surveyId:     row.survey_id,
+        eventId:      row.event_id,
+        url,
+        status:       response.status,
+        ok:           response.ok,
+        responseBody: responseBodySnippet,
+      }),
+    );
+
     const nextAttempt = row.attempt_count + 1;
     if (response.ok) {
       await markDelivered(row.id, nextAttempt);
