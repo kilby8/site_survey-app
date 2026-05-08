@@ -51,6 +51,11 @@ interface SurveyRow {
   survey_date: string; notes: string;
   status: string; sync_status: string; sync_error: string | null;
   device_id: string | null;
+  // SolarPro ownership fields
+  solarpro_user_id:    string | null;
+  solarpro_project_id: string | null;
+  solarpro_email:      string | null;
+  solarpro_org_id:     string | null;
   /** JSON string or null */
   metadata: string | null;
   created_at: string; updated_at: string;
@@ -71,26 +76,30 @@ interface PhotoRow {
 // ----------------------------------------------------------------
 function rowToSurvey(r: SurveyRow): Omit<Survey, 'checklist' | 'photos'> {
   return {
-    id:             r.id,
-    project_name:   r.project_name,
-    project_id:     r.project_id,
-    category_id:    r.category_id,
-    category_name:  r.category_name,
-    inspector_name: r.inspector_name,
-    site_name:      r.site_name,
-    site_address:   r.site_address ?? '',
-    latitude:       r.latitude,
-    longitude:      r.longitude,
-    gps_accuracy:   r.gps_accuracy,
-    survey_date:    r.survey_date,
-    notes:          r.notes ?? '',
-    status:         r.status as Survey['status'],
-    sync_status:    r.sync_status as SyncStatus,
-    sync_error:     r.sync_error,
-    device_id:      r.device_id,
-    metadata:       r.metadata ? (JSON.parse(r.metadata) as Survey['metadata']) : null,
-    created_at:     r.created_at,
-    updated_at:     r.updated_at,
+    id:                  r.id,
+    project_name:        r.project_name,
+    project_id:          r.project_id,
+    category_id:         r.category_id,
+    category_name:       r.category_name,
+    inspector_name:      r.inspector_name,
+    site_name:           r.site_name,
+    site_address:        r.site_address ?? '',
+    latitude:            r.latitude,
+    longitude:           r.longitude,
+    gps_accuracy:        r.gps_accuracy,
+    survey_date:         r.survey_date,
+    notes:               r.notes ?? '',
+    status:              r.status as Survey['status'],
+    sync_status:         r.sync_status as SyncStatus,
+    sync_error:          r.sync_error,
+    device_id:           r.device_id,
+    solarpro_user_id:    r.solarpro_user_id,
+    solarpro_project_id: r.solarpro_project_id,
+    solarpro_email:      r.solarpro_email,
+    solarpro_org_id:     r.solarpro_org_id,
+    metadata:            r.metadata ? (JSON.parse(r.metadata) as Survey['metadata']) : null,
+    created_at:          r.created_at,
+    updated_at:          r.updated_at,
   };
 }
 
@@ -117,26 +126,31 @@ export async function createSurvey(data: SurveyFormData, deviceId: string): Prom
       `INSERT INTO surveys
          (id, project_name, project_id, category_id, category_name, inspector_name,
           site_name, site_address, latitude, longitude, gps_accuracy,
-          survey_date, notes, status, sync_status, device_id, metadata,
-          created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          survey_date, notes, status, sync_status, device_id,
+          solarpro_user_id, solarpro_project_id, solarpro_email, solarpro_org_id,
+          metadata, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id,
         data.project_name,
-        data.project_id ?? null,
-        data.category_id   ?? null,
-        data.category_name ?? null,
+        data.project_id          ?? null,
+        data.category_id         ?? null,
+        data.category_name       ?? null,
         data.inspector_name,
         data.site_name,
-        data.site_address  ?? '',
-        data.latitude      ?? null,
-        data.longitude     ?? null,
-        data.gps_accuracy  ?? null,
-        data.survey_date   ?? now,
-        data.notes         ?? '',
-        data.status        ?? 'draft',
+        data.site_address        ?? '',
+        data.latitude            ?? null,
+        data.longitude           ?? null,
+        data.gps_accuracy        ?? null,
+        data.survey_date         ?? now,
+        data.notes               ?? '',
+        data.status              ?? 'draft',
         'pending',
         deviceId,
+        data.solarpro_user_id    ?? null,
+        data.solarpro_project_id ?? null,
+        data.solarpro_email      ?? null,
+        data.solarpro_org_id     ?? null,
         data.metadata != null ? JSON.stringify(data.metadata) : null,
         now,
         now,
@@ -402,9 +416,10 @@ export async function ensureSurveyUuid(surveyId: string): Promise<string> {
       `INSERT INTO surveys
          (id, project_name, project_id, category_id, category_name, inspector_name,
           site_name, site_address, latitude, longitude, gps_accuracy,
-          survey_date, notes, status, sync_status, sync_error, device_id, metadata,
-          created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          survey_date, notes, status, sync_status, sync_error, device_id,
+          solarpro_user_id, solarpro_project_id, solarpro_email, solarpro_org_id,
+          metadata, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         newId,
         row.project_name,
@@ -423,6 +438,10 @@ export async function ensureSurveyUuid(surveyId: string): Promise<string> {
         row.sync_status,
         row.sync_error,
         row.device_id,
+        row.solarpro_user_id,
+        row.solarpro_project_id,
+        row.solarpro_email,
+        row.solarpro_org_id,
         row.metadata,
         row.created_at,
         row.updated_at,

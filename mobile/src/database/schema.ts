@@ -24,6 +24,11 @@ export const CREATE_SURVEYS_TABLE = `
     sync_status    TEXT    NOT NULL DEFAULT 'pending',
     sync_error     TEXT,
     device_id      TEXT,
+    -- SolarPro ownership fields — carry the project/user context through offline sync
+    solarpro_user_id    TEXT,
+    solarpro_project_id TEXT,
+    solarpro_email      TEXT,
+    solarpro_org_id     TEXT,
     -- Category-specific fields stored as a JSON string (mirrors server JSONB column)
     metadata       TEXT,
     created_at     TEXT    NOT NULL,
@@ -57,6 +62,19 @@ export const CREATE_PHOTOS_TABLE = `
   );
 `;
 
+/**
+ * Migration statements — run after CREATE TABLE so that existing databases
+ * (created before the solarpro columns were added) gain the new columns.
+ * ALTER TABLE ... ADD COLUMN IF NOT EXISTS is idempotent on SQLite ≥ 3.35.
+ * On older SQLite builds the error is swallowed in INIT_STATEMENTS execution.
+ */
+export const MIGRATE_SURVEYS_SOLARPRO_COLUMNS = [
+  `ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_user_id    TEXT`,
+  `ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_project_id TEXT`,
+  `ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_email      TEXT`,
+  `ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_org_id     TEXT`,
+];
+
 /** Run once at app startup to ensure all tables exist. */
 export const INIT_STATEMENTS = [
   'PRAGMA journal_mode = WAL;',
@@ -64,4 +82,5 @@ export const INIT_STATEMENTS = [
   CREATE_SURVEYS_TABLE,
   CREATE_CHECKLIST_TABLE,
   CREATE_PHOTOS_TABLE,
+  ...MIGRATE_SURVEYS_SOLARPRO_COLUMNS,
 ];
