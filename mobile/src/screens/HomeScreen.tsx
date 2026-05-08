@@ -42,6 +42,7 @@ export default function HomeScreen() {
   const [deleting,     setDeleting]     = useState(false);
 
   const sync = useSyncManager(dbReady);
+  const canResync = sync.isOnline && sync.syncing === 0;
 
   // ----------------------------------------------------------------
   // Load surveys from local SQLite
@@ -144,6 +145,16 @@ export default function HomeScreen() {
           <Text style={styles.versionBadge}>{versionLabel}</Text>
         </View>
         <View style={styles.toolbarActions}>
+          <TouchableOpacity
+            style={[styles.resyncBtn, !canResync && styles.resyncBtnDisabled]}
+            onPress={() => { sync.triggerSync().catch(console.error); }}
+            disabled={!canResync}
+          >
+            {sync.syncing > 0
+              ? <ActivityIndicator size="small" color={colors.white} />
+              : <Text style={styles.resyncBtnText}>↻ Re-sync</Text>
+            }
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.mapBtn}
             onPress={() => router.push('/map')}
@@ -275,6 +286,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   mapBtnText: { color: colors.textPrimary, fontWeight: '700', fontSize: 13 },
+  resyncBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    minHeight: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  resyncBtnDisabled: { opacity: 0.6 },
+  resyncBtnText: { color: colors.white, fontWeight: '700', fontSize: 13 },
   deleteBtn: {
     backgroundColor: colors.errorText,
     paddingHorizontal: 12,

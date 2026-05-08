@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import * as SQLite from 'expo-sqlite';
 import * as Device from 'expo-device';
-import { INIT_STATEMENTS } from '../database/schema';
+import { INIT_STATEMENTS, SURVEYS_OPTIONAL_COLUMNS } from '../database/schema';
 import { setDb } from '../database/surveyDb';
 
 interface UseDatabaseResult {
@@ -20,6 +20,32 @@ interface UseDatabaseResult {
 function makeDeviceId(seed?: string | null): string {
   const base = (seed || 'device').replace(/\s+/g, '-').toLowerCase();
   return `${base}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function ensureSurveyColumns(db: SQLite.SQLiteDatabase): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(surveys)');
+  const existing = new Set(columns.map((column) => column.name));
+
+  for (const column of SURVEYS_OPTIONAL_COLUMNS) {
+    if (existing.has(column.name)) continue;
+
+    try {
+      await db.execAsync(`ALTER TABLE surveys ADD COLUMN ${column.name} ${column.sqlType};`);
+      existing.add(column.name);
+    } catch (migrationError) {
+      const message =
+        migrationError instanceof Error
+          ? migrationError.message
+          : String(migrationError);
+
+      if (/duplicate column name/i.test(message)) {
+        existing.add(column.name);
+        continue;
+      }
+
+      throw new Error(`SQLite migration failed for surveys.${column.name}: ${message}`);
+    }
+  }
 }
 
 export function useDatabase(): UseDatabaseResult {
@@ -55,18 +81,7 @@ export function useDatabase(): UseDatabaseResult {
           }
         }
 
-        // Backward-compat migration guard for older DBs missing project_id
-        try {
-          await db.execAsync('ALTER TABLE surveys ADD COLUMN project_id TEXT;');
-        } catch (migrationError) {
-          const message =
-            migrationError instanceof Error
-              ? migrationError.message
-              : String(migrationError);
-          if (!/duplicate column name/i.test(message)) {
-            throw new Error(`SQLite migration failed: ${message}`);
-          }
-        }
+        await ensureSurveyColumns(db);
 
         // Register db globally so surveyDb helpers can use it
         setDb(db);
