@@ -20,6 +20,7 @@
  *   SOLARPRO_API_KEY   — service-to-service bearer token (required)
  */
 
+import jwt from "jsonwebtoken";
 import { Router, type Request, type Response } from "express";
 
 const router = Router();
@@ -32,36 +33,60 @@ function getSolarProUrl(): string {
   return (process.env.SOLARPRO_API_URL ?? "").trim().replace(/\/$/, "");
 }
 
-function getSolarProApiKey(): string {
-  return (process.env.SOLARPRO_API_KEY ?? "").trim();
+/**
+ * Mint a short-lived HS256 JWT for service-to-service auth with SolarPro.
+ *
+ * Uses SOLARPRO_HANDOFF_SECRET — the same secret already synced between
+ * Render and Vercel for handoff tokens. This avoids needing a separate
+ * MOBILE_SERVICE_API_KEY env var to be manually synced across dashboards.
+ *
+ * The JWT carries the mobile user's email so SolarPro can resolve the
+ * correct userId via email lookup (Path C + email fallback in auth.ts).
+ */
+function mintServiceJwt(userEmail: string): string | null {
+  const secret = (process.env.SOLARPRO_HANDOFF_SECRET ?? "").trim();
+  if (!secret || secret.length < 32) {
+    console.error(
+      "[MOBILE_PROXY] SOLARPRO_HANDOFF_SECRET is not set or too short — cannot mint service JWT"
+    );
+    return null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  return jwt.sign(
+    {
+      email: userEmail.trim().toLowerCase(),
+      iat: now,
+      exp: now + 300, // 5 minutes — enough for the proxy call
+    },
+    secret,
+    { algorithm: "HS256", noTimestamp: true }
+  );
 }
 
 /**
  * Build proxy headers for SolarPro service-to-service requests.
- * CRITICAL: X-Mobile-User-Email scopes the SolarPro query to the correct user.
+ * Mints a short-lived JWT signed with SOLARPRO_HANDOFF_SECRET.
+ * SolarPro verifies the JWT (Path C) and resolves userId from the email claim.
  */
-function buildProxyHeaders(userEmail: string): Record<string, string> {
-  const apiKey = getSolarProApiKey();
-  const headers: Record<string, string> = {
+function buildProxyHeaders(userEmail: string): Record<string, string> | null {
+  const token = mintServiceJwt(userEmail);
+  if (!token) return null;
+  return {
     "Content-Type": "application/json",
     Accept: "application/json",
-    // Scope the SolarPro query to this specific user — without this header,
-    // SolarPro falls back to the service account and returns wrong user's data.
+    Authorization: `Bearer ${token}`,
+    // Also send email header as Belt-and-suspenders for Path B fallback.
     "X-Mobile-User-Email": userEmail.trim().toLowerCase(),
   };
-  if (apiKey) {
-    headers["Authorization"] = `Bearer ${apiKey}`;
-  }
-  return headers;
 }
 
 /**
- * Validates that SOLARPRO_API_URL and SOLARPRO_API_KEY are configured.
+ * Validates that SOLARPRO_API_URL and SOLARPRO_HANDOFF_SECRET are configured.
  * Returns true if valid, false + sends 503 if not.
  */
 function validateConfig(res: Response): boolean {
   const url = getSolarProUrl();
-  const key = getSolarProApiKey();
+  const secret = (process.env.SOLARPRO_HANDOFF_SECRET ?? "").trim();
 
   if (!url) {
     res.status(503).json({
@@ -71,10 +96,10 @@ function validateConfig(res: Response): boolean {
     return false;
   }
 
-  if (!key) {
+  if (!secret || secret.length < 32) {
     res.status(503).json({
       error: "configuration_error",
-      message: "SOLARPRO_API_KEY is not configured on this server.",
+      message: "SOLARPRO_HANDOFF_SECRET is not configured on this server (min 32 chars).",
     });
     return false;
   }
@@ -93,10 +118,19 @@ async function proxyToSolarPro(
 ): Promise<void> {
   const solarProUrl = getSolarProUrl();
 
+  const headers = buildProxyHeaders(userEmail);
+  if (!headers) {
+    res.status(503).json({
+      error: "configuration_error",
+      message: "SOLARPRO_HANDOFF_SECRET is not set — cannot authenticate with SolarPro.",
+    });
+    return;
+  }
+
   try {
     const upstream = await fetch(`${solarProUrl}${pathname}`, {
       method: "GET",
-      headers: buildProxyHeaders(userEmail),
+      headers,
       signal: AbortSignal.timeout(8_000),
     });
 

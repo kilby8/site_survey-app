@@ -48,9 +48,24 @@ services:
       - key: SURVEY_WEBHOOK_SECRET
         sync: false
 
-      # Bearer token the survey app uses to identify itself to SolarPro's
-      # GET /api/surveys/:id endpoint. Must match PARTNER_API_BEARER_TOKEN
-      # in SolarPro's Vercel env.
+      # -- Mobile client dropdown auth (CRITICAL) ----------------------------------
+      # MOBILE_SERVICE_API_KEY is the shared secret between Render and SolarPro
+      # that authenticates the service-to-service proxy for /api/mobile/clients
+      # and /api/mobile/clients/:id/projects (the client dropdown in the mobile app).
+      #
+      # HOW TO SET THIS UP (one-time, both dashboards):
+      #   1. Go to Vercel -> solarpro-dev -> Settings -> Environment Variables
+      #   2. Copy the value of MOBILE_SERVICE_API_KEY
+      #   3. Go to Render -> site-survey-api -> Environment
+      #   4. Set MOBILE_SERVICE_API_KEY to that EXACT same value
+      #
+      # If MOBILE_SERVICE_API_KEY is not set here, the client dropdown returns
+      # 502 upstream_auth_failed and the mobile app cannot load clients/projects.
+      - key: MOBILE_SERVICE_API_KEY
+        sync: false
+
+      # Legacy alias -- SOLARPRO_API_KEY is also checked as a fallback.
+      # Prefer MOBILE_SERVICE_API_KEY going forward.
       - key: SOLARPRO_API_KEY
         sync: false
 
