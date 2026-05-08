@@ -306,6 +306,11 @@ app.use((_req, res) => {
 // Start server
 // ----------------------------------------------------------------
 if (require.main === module) {
+  // Validate all load-bearing env vars before accepting any traffic.
+  // Server will exit(1) with a clear message if anything critical is missing.
+  const { runEnvGuard } = require("./lib/envGuard");
+  runEnvGuard();
+
   app.listen(PORT, () => {
     console.log(`Site Survey API running on http://localhost:${PORT}`);
     console.log(`Photo uploads served from /uploads`);
