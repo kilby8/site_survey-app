@@ -1216,7 +1216,9 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
       solarpro_user_id: string | null;
       solarpro_project_id: string | null;
       solarpro_email: string | null;
+      solarpro_org_id: string | null;
       inspector_name: string | null;
+      inspector_email: string | null;
       site_name: string | null;
       project_name: string | null;
     }>(
@@ -1226,7 +1228,8 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
         WHERE id = $1 AND deleted_at IS NULL
         RETURNING id::text, status, project_id::text,
                   solarpro_user_id, solarpro_project_id, solarpro_email,
-                  inspector_name, site_name, project_name`,
+                  solarpro_org_id, inspector_name, inspector_email,
+                  site_name, project_name`,
       [surveyId],
     );
 
@@ -1247,6 +1250,12 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
       solarpro_project_id: survey.solarpro_project_id ?? null,
       solarpro_email: survey.solarpro_email ?? null,
       inspector_name: survey.inspector_name ?? null,
+      inspector_email: survey.inspector_email ?? null,
+      // F-06b: solarpro_org_id stores the SolarPro client UUID selected
+      // on-device (set by handleClientSelect). Forward it as
+      // solarpro_selected_client_id so the ingest pipeline can resolve the
+      // client without having to look it up via the project row.
+      solarpro_selected_client_id: survey.solarpro_org_id ?? null,
       // Survey naming: include so SolarPro can show "ray test" not the UUID
       project_name: survey.project_name ?? null,
       site_name: survey.site_name ?? null,
