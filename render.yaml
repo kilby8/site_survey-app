@@ -8,5 +8,81 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+
+      # ── Database ────────────────────────────────────────────────────────────
+      # Set DATABASE_URL in the Render dashboard (postgres://... connection string).
+      # When DATABASE_URL is set the backend uses it directly; DB_HOST/PORT/etc
+      # are ignored.
       - key: DATABASE_URL
         sync: false
+
+      # ── Auth ────────────────────────────────────────────────────────────────
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_ACCESS_TTL
+        value: 15m
+      - key: JWT_EXPIRES_IN
+        value: 12h
+      - key: REFRESH_TOKEN_TTL_DAYS
+        value: "30"
+
+      # ── Sign-in lockout ──────────────────────────────────────────────────────
+      - key: SIGNIN_MAX_FAILURES
+        value: "5"
+      - key: SIGNIN_WINDOW_MINUTES
+        value: "15"
+      - key: SIGNIN_LOCK_MINUTES
+        value: "15"
+
+      # ── CORS ─────────────────────────────────────────────────────────────────
+      # Add any additional origins (Expo Go, device LAN IPs) here.
+      - key: ALLOWED_ORIGINS
+        value: https://solarpro-dev.vercel.app,https://solar-pro.app
+
+      # ── SolarPro integration ─────────────────────────────────────────────────
+      # URL of SolarPro's inbound webhook endpoint.
+      - key: SOLARPRO_WEBHOOK_URL
+        value: https://solarpro-dev.vercel.app/api/webhooks/survey-complete
+
+      # Shared HMAC secret — must match SURVEY_WEBHOOK_SECRET in Vercel env.
+      - key: SURVEY_WEBHOOK_SECRET
+        sync: false
+
+      # Bearer token the survey app uses to identify itself to SolarPro's
+      # GET /api/surveys/:id endpoint. Must match PARTNER_API_BEARER_TOKEN
+      # in SolarPro's Vercel env.
+      - key: SOLARPRO_API_KEY
+        sync: false
+
+      # Also expose under the canonical name so either lookup path works.
+      - key: PARTNER_API_KEY
+        sync: false
+
+      # SolarPro app base URL (no trailing slash).
+      - key: SOLARPRO_API_URL
+        value: https://solarpro-dev.vercel.app
+
+      # HS256 secret for minting handoff JWTs (/api/handoff → mobile launch).
+      # Must match SOLARPRO_HANDOFF_SECRET in Vercel env.
+      - key: SOLARPRO_HANDOFF_SECRET
+        sync: false
+
+      # Set to true — pipeline is live.
+      - key: WEBHOOK_PRE_INGEST_ACCEPT_202
+        value: "true"
+
+      # ── Storage ──────────────────────────────────────────────────────────────
+      # Set STORAGE_BACKEND=s3 and AWS_* vars in dashboard if using S3.
+      # Leave unset to use local disk (ephemeral on Render free tier).
+      - key: STORAGE_BACKEND
+        value: local
+
+      # ── Users route throttling ───────────────────────────────────────────────
+      - key: USERS_REGISTER_MAX_REQUESTS
+        value: "8"
+      - key: USERS_REGISTER_WINDOW_MINUTES
+        value: "15"
+      - key: USERS_ME_MAX_REQUESTS
+        value: "120"
+      - key: USERS_ME_WINDOW_MINUTES
+        value: "1"
