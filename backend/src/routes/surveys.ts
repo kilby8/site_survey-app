@@ -41,6 +41,7 @@ async function ensureSurveySoftDeleteColumn(): Promise<void> {
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_project_id TEXT`);
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_email TEXT`);
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_org_id TEXT`);
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS inspector_email TEXT`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_solarpro_user_id ON surveys(solarpro_user_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_solarpro_project_id ON surveys(solarpro_project_id)`);
       } catch (error) {
@@ -401,10 +402,11 @@ async function fetchSurveyFull(id: string) {
     const result = await pool.query<Record<string, unknown>>(
       `SELECT
          s.id, s.project_name, s.project_id, s.category_id, s.category_name,
-         s.inspector_name, s.site_name, s.site_address,
+         s.inspector_name, s.inspector_email, s.site_name, s.site_address,
          s.latitude, s.longitude, s.gps_accuracy,
          ST_AsGeoJSON(s.location::geometry)::jsonb AS location_geojson,
          s.survey_date, s.notes, s.status, s.device_id, s.metadata,
+         s.solarpro_user_id, s.solarpro_project_id, s.solarpro_email, s.solarpro_org_id,
          s.synced_at, s.created_at, s.updated_at
        FROM surveys s
        WHERE s.id = $1 AND s.deleted_at IS NULL`,
@@ -422,10 +424,11 @@ async function fetchSurveyFull(id: string) {
     const fallback = await pool.query<Record<string, unknown>>(
       `SELECT
          s.id, s.project_name, s.project_id, s.category_id, s.category_name,
-         s.inspector_name, s.site_name, s.site_address,
+         s.inspector_name, s.inspector_email, s.site_name, s.site_address,
          s.latitude, s.longitude, s.gps_accuracy,
          ST_AsGeoJSON(s.location::geometry)::jsonb AS location_geojson,
          s.survey_date, s.notes, s.status, s.device_id, s.metadata,
+         s.solarpro_user_id, s.solarpro_project_id, s.solarpro_email, s.solarpro_org_id,
          s.synced_at, s.created_at, s.updated_at
        FROM surveys s
        WHERE s.id = $1`,
