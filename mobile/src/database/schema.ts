@@ -65,14 +65,15 @@ export const CREATE_PHOTOS_TABLE = `
 /**
  * Migration statements — run after CREATE TABLE so that existing databases
  * (created before the solarpro columns were added) gain the new columns.
- * ALTER TABLE ... ADD COLUMN IF NOT EXISTS is idempotent on SQLite ≥ 3.35.
- * On older SQLite builds the error is swallowed in INIT_STATEMENTS execution.
+ * SQLite does not support IF NOT EXISTS on ALTER TABLE ADD COLUMN, so we
+ * let the "duplicate column name" error be caught and swallowed by the
+ * useDatabase init loop (which already handles this case).
  */
 export const MIGRATE_SURVEYS_SOLARPRO_COLUMNS = [
-  `ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_user_id    TEXT`,
-  `ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_project_id TEXT`,
-  `ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_email      TEXT`,
-  `ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_org_id     TEXT`,
+  `ALTER TABLE surveys ADD COLUMN solarpro_user_id    TEXT`,
+  `ALTER TABLE surveys ADD COLUMN solarpro_project_id TEXT`,
+  `ALTER TABLE surveys ADD COLUMN solarpro_email      TEXT`,
+  `ALTER TABLE surveys ADD COLUMN solarpro_org_id     TEXT`,
 ];
 
 /** Run once at app startup to ensure all tables exist. */
