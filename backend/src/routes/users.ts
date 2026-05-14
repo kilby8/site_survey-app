@@ -329,6 +329,18 @@ async function issueRefreshToken(userId: string, email: string, fullName: string
   return raw;
 }
 
+/** Revokes all active refresh tokens for a user — called on fresh sign-in to invalidate prior sessions. */
+async function revokeAllUserRefreshTokens(userId: string): Promise<void> {
+  try {
+    await pool.query(
+      `UPDATE refresh_tokens SET revoked = true WHERE user_id = $1 AND revoked = false`,
+      [userId],
+    );
+  } catch (err) {
+    console.warn('revokeAllUserRefreshTokens: non-fatal error', err);
+  }
+}
+
 
 // GET /api/users/active-sessions (admin only)
 router.get('/active-sessions', requireAuth, async (req: Request, res: Response) => {
@@ -462,14 +474,20 @@ router.post('/signin', async (req: Request, res: Response) => {
 
     if (isAdminIdentifier(normalizedIdentifier) && password === ADMIN_USER.password) {
       await clearSignInFailures(key);
+      await revokeAllUserRefreshTokens(ADMIN_USER.id);
       const token = signAuthToken({
         userId: ADMIN_USER.id,
         username: ADMIN_USER.username,
         email: ADMIN_USER.email,
         role: ADMIN_USER.role,
       });
+      const refreshToken = await issueRefreshToken(
+        ADMIN_USER.id,
+        ADMIN_USER.email,
+        ADMIN_USER.fullName,
+      );
       authAudit('users.signin.success', req, ADMIN_USER.email, { status: 200, userId: ADMIN_USER.id });
-      res.json({ token, refreshToken: null, user: buildAdminUser() });
+      res.json({ token, refreshToken, user: buildAdminUser() });
       return;
     }
 
@@ -488,6 +506,7 @@ router.post('/signin', async (req: Request, res: Response) => {
     }
 
     await clearSignInFailures(key);
+    await revokeAllUserRefreshTokens(user.id);
     const isAdmin = isElevatedAdminEmail(user.email);
     const token = signAuthToken({ userId: user.id, email: user.email, role: isAdmin ? 'admin' : 'user' });
     const refreshToken = await issueRefreshToken(user.id, user.email, user.full_name);

@@ -13,9 +13,9 @@ function getSecret(): string {
 }
 
 function getAccessTokenTTL(): jwt.SignOptions['expiresIn'] {
-  // Default to 15 minutes — short-lived for thin-client security.
-  // Override with JWT_ACCESS_TTL env var (e.g. "15m", "1h").
-  return (process.env.JWT_ACCESS_TTL || '15m') as jwt.SignOptions['expiresIn'];
+  // Default to 30 days — long-lived for admin/mobile convenience.
+  // Override with JWT_ACCESS_TTL env var (e.g. "30d", "1h").
+  return (process.env.JWT_ACCESS_TTL || '30d') as jwt.SignOptions['expiresIn'];
 }
 
 export function signAuthToken(payload: AuthTokenPayload): string {
@@ -48,7 +48,7 @@ export function verifyAuthToken(token: string): AuthTokenPayload | null {
 // ----------------------------------------------------------------
 
 const REFRESH_TOKEN_TTL_MS =
-  parseInt(process.env.REFRESH_TOKEN_TTL_DAYS || '7', 10) * 24 * 60 * 60 * 1000;
+  parseInt(process.env.REFRESH_TOKEN_TTL_DAYS || '30', 10) * 24 * 60 * 60 * 1000;
 
 /** Generates a cryptographically random raw refresh token string. */
 export function generateRefreshToken(): string {
