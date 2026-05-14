@@ -34,6 +34,14 @@ let refreshTableReady: Promise<void> | null = null;
 let websitePool: Pool | null | undefined;
 let websiteUsersShapeReady: Promise<{ nameColumn: 'name' | 'full_name'; hasUsername: boolean }> | null = null;
 
+export async function closeAuthStoreConnections(): Promise<void> {
+  if (websitePool) {
+    await websitePool.end();
+  }
+  websitePool = undefined;
+  websiteUsersShapeReady = null;
+}
+
 function getEnv(name: string): string | null {
   const value = process.env[name]?.trim();
   return value ? value : null;

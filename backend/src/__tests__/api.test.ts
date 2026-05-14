@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { createHmac } from "crypto";
 import app from "../index";
 import { pool } from "../database";
+import { closeAuthStoreConnections } from "../services/sqliteAuthStore";
 
 // Clean up test surveys after each test
 const createdIds: string[] = [];
@@ -34,6 +35,7 @@ afterAll(async () => {
   if (testUserEmail) {
     await pool.query("DELETE FROM users WHERE email = $1", [testUserEmail]);
   }
+  await closeAuthStoreConnections();
   await pool.end();
 });
 
@@ -403,6 +405,69 @@ describe("GET /api/surveys/:id", () => {
     expect(Array.isArray(res.body.photos)).toBe(true);
     expect(res.body.photos.length).toBeGreaterThanOrEqual(1);
     expect(typeof res.body.photos[0].remote_url).toBe("string");
+  });
+});
+
+describe("POST /api/surveys/:id/photos", () => {
+  it("accepts single-file uploads using the photo field", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Photo Upload Test",
+        inspector_name: "Photo Tester",
+        site_name: "Upload Site",
+      });
+    createdIds.push(create.body.id);
+
+    const surveyId = create.body.id as string;
+
+    const res = await request(app)
+      .post(`/api/surveys/${surveyId}/photos`)
+      .set("Authorization", authHeader)
+      .field("label", "Main Roof")
+      .attach("photo", Buffer.from("fake-image-binary"), {
+        filename: "single.jpg",
+        contentType: "image/jpeg",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.uploaded).toBe(1);
+    expect(Array.isArray(res.body.photos)).toBe(true);
+    expect(res.body.photos[0]?.label).toBe("Main Roof");
+    expect(res.body.photos[0]?.mime_type).toBe("image/jpeg");
+    expect(typeof res.body.photos[0]?.id).toBe("string");
+  });
+
+  it("serves uploaded photo bytes from public photo endpoint", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Photo Serve Test",
+        inspector_name: "Photo Tester",
+        site_name: "Serve Site",
+      });
+    createdIds.push(create.body.id);
+
+    const surveyId = create.body.id as string;
+
+    const uploadRes = await request(app)
+      .post(`/api/surveys/${surveyId}/photos`)
+      .set("Authorization", authHeader)
+      .attach("photo", Buffer.from("serveable-photo-binary"), {
+        filename: "serve.jpg",
+        contentType: "image/jpeg",
+      });
+
+    expect(uploadRes.status).toBe(201);
+    const photoId = uploadRes.body.photos?.[0]?.id as string;
+    expect(typeof photoId).toBe("string");
+
+    const res = await request(app).get(`/api/surveys/photos/${photoId}`);
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("image/jpeg");
+    expect(res.headers["cache-control"]).toContain("immutable");
   });
 });
 

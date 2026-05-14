@@ -13,7 +13,7 @@ import { pool } from "../database";
 import { solarSurveySchema } from "../models/Survey";
 import { stringify as csvStringify } from "csv-stringify/sync";
 import { generateReport, toMarkdown } from "../utils/reportGenerator";
-import { uploadFile } from "../utils/storageClient";
+import { deleteFile, uploadFile } from "../utils/storageClient";
 import {
   enqueueSurveyCompleteWebhook,
   ensureWebhookDeliveriesTable,
@@ -42,6 +42,7 @@ async function ensureSurveySoftDeleteColumn(): Promise<void> {
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_email TEXT`);
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_org_id TEXT`);
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS inspector_email TEXT`);
+        await pool.query(`ALTER TABLE survey_photos ADD COLUMN IF NOT EXISTS photo_data BYTEA`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_solarpro_user_id ON surveys(solarpro_user_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_solarpro_project_id ON surveys(solarpro_project_id)`);
       } catch (error) {
@@ -2058,21 +2059,45 @@ router.put("/:id", async (req: Request, res: Response) => {
  */
 router.post(
   "/:id/photos",
-  upload.array("photos", 20),
+  (req: Request, res: Response, next) => {
+    upload.fields([
+      { name: "photos", maxCount: 20 },
+      { name: "photo", maxCount: 1 },
+    ])(req, res, (err: unknown) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          res.status(413).json({ error: "Image exceeds 20MB limit" });
+          return;
+        }
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      if (err) {
+        const message = err instanceof Error ? err.message : "Upload failed";
+        res.status(400).json({ error: message });
+        return;
+      }
+      next();
+    });
+  },
   async (req: Request, res: Response) => {
+    await ensureSurveySoftDeleteColumn();
+
     if (!requireUuidParam(req, res, "id")) return;
     const { id } = req.params;
 
-    // Verify the survey exists
-    const { rows } = await pool.query("SELECT id FROM surveys WHERE id = $1", [
-      id,
-    ]);
-    if (rows.length === 0) {
-      res.status(404).json({ error: "Survey not found" });
-      return;
-    }
+    const filesPayload = req.files as
+      | Express.Multer.File[]
+      | { [fieldname: string]: Express.Multer.File[] }
+      | undefined;
 
-    const files = req.files as Express.Multer.File[] | undefined;
+    const files = Array.isArray(filesPayload)
+      ? filesPayload
+      : [
+          ...(filesPayload?.photos ?? []),
+          ...(filesPayload?.photo ?? []),
+        ];
+
     if (!files || files.length === 0) {
       res.status(400).json({ error: "No image files provided" });
       return;
@@ -2095,35 +2120,68 @@ router.post(
       : new Date();
 
     const inserted: unknown[] = [];
+    const uploadedPaths: string[] = [];
+    const client = await pool.connect();
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const label = labels[i] ?? file.originalname ?? "";
+    try {
+      await client.query("BEGIN");
 
-      // Upload buffer to storage backend (local disk or S3)
-      const ext = path.extname(file.originalname) || ".jpg";
-      const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-      const storedPath = await uploadFile(file.buffer, filename, file.mimetype);
+      // Verify the survey exists
+      const { rows } = await client.query("SELECT id FROM surveys WHERE id = $1", [
+        id,
+      ]);
+      if (rows.length === 0) {
+        await client.query("ROLLBACK");
+        res.status(404).json({ error: "Survey not found" });
+        return;
+      }
 
-      const { rows: photoRows } = await pool.query(
-        `INSERT INTO survey_photos
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const label = labels[i] ?? file.originalname ?? "";
+
+        // Upload buffer to storage backend (local disk or S3)
+        const ext = path.extname(file.originalname) || ".jpg";
+        const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+        const storedPath = await uploadFile(file.buffer, filename, file.mimetype);
+        uploadedPaths.push(storedPath);
+
+        const { rows: photoRows } = await client.query(
+          `INSERT INTO survey_photos
          (survey_id, filename, label, file_path, mime_type, captured_at, photo_data)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-        [
-          id,
-          file.originalname,
-          label,
-          storedPath, // URL returned by storageClient (local path or S3 presigned URL)
-          file.mimetype,
-          captured_at,
-          file.buffer, // store raw binary for persistent DB-backed serving
-        ],
-      );
-      inserted.push(photoRows[0]);
-    }
+          [
+            id,
+            file.originalname,
+            label,
+            storedPath, // URL returned by storageClient (local path or S3 presigned URL)
+            file.mimetype,
+            captured_at,
+            file.buffer, // store raw binary for persistent DB-backed serving
+          ],
+        );
+        inserted.push(photoRows[0]);
+      }
 
-    res.status(201).json({ uploaded: inserted.length, photos: inserted });
+      await client.query("COMMIT");
+      res.status(201).json({ uploaded: inserted.length, photos: inserted });
+    } catch (err) {
+      await client.query("ROLLBACK");
+
+      for (const uploadedPath of uploadedPaths) {
+        try {
+          await deleteFile(uploadedPath);
+        } catch (cleanupError) {
+          console.warn("Failed to cleanup uploaded photo after rollback:", cleanupError);
+        }
+      }
+
+      const message = err instanceof Error ? err.message : "Failed to upload photos";
+      res.status(500).json({ error: message });
+    } finally {
+      client.release();
+    }
   },
 );
 

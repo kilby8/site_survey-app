@@ -69,7 +69,8 @@ function mintServiceJwt(userEmail: string): string | null {
  * SolarPro verifies the JWT (Path C) and resolves userId from the email claim.
  */
 function buildProxyHeaders(userEmail: string): Record<string, string> | null {
-  const token = mintServiceJwt(userEmail);
+  const apiKey = (process.env.SOLARPRO_API_KEY ?? "").trim();
+  const token = apiKey || mintServiceJwt(userEmail);
   if (!token) return null;
   return {
     "Content-Type": "application/json",
@@ -81,11 +82,13 @@ function buildProxyHeaders(userEmail: string): Record<string, string> | null {
 }
 
 /**
- * Validates that SOLARPRO_API_URL and SOLARPRO_HANDOFF_SECRET are configured.
+ * Validates that SOLARPRO_API_URL and at least one upstream auth mechanism
+ * are configured (SOLARPRO_API_KEY or SOLARPRO_HANDOFF_SECRET).
  * Returns true if valid, false + sends 503 if not.
  */
 function validateConfig(res: Response): boolean {
   const url = getSolarProUrl();
+  const apiKey = (process.env.SOLARPRO_API_KEY ?? "").trim();
   const secret = (process.env.SOLARPRO_HANDOFF_SECRET ?? "").trim();
 
   if (!url) {
@@ -96,10 +99,11 @@ function validateConfig(res: Response): boolean {
     return false;
   }
 
-  if (!secret || secret.length < 32) {
+  if (!apiKey && (!secret || secret.length < 32)) {
     res.status(503).json({
       error: "configuration_error",
-      message: "SOLARPRO_HANDOFF_SECRET is not configured on this server (min 32 chars).",
+      message:
+        "Configure SOLARPRO_API_KEY or SOLARPRO_HANDOFF_SECRET (min 32 chars) for mobile proxy auth.",
     });
     return false;
   }

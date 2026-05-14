@@ -115,7 +115,7 @@ function getAdminPassword(): string {
 }
 
 const ADMIN_USER = {
-  id: 'admin-local-user',
+  id: '00000000-0000-4000-8000-000000000001',
   username: process.env.ADMIN_USERNAME || 'admin',
   email: process.env.ADMIN_EMAIL || 'admin@site-survey.local',
   fullName: process.env.ADMIN_FULL_NAME || 'Administrator',

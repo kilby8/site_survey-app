@@ -14,7 +14,7 @@ if (process.env.NODE_ENV !== "production") {
 import express, { type Request } from "express";
 import cors from "cors";
 import multer from "multer";
-import surveysRouter from "./routes/surveys";
+import surveysRouter, { ensureSurveySoftDeleteColumn } from "./routes/surveys";
 import categoriesRouter from "./routes/categories";
 import usersRouter from "./routes/users";
 
@@ -256,6 +256,8 @@ app.use("/api/webhooks", webhooksRouter);
 // the requireAuth middleware on /api/surveys so the route is reachable
 // without a Bearer token (SolarPro fetches photo URLs directly).
 app.get("/api/surveys/photos/:photoId", async (req, res) => {
+  await ensureSurveySoftDeleteColumn();
+
   const { photoId } = req.params;
   if (!photoId || !/^[0-9a-f-]{36}$/i.test(photoId)) {
     res.status(400).json({ error: "Invalid photo id" });

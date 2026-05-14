@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS survey_photos (
   data_url    TEXT,           -- base64 data URI (mobile offline upload)
   file_path   VARCHAR(512),   -- server file path (after server-side storage)
   mime_type   VARCHAR(100)    DEFAULT 'image/jpeg',
+  photo_data  BYTEA,          -- binary copy used for persistent photo serving
   captured_at TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
   created_at  TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
