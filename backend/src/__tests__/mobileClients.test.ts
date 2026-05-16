@@ -6,6 +6,7 @@ describe("mobile clients pipeline proxy", () => {
   const originalFetch = global.fetch;
   const originalApiUrl = process.env.SOLARPRO_API_URL;
   const originalApiKey = process.env.SOLARPRO_API_KEY;
+  const originalMobileServiceApiKey = process.env.MOBILE_SERVICE_API_KEY;
 
   const TEST_EMAIL = "mobile-clients@example.com";
   const authHeader = `Bearer ${signAuthToken({
@@ -18,6 +19,7 @@ describe("mobile clients pipeline proxy", () => {
     global.fetch = originalFetch;
     process.env.SOLARPRO_API_URL = originalApiUrl;
     process.env.SOLARPRO_API_KEY = originalApiKey;
+    process.env.MOBILE_SERVICE_API_KEY = originalMobileServiceApiKey;
     jest.clearAllMocks();
   });
 
@@ -63,6 +65,27 @@ describe("mobile clients pipeline proxy", () => {
     // the DB query to the correct user — without it, SolarPro falls back
     // to the service account and returns the wrong user's data.
     expect(capturedHeaders["X-Mobile-User-Email"]).toBe(TEST_EMAIL.toLowerCase());
+  });
+
+  it("uses MOBILE_SERVICE_API_KEY when present", async () => {
+    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
+    delete process.env.SOLARPRO_API_KEY;
+    process.env.MOBILE_SERVICE_API_KEY = "test-mobile-service-key";
+
+    let capturedAuth = "";
+    global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
+      capturedAuth = ((opts.headers ?? {}) as Record<string, string>).Authorization ?? "";
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ clients: [] }),
+      });
+    }) as unknown as typeof fetch;
+
+    await request(app)
+      .get("/api/mobile/clients")
+      .set("Authorization", authHeader);
+
+    expect(capturedAuth).toBe("Bearer test-mobile-service-key");
   });
 
   it("normalizes email to lowercase before forwarding", async () => {
