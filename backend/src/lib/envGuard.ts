@@ -119,7 +119,7 @@ export function runEnvGuard(): void {
     console.log(`[ENV_GUARD] OK: ${spec.name} (len=${val.length})`);
   }
 
-ge   // Also warn if all upstream service auth keys are absent
+  // Also warn if all upstream service auth keys are absent
   // (these are optional in code but should be set for Path B auth)
   const hasMobileKey =
     process.env.MOBILE_SERVICE_API_KEY?.trim() ||

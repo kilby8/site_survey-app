@@ -53,6 +53,7 @@ interface PasswordResetState {
 }
 
 let authStateTablesReady: Promise<void> | null = null;
+let solarProSsoTokensReady: Promise<void> | null = null;
 
 function getIntEnv(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -104,6 +105,25 @@ function ensureAuthStateTables(): Promise<void> {
   }
 
   return authStateTablesReady;
+}
+
+function ensureSolarProSsoTokensTable(): Promise<void> {
+  if (!solarProSsoTokensReady) {
+    solarProSsoTokensReady = pool
+      .query(`
+        CREATE TABLE IF NOT EXISTS used_solarpro_sso_tokens (
+          jti TEXT PRIMARY KEY,
+          used_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `)
+      .then(() => undefined)
+      .catch((error) => {
+        solarProSsoTokensReady = null;
+        throw error;
+      });
+  }
+
+  return solarProSsoTokensReady;
 }
 
 function getAdminPassword(): string {
@@ -747,7 +767,25 @@ router.post('/solarpro-sso', async (req: Request, res: Response) => {
     return;
   }
 
+  if (!decoded.jti) {
+    res.status(422).json({ error: 'SSO token missing jti claim' });
+    return;
+  }
+
   try {
+    await ensureSolarProSsoTokensTable();
+
+    try {
+      await pool.query(`INSERT INTO used_solarpro_sso_tokens (jti) VALUES ($1)`, [decoded.jti]);
+    } catch (insertErr) {
+      const err = insertErr as { code?: string };
+      if (err.code === '23505') {
+        res.status(409).json({ error: 'SSO token has already been used' });
+        return;
+      }
+      throw insertErr;
+    }
+
     let user = await getUserByEmail(ssoEmail);
 
     if (!user) {

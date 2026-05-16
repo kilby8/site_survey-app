@@ -129,6 +129,49 @@ describe("POST /api/users/signin admin login", () => {
   });
 });
 
+describe("POST /api/users/solarpro-sso", () => {
+  it("creates a session once and rejects replayed handoff tokens", async () => {
+    const email = `solarpro-sso-${Date.now()}-${Math.floor(Math.random() * 10000)}@example.com`;
+    const jti = `solarpro-sso-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const token = jwt.sign(
+      {
+        jti,
+        solarpro_email: email,
+        solarpro_name: "SolarPro HandOff User",
+      },
+      process.env.SOLARPRO_HANDOFF_SECRET as string,
+      { expiresIn: "10m" },
+    );
+
+    const first = await request(app).post("/api/users/solarpro-sso").send({ token });
+    expect(first.status).toBe(200);
+    expect(first.body.token).toBeDefined();
+    expect(first.body.refreshToken).toBeDefined();
+    expect(first.body.user.email).toBe(email);
+
+    const second = await request(app).post("/api/users/solarpro-sso").send({ token });
+    expect(second.status).toBe(409);
+    expect(second.body.error).toBe("SSO token has already been used");
+
+    await pool.query("DELETE FROM refresh_tokens WHERE email = $1", [email]);
+    await pool.query("DELETE FROM users WHERE email = $1", [email]);
+  });
+
+  it("rejects a token without jti", async () => {
+    const token = jwt.sign(
+      {
+        solarpro_email: `missing-jti-${Date.now()}@example.com`,
+      },
+      process.env.SOLARPRO_HANDOFF_SECRET as string,
+      { expiresIn: "10m" },
+    );
+
+    const res = await request(app).post("/api/users/solarpro-sso").send({ token });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("SSO token missing jti claim");
+  });
+});
+
 describe("POST /api/users/forgot-password and /reset-password", () => {
   it("returns a reset token in non-production mode and accepts password reset", async () => {
     const email = `reset-${Date.now()}-${Math.floor(Math.random() * 10000)}@example.com`;

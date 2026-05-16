@@ -3,6 +3,7 @@
     "name": "Site Survey",
     "slug": "site-survey-app",
     "version": "1.0.0",
+    "scheme": "sitesurvey",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,

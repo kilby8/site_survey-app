@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -8,54 +9,108 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { createURL } from 'expo-linking';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { v4 as uuidv4 } from 'uuid';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
-import { PasswordInput, StatusBanner } from '../components/AuthFormHelpers';
-import { API_URL } from '../api/client';
+import { StatusBanner } from '../components/AuthFormHelpers';
 import { solarProTheme } from '../theme/solarProTheme';
 
 const { colors } = solarProTheme;
 const BRAND_PRIMARY = colors.primary;
 const LOGO_URL = 'https://img1.wsimg.com/isteam/ip/b4ef19f7-7f46-446b-bbe2-755512fcd4f8/UNDER%20THE%20SUN%20LOGO.jpg/:/rs=w:300,h:300,m';
+const PENDING_STATE_KEY = 'site-survey.auth.pending-solarpro-state.v1';
+
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { signInWithPassword } = useAuth();
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
+  const params = useLocalSearchParams<{ token?: string | string[]; state?: string | string[] }>();
+  const { signInWithSolarProToken } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const processedCallbackRef = useRef<string | null>(null);
 
-  const canSubmit = useMemo(() => identifier.trim().length > 0 && password.trim().length > 0, [identifier, password]);
+  const callbackToken = firstParam(params.token);
+  const callbackState = firstParam(params.state);
 
-  async function handleSignIn() {
-    if (!canSubmit || submitting) return;
+  const handleSolarProCallback = useCallback(async (token: string, state: string) => {
+    const storedState = await AsyncStorage.getItem(PENDING_STATE_KEY);
+    if (!storedState || storedState !== state) {
+      await AsyncStorage.removeItem(PENDING_STATE_KEY);
+      throw new Error('This SolarPro sign-in link is no longer valid. Please try again from the app.');
+    }
+
+    await signInWithSolarProToken(token);
+    await AsyncStorage.removeItem(PENDING_STATE_KEY);
+    router.replace('/');
+  }, [router, signInWithSolarProToken]);
+
+  useEffect(() => {
+    if (!callbackToken || !callbackState) return;
+
+    const callbackKey = `${callbackToken}:${callbackState}`;
+    if (processedCallbackRef.current === callbackKey) return;
+    processedCallbackRef.current = callbackKey;
+
+    let cancelled = false;
+
+    void (async () => {
+      setSubmitting(true);
+      setStatus(null);
+      try {
+        await handleSolarProCallback(callbackToken, callbackState);
+      } catch (err) {
+        if (cancelled) return;
+        await AsyncStorage.removeItem(PENDING_STATE_KEY);
+        processedCallbackRef.current = null;
+        setStatus({
+          type: 'error',
+          message: err instanceof Error ? err.message : 'SolarPro sign-in failed. Please try again.',
+        });
+      } finally {
+        if (!cancelled) setSubmitting(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [callbackState, callbackToken, handleSolarProCallback]);
+
+  const handleSolarProSignIn = useCallback(async () => {
+    if (submitting) return;
+
     setStatus(null);
     setSubmitting(true);
+
     try {
-      await signInWithPassword(identifier.trim(), password);
+      const state = uuidv4();
+      await AsyncStorage.setItem(PENDING_STATE_KEY, state);
+
+      const redirectUri = createURL('/login');
+      const authorizeUrl =
+        `https://solarpro.solutions/api/auth/authorize` +
+        `?redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&state=${encodeURIComponent(state)}`;
+
+      await Linking.openURL(authorizeUrl);
     } catch (err) {
-      setStatus({ type: 'error', message: err instanceof Error ? err.message : 'Please check your credentials and try again.' });
+      await AsyncStorage.removeItem(PENDING_STATE_KEY);
+      setStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Unable to open SolarPro sign-in.',
+      });
     } finally {
       setSubmitting(false);
     }
-  }
-
-  function handleSolarProSignIn() {
-    const state = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    const redirectUri = encodeURIComponent('sitesurvey://login');
-    const authorizeUrl =
-      `https://solarpro.solutions/api/auth/authorize` +
-      `?redirect_uri=${redirectUri}` +
-      `&state=${state}`;
-
-    void Linking.openURL(authorizeUrl);
-  }
+  }, [submitting]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -71,66 +126,24 @@ export default function LoginScreen() {
                 <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
               </View>
               <Text style={styles.title}>Site Survey</Text>
-              <Text style={styles.subtitle}>Sign in to your account</Text>
+              <Text style={styles.subtitle}>Use your SolarPro account to sign in</Text>
+              <Text style={styles.helperText}>Local email/password login has been removed. The app now opens SolarPro directly and returns here with a secure handoff token.</Text>
 
               {status && <StatusBanner type={status.type} message={status.message} />}
 
-              <Text style={styles.inputLabel}>Email or Username</Text>
-              <TextInput
-                value={identifier}
-                onChangeText={setIdentifier}
-                placeholder="you@example.com"
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-              />
-
-              <Text style={styles.inputLabel}>Password</Text>
-              <PasswordInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Your password"
-                placeholderTextColor={colors.textMuted}
-              />
-
               <TouchableOpacity
-                style={[styles.button, (!canSubmit || submitting) && styles.buttonDisabled]}
-                onPress={handleSignIn}
-                disabled={!canSubmit || submitting}
+                style={[styles.button, submitting && styles.buttonDisabled]}
+                onPress={handleSolarProSignIn}
+                disabled={submitting}
+                accessibilityRole="button"
+                accessibilityLabel="Open SolarPro sign in"
               >
                 {submitting ? (
                   <ActivityIndicator color={colors.white} />
                 ) : (
-                  <Text style={styles.buttonText}>Sign In</Text>
+                  <Text style={styles.buttonText}>Open SolarPro</Text>
                 )}
               </TouchableOpacity>
-
-              <View style={styles.linksRow}>
-                <TouchableOpacity onPress={() => router.push('/register')}>
-                  <Text style={styles.linkText}>Create account</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/forgot-password')}>
-                  <Text style={styles.linkText}>Forgot password?</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.dividerRow}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>or</Text>
-                <View style={styles.dividerLine} />
-              </View>
-
-              <TouchableOpacity
-                style={styles.ssoButton}
-                onPress={handleSolarProSignIn}
-                accessibilityRole="button"
-                accessibilityLabel="Sign in with SolarPro account"
-              >
-                <Text style={styles.ssoButtonText}>Use SolarPro Account</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.apiHint}>{API_URL}</Text>
             </View>
           </View>
         </ScrollView>
@@ -162,18 +175,13 @@ const styles = StyleSheet.create({
   logoWrap: { alignItems: 'center', marginBottom: 20 },
   logo: { width: 150, height: 64, borderRadius: 8 },
   title: { fontSize: 30, fontWeight: '800', color: colors.textPrimary, textAlign: 'center', letterSpacing: -0.5 },
-  subtitle: { fontSize: 14, color: colors.textSecondary, marginTop: 6, marginBottom: 24, textAlign: 'center' },
-  inputLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
-  input: {
-    borderWidth: 1.5,
-    borderColor: colors.inputBorder,
-    borderRadius: 12,
-    height: 50,
-    paddingHorizontal: 14,
-    color: colors.textPrimary,
-    marginBottom: 16,
-    backgroundColor: colors.inputBg,
-    fontSize: 15,
+  subtitle: { fontSize: 14, color: colors.textSecondary, marginTop: 6, marginBottom: 14, textAlign: 'center' },
+  helperText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: 18,
   },
   button: {
     height: 52,
@@ -190,45 +198,4 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.45, shadowOpacity: 0 },
   buttonText: { color: '#0B1220', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
-  linksRow: {
-    marginTop: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  linkText: { color: BRAND_PRIMARY, fontSize: 13, fontWeight: '600' },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 18,
-    marginBottom: 14,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border,
-  },
-  dividerText: {
-    marginHorizontal: 12,
-    fontSize: 12,
-    color: colors.textMuted,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  ssoButton: {
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: BRAND_PRIMARY,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ssoButtonText: {
-    color: BRAND_PRIMARY,
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  apiHint: { marginTop: 16, fontSize: 11, color: colors.textMuted, textAlign: 'center' },
 });

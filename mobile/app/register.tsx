@@ -1,6 +1,6 @@
 import React from 'react';
-import RegisterScreen from '../src/screens/RegisterScreen';
+import { Redirect } from 'expo-router';
 
 export default function RegisterRoute() {
-  return <RegisterScreen />;
+  return <Redirect href="/login" />;
 }

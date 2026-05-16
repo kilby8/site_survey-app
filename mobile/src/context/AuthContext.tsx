@@ -2,12 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchCurrentUser,
-  forgotPassword,
   logout as apiLogout,
+  exchangeSolarProSso,
   refreshAccessToken,
-  register,
-  resetPassword,
-  signIn,
   type AuthUser,
 } from '../api/client';
 
@@ -65,10 +62,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
   loading: boolean;
-  signInWithPassword: (identifier: string, password: string) => Promise<void>;
-  registerWithPassword: (email: string, password: string, fullName: string) => Promise<void>;
-  requestPasswordReset: (email: string) => Promise<{ message: string; resetToken?: string; expiresInMinutes?: number }>;
-  completePasswordReset: (email: string, token: string, newPassword: string) => Promise<{ message: string }>;
+  signInWithSolarProToken: (token: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -138,6 +132,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, delay);
   }, [refreshSession]);
 
+  const persistSession = useCallback(async (result: { token: string; refreshToken: string | null; user: AuthUser }) => {
+    await setStoredToken(result.token);
+    if (result.refreshToken) {
+      await setStoredRefreshToken(result.refreshToken);
+      refreshTokenRef.current = result.refreshToken;
+      scheduleRefresh(result.token, result.refreshToken);
+    } else {
+      await clearStoredRefreshToken();
+      refreshTokenRef.current = null;
+    }
+    setToken(result.token);
+    setUser(result.user);
+  }, [scheduleRefresh]);
+
   const signOut = useCallback(async () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     await apiLogout(refreshTokenRef.current);
@@ -197,62 +205,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refreshSession, scheduleRefresh]);
 
-  const signInWithPassword = useCallback(async (identifier: string, password: string) => {
-    const result = await signIn(identifier, password);
-    await setStoredToken(result.token);
-    if (result.refreshToken) {
-      await setStoredRefreshToken(result.refreshToken);
-      refreshTokenRef.current = result.refreshToken;
-      scheduleRefresh(result.token, result.refreshToken);
-    }
-    setToken(result.token);
-    setUser(result.user);
-  }, [scheduleRefresh]);
-
-  const registerWithPassword = useCallback(async (email: string, password: string, fullName: string) => {
-    const result = await register({ email, password, fullName });
-    await setStoredToken(result.token);
-    if (result.refreshToken) {
-      await setStoredRefreshToken(result.refreshToken);
-      refreshTokenRef.current = result.refreshToken;
-      scheduleRefresh(result.token, result.refreshToken);
-    }
-    setToken(result.token);
-    setUser(result.user);
-  }, [scheduleRefresh]);
-
-  const requestPasswordReset = useCallback(async (email: string) => {
-    const result = await forgotPassword(email);
-    return {
-      message: result.message,
-      resetToken: result.resetToken,
-      expiresInMinutes: result.expiresInMinutes,
-    };
-  }, []);
-
-  const completePasswordReset = useCallback(async (email: string, tokenValue: string, newPassword: string) => {
-    return resetPassword(email, tokenValue, newPassword);
-  }, []);
+  const signInWithSolarProToken = useCallback(async (token: string) => {
+    const result = await exchangeSolarProSso(token);
+    await persistSession(result);
+  }, [persistSession]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
       token,
       loading,
-      signInWithPassword,
-      registerWithPassword,
-      requestPasswordReset,
-      completePasswordReset,
+      signInWithSolarProToken,
       signOut,
     }),
     [
       user,
       token,
       loading,
-      signInWithPassword,
-      registerWithPassword,
-      requestPasswordReset,
-      completePasswordReset,
+      signInWithSolarProToken,
       signOut,
     ]
   );

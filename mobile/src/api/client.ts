@@ -290,6 +290,15 @@ export async function signIn(
   return handleResponse<AuthResponse>(res);
 }
 
+export async function exchangeSolarProSso(token: string): Promise<AuthResponse> {
+  const res = await fetchWithFallback("/api/users/solarpro-sso", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  return handleResponse<AuthResponse>(res);
+}
+
 export async function register(input: RegisterInput): Promise<AuthResponse> {
   const res = await fetchWithFallback("/api/users/register", {
     method: "POST",

@@ -41,7 +41,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (loading) return;
 
-    const authRoutes = new Set(['/login', '/register', '/forgot-password']);
+    const authRoutes = new Set(['/login']);
     const onAuthRoute = authRoutes.has(pathname);
 
     if (!user && !onAuthRoute) {
@@ -101,8 +101,6 @@ export default function RootLayout() {
                 >
                   <Stack.Screen name="index" options={{ title: 'Site Surveys', headerShown: false }} />
                   <Stack.Screen name="login" options={{ title: 'Sign In', headerShown: false }} />
-                  <Stack.Screen name="register" options={{ title: 'Create Account', headerShown: false }} />
-                  <Stack.Screen name="forgot-password" options={{ title: 'Reset Password', headerShown: false }} />
                   <Stack.Screen name="new-survey" options={{ title: 'New Survey', headerShown: true }} />
                   <Stack.Screen name="map" options={{ title: 'Survey Map', headerShown: true }} />
                   <Stack.Screen name="survey/[id]" options={{ title: 'Survey Details', headerShown: true }} />

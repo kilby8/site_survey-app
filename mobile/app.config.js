@@ -5,6 +5,7 @@ module.exports = ({ config }) => {
 
   const expo = {
     ...baseExpo,
+    scheme: 'sitesurvey',
     // Always override runtimeVersion with a plain string to prevent
     // EAS from injecting a policy object from the dashboard.
     runtimeVersion: '1.0.0',
