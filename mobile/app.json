@@ -49,7 +49,7 @@
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.RECORD_AUDIO"
       ],
-      "versionCode": 22
+      "versionCode": 23
     },
     "web": {
       "bundler": "metro"
