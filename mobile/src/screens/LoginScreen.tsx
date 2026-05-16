@@ -14,11 +14,11 @@ import {
 } from 'react-native';
 import { createURL } from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { v4 as uuidv4 } from 'uuid';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { StatusBanner } from '../components/AuthFormHelpers';
 import { solarProTheme } from '../theme/solarProTheme';
+import { generateStateNonce } from '../utils/generateStateNonce';
 
 const { colors } = solarProTheme;
 const BRAND_PRIMARY = colors.primary;
@@ -84,15 +84,15 @@ export default function LoginScreen() {
     };
   }, [callbackState, callbackToken, handleSolarProCallback]);
 
-  const handleSolarProSignIn = useCallback(async () => {
-    if (submitting) return;
+   const handleSolarProSignIn = useCallback(async () => {
+     if (submitting) return;
 
-    setStatus(null);
-    setSubmitting(true);
+     setStatus(null);
+     setSubmitting(true);
 
-    try {
-      const state = uuidv4();
-      await AsyncStorage.setItem(PENDING_STATE_KEY, state);
+     try {
+       const state = generateStateNonce();
+       await AsyncStorage.setItem(PENDING_STATE_KEY, state);
 
       const redirectUri = createURL('/login');
       const authorizeUrl =
