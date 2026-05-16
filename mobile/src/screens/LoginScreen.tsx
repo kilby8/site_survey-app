@@ -12,7 +12,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { createURL } from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
@@ -24,6 +23,7 @@ const { colors } = solarProTheme;
 const BRAND_PRIMARY = colors.primary;
 const LOGO_URL = 'https://img1.wsimg.com/isteam/ip/b4ef19f7-7f46-446b-bbe2-755512fcd4f8/UNDER%20THE%20SUN%20LOGO.jpg/:/rs=w:300,h:300,m';
 const PENDING_STATE_KEY = 'site-survey.auth.pending-solarpro-state.v1';
+const SOLARPRO_REDIRECT_URI = process.env.EXPO_PUBLIC_SOLARPRO_REDIRECT_URI?.trim() || 'sitesurvey://login';
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -94,7 +94,7 @@ export default function LoginScreen() {
        const state = generateStateNonce();
        await AsyncStorage.setItem(PENDING_STATE_KEY, state);
 
-      const redirectUri = createURL('/login');
+      const redirectUri = SOLARPRO_REDIRECT_URI;
       const authorizeUrl =
         `https://solarpro.solutions/api/auth/authorize` +
         `?redirect_uri=${encodeURIComponent(redirectUri)}` +
