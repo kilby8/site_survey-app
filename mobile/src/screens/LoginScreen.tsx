@@ -23,7 +23,7 @@ const { colors } = solarProTheme;
 const BRAND_PRIMARY = colors.primary;
 const LOGO_URL = 'https://img1.wsimg.com/isteam/ip/b4ef19f7-7f46-446b-bbe2-755512fcd4f8/UNDER%20THE%20SUN%20LOGO.jpg/:/rs=w:300,h:300,m';
 const PENDING_STATE_KEY = 'site-survey.auth.pending-solarpro-state.v1';
-const SOLARPRO_REDIRECT_URI = process.env.EXPO_PUBLIC_SOLARPRO_REDIRECT_URI?.trim() || 'sitesurvey://login';
+const SOLARPRO_REDIRECT_URI = process.env.EXPO_PUBLIC_SOLARPRO_REDIRECT_URI?.trim() || 'https://solarpro.solutions/login';
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
