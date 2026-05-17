@@ -45,10 +45,29 @@ function getRedirectScheme(): string {
   return `${scheme}://login`;
 }
 
-const SOLARPRO_REDIRECT_URI =
-  process.env.EXPO_PUBLIC_SOLARPRO_REDIRECT_URI?.trim() ||
-  ExpoLinking.createURL('login') ||
-  getRedirectScheme();
+function isAllowedRedirectUri(value: string): boolean {
+  return (
+    value.startsWith('exp://') ||
+    value.startsWith('sitesurvey://') ||
+    value.startsWith('com.underthesun.')
+  );
+}
+
+function resolveSolarProRedirectUri(): string {
+  const envRedirect = process.env.EXPO_PUBLIC_SOLARPRO_REDIRECT_URI?.trim();
+  if (envRedirect && isAllowedRedirectUri(envRedirect)) {
+    return envRedirect;
+  }
+
+  const linkingRedirect = ExpoLinking.createURL('login');
+  if (linkingRedirect && isAllowedRedirectUri(linkingRedirect)) {
+    return linkingRedirect;
+  }
+
+  return getRedirectScheme();
+}
+
+const SOLARPRO_REDIRECT_URI = resolveSolarProRedirectUri();
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -150,6 +169,8 @@ export default function LoginScreen() {
         `https://solarpro.solutions/api/auth/authorize` +
         `?redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&state=${encodeURIComponent(state)}`;
+
+      console.log('[SSO] Using redirect_uri:', redirectUri);
 
       // Use AuthSession so Expo Go can capture exp:// redirects without browser security blocks.
       const authResult = await WebBrowser.openAuthSessionAsync(authorizeUrl, redirectUri);
