@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -183,7 +184,26 @@ export default function LoginScreen() {
       setDebugInfo(`redirect_uri=${redirectUri}`);
 
       // Use AuthSession so Expo Go can capture exp:// redirects without browser security blocks.
-      const authResult = await WebBrowser.openAuthSessionAsync(authorizeUrl, redirectUri);
+      let authResult: WebBrowser.WebBrowserAuthSessionResult;
+      try {
+        authResult = await WebBrowser.openAuthSessionAsync(authorizeUrl, redirectUri);
+      } catch (sessionErr) {
+        const message = sessionErr instanceof Error ? sessionErr.message : String(sessionErr);
+        setDebugInfo((prev) => `${prev}\nauth_session_exception=${message}`);
+
+        // Android browsers sometimes throw java/io exceptions from Custom Tabs.
+        // Fallback to external browser; the existing deep-link callback listener will finish login.
+        if (/java\.io|IOException|CustomTabs|ActivityNotFound/i.test(message)) {
+          await Linking.openURL(authorizeUrl);
+          setStatus({
+            type: 'success',
+            message: 'Continuing sign-in in browser. Return to app after SolarPro login.',
+          });
+          return;
+        }
+
+        throw sessionErr;
+      }
       setDebugInfo((prev) => `${prev}\nauth_result=${authResult.type}`);
 
       if (authResult.type !== 'success' || !authResult.url) {
