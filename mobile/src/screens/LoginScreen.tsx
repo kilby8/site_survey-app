@@ -57,7 +57,8 @@ function resolveSolarProRedirectUri(): string {
   // In Expo Go, use a stable callback URI. Using the runtime update URL form
   // (exp://u.expo.dev/.../--/login) can cause AuthSession to return dismiss.
   const hostUri = Constants.expoConfig?.hostUri;
-  if (hostUri) {
+  const executionEnvironment = (Constants as unknown as { executionEnvironment?: string }).executionEnvironment;
+  if (hostUri || executionEnvironment === 'storeClient') {
     return 'exp://login';
   }
 
