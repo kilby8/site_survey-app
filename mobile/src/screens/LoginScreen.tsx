@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -15,6 +14,8 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
+import * as ExpoLinking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '../context/AuthContext';
 import { StatusBanner } from '../components/AuthFormHelpers';
 import { solarProTheme } from '../theme/solarProTheme';
@@ -24,6 +25,8 @@ const { colors } = solarProTheme;
 const BRAND_PRIMARY = colors.primary;
 const LOGO_URL = 'https://img1.wsimg.com/isteam/ip/b4ef19f7-7f46-446b-bbe2-755512fcd4f8/UNDER%20THE%20SUN%20LOGO.jpg/:/rs=w:300,h:300,m';
 const PENDING_STATE_KEY = 'site-survey.auth.pending-solarpro-state.v1';
+
+WebBrowser.maybeCompleteAuthSession();
 
 // Detect which scheme to use based on runtime environment
 function getRedirectScheme(): string {
@@ -42,10 +45,20 @@ function getRedirectScheme(): string {
   return `${scheme}://login`;
 }
 
-const SOLARPRO_REDIRECT_URI = process.env.EXPO_PUBLIC_SOLARPRO_REDIRECT_URI?.trim() || getRedirectScheme();
+const SOLARPRO_REDIRECT_URI =
+  process.env.EXPO_PUBLIC_SOLARPRO_REDIRECT_URI?.trim() ||
+  ExpoLinking.createURL('login') ||
+  getRedirectScheme();
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function firstQueryParam(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    return typeof value[0] === 'string' ? value[0] : undefined;
+  }
+  return typeof value === 'string' ? value : undefined;
 }
 
 export default function LoginScreen() {
@@ -138,7 +151,22 @@ export default function LoginScreen() {
         `?redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&state=${encodeURIComponent(state)}`;
 
-      await Linking.openURL(authorizeUrl);
+      // Use AuthSession so Expo Go can capture exp:// redirects without browser security blocks.
+      const authResult = await WebBrowser.openAuthSessionAsync(authorizeUrl, redirectUri);
+
+      if (authResult.type !== 'success' || !authResult.url) {
+        throw new Error('Sign-in was cancelled before completion.');
+      }
+
+      const parsed = ExpoLinking.parse(authResult.url);
+      const token = firstQueryParam(parsed.queryParams?.token);
+      const stateFromCallback = firstQueryParam(parsed.queryParams?.state);
+
+      if (!token || !stateFromCallback) {
+        throw new Error('SolarPro did not return a valid sign-in token.');
+      }
+
+      await handleSolarProCallback(token, stateFromCallback);
     } catch (err) {
       await AsyncStorage.removeItem(PENDING_STATE_KEY);
       setStatus({
@@ -148,7 +176,7 @@ export default function LoginScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [submitting]);
+  }, [handleSolarProCallback, submitting]);
 
   return (
     <SafeAreaView style={styles.screen}>
