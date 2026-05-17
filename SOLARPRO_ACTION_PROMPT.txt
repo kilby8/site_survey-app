@@ -1,0 +1,90 @@
+---
+TO: Raymond (SolarPro Backend)
+FROM: Site Survey Mobile Team
+RE: SSO Authorization Endpoint - BLOCKING ISSUE
+---
+
+# 🚨 ACTION REQUIRED: Create SolarPro Authorization Endpoint
+
+## Problem
+Mobile app is getting **404 error** when trying to access:
+```
+https://solarpro.solutions/api/auth/authorize
+```
+
+This endpoint is missing. SSO flow cannot proceed without it.
+
+---
+
+## Solution: Create This Endpoint
+
+### Route
+```
+GET /api/auth/authorize
+```
+
+### Query Parameters
+- `redirect_uri` - Where to send the browser after login (e.g., https://site-survey-api-bpyz.onrender.com/auth/callback)
+- `state` - CSRF nonce (pass through unchanged)
+
+### Implementation Checklist
+
+- [ ] Check if user is logged into SolarPro
+- [ ] If NOT logged in → show login form
+- [ ] If logged in → proceed to step below
+- [ ] Create JWT with claims:
+  ```json
+  {
+    "solarpro_user_id": "their-user-id",
+    "solarpro_email": "their@email.com",
+    "solarpro_name": "Their Name",
+    "solarpro_org_id": "their-org-id",
+    "jti": "uuid-v4",
+    "exp": <unix-timestamp-1-hour-from-now>,
+    "iat": <current-unix-timestamp>
+  }
+  ```
+- [ ] **Sign JWT with this Secret:**
+  ```
+  prod_handoff_secret_2026_rotate_me
+  ```
+  (Must be HS256 algorithm)
+- [ ] Redirect browser to:
+  ```
+  {redirect_uri}?token={JWT}&state={state}
+  ```
+
+---
+
+## Why This Works
+
+1. Mobile app → Opens authorize URL
+2. User logs in on SolarPro
+3. SolarPro signs JWT and redirects
+4. Our backend receives callback
+5. Our backend deeplinks back to mobile app
+6. Mobile app exchanges JWT for access token
+7. User authenticated ✅
+
+---
+
+## Testing
+
+Once done, SolarPro signs JWT, our backend:
+- ✅ Verifies signature
+- ✅ Creates/matches user
+- ✅ Issues tokens
+- ✅ Mobile app receives authenticated state
+
+---
+
+## Files to Reference
+
+- **Our callback handler**: `/auth/callback` on our backend (already exists)
+- **Our exchange endpoint**: `/api/users/solarpro-sso` (already tested)
+- **Your config needed**: Set env var `SOLARPRO_HANDOFF_SECRET` on your backend
+
+---
+
+**Timeline**: Mobile app is ready and waiting. Unblocking this enables full SSO flow.
+
