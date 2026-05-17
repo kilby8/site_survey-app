@@ -86,6 +86,7 @@ export default function LoginScreen() {
   const { signInWithSolarProToken } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string>('');
   const processedCallbackRef = useRef<string | null>(null);
 
   const callbackToken = firstParam(params.token);
@@ -171,13 +172,17 @@ export default function LoginScreen() {
         `&state=${encodeURIComponent(state)}`;
 
       console.log('[SSO] Using redirect_uri:', redirectUri);
+      setDebugInfo(`redirect_uri=${redirectUri}`);
 
       // Use AuthSession so Expo Go can capture exp:// redirects without browser security blocks.
       const authResult = await WebBrowser.openAuthSessionAsync(authorizeUrl, redirectUri);
+      setDebugInfo((prev) => `${prev}\nauth_result=${authResult.type}`);
 
       if (authResult.type !== 'success' || !authResult.url) {
         throw new Error('Sign-in was cancelled before completion.');
       }
+
+      setDebugInfo((prev) => `${prev}\ncallback_url=${authResult.url}`);
 
       const parsed = ExpoLinking.parse(authResult.url);
       const token = firstQueryParam(parsed.queryParams?.token);
@@ -190,6 +195,7 @@ export default function LoginScreen() {
       await handleSolarProCallback(token, stateFromCallback);
     } catch (err) {
       await AsyncStorage.removeItem(PENDING_STATE_KEY);
+      setDebugInfo((prev) => `${prev}\nerror=${err instanceof Error ? err.message : 'unknown'}`);
       setStatus({
         type: 'error',
         message: err instanceof Error ? err.message : 'Unable to open SolarPro sign-in.',
@@ -217,6 +223,7 @@ export default function LoginScreen() {
               <Text style={styles.helperText}>Local email/password login has been removed. The app now opens SolarPro directly and returns here with a secure handoff token.</Text>
 
               {status && <StatusBanner type={status.type} message={status.message} />}
+              {debugInfo ? <Text style={styles.debugText}>{debugInfo}</Text> : null}
 
               <TouchableOpacity
                 style={[styles.button, submitting && styles.buttonDisabled]}
@@ -285,4 +292,10 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.45, shadowOpacity: 0 },
   buttonText: { color: '#0B1220', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
+  debugText: {
+    marginTop: 10,
+    fontSize: 11,
+    color: colors.textMuted,
+    lineHeight: 15,
+  },
 });
