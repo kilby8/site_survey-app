@@ -298,6 +298,42 @@ app.use("/api/mobile", requireAuth, mobileClientsRouter);
 
 
 // ----------------------------------------------------------------
+// SolarPro SSO bridge — receives HTTPS redirect from SolarPro OAuth
+// and bounces the browser into the sitesurvey:// deep link so the
+// native app can finish the handshake.
+// ----------------------------------------------------------------
+app.get("/auth/callback", (req, res) => {
+  const token = req.query.token as string | undefined;
+  const state = req.query.state as string | undefined;
+
+  if (!token || !state) {
+    res.status(400).send(
+      "<!DOCTYPE html><html><body><p>Missing token or state. Please try logging in again.</p></body></html>",
+    );
+    return;
+  }
+
+  // Sanitise — both values are URL-encoded back into the deep link
+  const safeToken = encodeURIComponent(token);
+  const safeState = encodeURIComponent(state);
+  const deepLink = `sitesurvey://login?token=${safeToken}&state=${safeState}`;
+
+  res.send(`<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Opening Site Survey…</title>
+    <meta http-equiv="refresh" content="0;url=${deepLink}" />
+    <script>window.location.replace(${JSON.stringify(deepLink)});</script>
+  </head>
+  <body>
+    <p>Redirecting back to the app…</p>
+    <p>If the app does not open, <a href="${deepLink}">tap here</a>.</p>
+  </body>
+</html>`);
+});
+
+// ----------------------------------------------------------------
 // 404
 // ----------------------------------------------------------------
 app.use((_req, res) => {

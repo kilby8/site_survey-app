@@ -3,8 +3,8 @@
                   "development":  {
                                       "env":  {
                                                   "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage":  "false",
-                                                   "EXPO_PUBLIC_API_URL":  "https://site-survey-api-bpyz.onrender.com",
-                                                   "EXPO_PUBLIC_SOLARPRO_REDIRECT_URI": "https://solarpro-dev.vercel.app/login"
+                                                  "EXPO_PUBLIC_API_URL":  "https://site-survey-api-bpyz.onrender.com",
+                                                   "EXPO_PUBLIC_SOLARPRO_REDIRECT_URI": "https://site-survey-api-bpyz.onrender.com/auth/callback"
                                               },
                                       "developmentClient":  true,
                                       "distribution":  "internal"
@@ -14,7 +14,7 @@
                                   "env":  {
                                               "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage":  "false",
                                                "EXPO_PUBLIC_API_URL":  "https://site-survey-api-bpyz.onrender.com",
-                                               "EXPO_PUBLIC_SOLARPRO_REDIRECT_URI": "https://solarpro-dev.vercel.app/login"
+                                               "EXPO_PUBLIC_SOLARPRO_REDIRECT_URI": "https://site-survey-api-bpyz.onrender.com/auth/callback"
                                           },
                                   "environment":  "preview",
                                   "distribution":  "internal",
@@ -27,7 +27,7 @@
                                      "env":  {
                                                  "ORG_GRADLE_PROJECT_AsyncStorage_useNextStorage":  "false",
                                                   "EXPO_PUBLIC_API_URL":  "https://site-survey-api-bpyz.onrender.com",
-                                                  "EXPO_PUBLIC_SOLARPRO_REDIRECT_URI": "https://solarpro.solutions/login"
+                                                  "EXPO_PUBLIC_SOLARPRO_REDIRECT_URI": "https://site-survey-api-bpyz.onrender.com/auth/callback"
                                              },
                                      "environment":  "production",
                                      "autoIncrement":  true
