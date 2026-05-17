@@ -305,6 +305,7 @@ app.use("/api/mobile", requireAuth, mobileClientsRouter);
 app.get("/auth/callback", (req, res) => {
   const token = req.query.token as string | undefined;
   const state = req.query.state as string | undefined;
+  const scheme = req.query.scheme as string | undefined;
 
   if (!token || !state) {
     res.status(400).send(
@@ -313,10 +314,25 @@ app.get("/auth/callback", (req, res) => {
     return;
   }
 
+  // Determine the scheme to use for the deeplink
+  // Priority: query param > Expo Go detection > production default
+  let targetScheme = scheme || "sitesurvey";
+
+  // If no explicit scheme provided, try to detect Expo Go
+  if (!scheme) {
+    const userAgent = req.headers["user-agent"] || "";
+    if (userAgent.includes("Expo") || userAgent.includes("ExpoGo")) {
+      targetScheme = "exp";
+    }
+  }
+
   // Sanitise — both values are URL-encoded back into the deep link
   const safeToken = encodeURIComponent(token);
   const safeState = encodeURIComponent(state);
-  const deepLink = `sitesurvey://login?token=${safeToken}&state=${safeState}`;
+  const deepLink = `${targetScheme}://login?token=${safeToken}&state=${safeState}`;
+
+  console.log(`[AUTH_CALLBACK] Redirecting to deeplink: ${targetScheme}://login`);
+  console.log(`[AUTH_CALLBACK] User-Agent: ${req.headers["user-agent"]}`);
 
   res.send(`<!DOCTYPE html>
 <html>
@@ -324,11 +340,23 @@ app.get("/auth/callback", (req, res) => {
     <meta charset="utf-8" />
     <title>Opening Site Survey…</title>
     <meta http-equiv="refresh" content="0;url=${deepLink}" />
-    <script>window.location.replace(${JSON.stringify(deepLink)});</script>
+    <script>
+      // Try the configured scheme
+      window.location.replace(${JSON.stringify(deepLink)});
+
+      // Fallback: If the redirect doesn't work after 3 seconds, try exp:// alternative
+      setTimeout(() => {
+        const fallbackDeepLink = ${JSON.stringify(`exp://login?token=${safeToken}&state=${safeState}`)};
+        if (${JSON.stringify(targetScheme)} !== 'exp') {
+          window.location.replace(fallbackDeepLink);
+        }
+      }, 3000);
+    </script>
   </head>
   <body>
     <p>Redirecting back to the app…</p>
     <p>If the app does not open, <a href="${deepLink}">tap here</a>.</p>
+    ${targetScheme !== "exp" ? `<p><a href="exp://login?token=${safeToken}&state=${safeState}">Or try Expo Go</a>.</p>` : ""}
   </body>
 </html>`);
 });

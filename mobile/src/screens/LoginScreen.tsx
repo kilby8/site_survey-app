@@ -72,34 +72,53 @@ export default function LoginScreen() {
   }, [router, signInWithSolarProToken]);
 
   useEffect(() => {
-    if (!callbackToken || !callbackState) return;
+    // Only proceed if we have both token and state from the deeplink
+    if (!callbackToken || !callbackState) {
+      return;
+    }
 
     const callbackKey = `${callbackToken}:${callbackState}`;
-    if (processedCallbackRef.current === callbackKey) return;
+
+    // Prevent duplicate processing if params haven't changed
+    if (processedCallbackRef.current === callbackKey) {
+      return;
+    }
+
     processedCallbackRef.current = callbackKey;
 
     let cancelled = false;
 
-    void (async () => {
+    // Process the SolarPro callback with a small delay to ensure async storage is ready
+    const timeoutId = setTimeout(async () => {
+      if (cancelled) return;
+
       setSubmitting(true);
       setStatus(null);
+
       try {
+        console.log('[SSO CALLBACK] Processing deeplink:', {
+          token: callbackToken.substring(0, 20) + '...',
+          state: callbackState,
+        });
         await handleSolarProCallback(callbackToken, callbackState);
       } catch (err) {
         if (cancelled) return;
         await AsyncStorage.removeItem(PENDING_STATE_KEY);
         processedCallbackRef.current = null;
+        const message = err instanceof Error ? err.message : 'SolarPro sign-in failed. Please try again.';
+        console.error('[SSO CALLBACK] Error:', message);
         setStatus({
           type: 'error',
-          message: err instanceof Error ? err.message : 'SolarPro sign-in failed. Please try again.',
+          message,
         });
       } finally {
         if (!cancelled) setSubmitting(false);
       }
-    })();
+    }, 100);
 
     return () => {
       cancelled = true;
+      clearTimeout(timeoutId);
     };
   }, [callbackState, callbackToken, handleSolarProCallback]);
 

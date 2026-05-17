@@ -84,6 +84,21 @@
       "checkAutomatically": "ON_ERROR_RECOVERY",
       "fallbackToCacheTimeout": 0
     },
-    "runtimeVersion": "1.0.0"
+    "runtimeVersion": "1.0.0",
+    "linking": {
+      "schemes": ["sitesurvey", "exp"],
+      "prefixes": ["sitesurvey://", "exp://", "https://site-survey.app"],
+      "config": {
+        "screens": {
+          "index": "/",
+          "login": "/login",
+          "new-survey": "/new-survey",
+          "map": "/map",
+          "register": "/register",
+          "forgot-password": "/forgot-password",
+          "survey/[id]": "/survey/:id"
+        }
+      }
+    }
   }
 }
