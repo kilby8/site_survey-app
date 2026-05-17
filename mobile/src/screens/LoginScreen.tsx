@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { useAuth } from '../context/AuthContext';
 import { StatusBanner } from '../components/AuthFormHelpers';
 import { solarProTheme } from '../theme/solarProTheme';
@@ -23,7 +24,25 @@ const { colors } = solarProTheme;
 const BRAND_PRIMARY = colors.primary;
 const LOGO_URL = 'https://img1.wsimg.com/isteam/ip/b4ef19f7-7f46-446b-bbe2-755512fcd4f8/UNDER%20THE%20SUN%20LOGO.jpg/:/rs=w:300,h:300,m';
 const PENDING_STATE_KEY = 'site-survey.auth.pending-solarpro-state.v1';
-const SOLARPRO_REDIRECT_URI = process.env.EXPO_PUBLIC_SOLARPRO_REDIRECT_URI?.trim() || 'https://site-survey-api-bpyz.onrender.com/auth/callback';
+
+// Detect which scheme to use based on runtime environment
+function getRedirectScheme(): string {
+  // In Expo Go development, use exp:// scheme
+  // In production builds, use the configured sitesurvey:// scheme
+  const config = Constants.expoConfig;
+  const hostUri = config?.hostUri;
+
+  // If we have a hostUri, we're running in Expo Go (development)
+  if (hostUri) {
+    return 'exp://login';
+  }
+
+  // Otherwise, we're in a production build using the configured scheme
+  const scheme = config?.scheme || 'sitesurvey';
+  return `${scheme}://login`;
+}
+
+const SOLARPRO_REDIRECT_URI = process.env.EXPO_PUBLIC_SOLARPRO_REDIRECT_URI?.trim() || getRedirectScheme();
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
