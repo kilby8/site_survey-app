@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { Router, Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
+import jwt, { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
 import {
   getUserById,
   getUserByEmail,
@@ -754,7 +754,26 @@ router.post('/solarpro-sso', async (req: Request, res: Response) => {
       return;
     }
     decoded = verified as typeof decoded;
-  } catch {
+  } catch (verifyErr) {
+    if (verifyErr instanceof TokenExpiredError) {
+      res.status(401).json({ error: 'SSO token expired. Please sign in again.' });
+      return;
+    }
+
+    if (verifyErr instanceof JsonWebTokenError) {
+      // Most common cause in this integration is handoff secret mismatch between SolarPro and app backend.
+      if (/invalid signature/i.test(verifyErr.message)) {
+        res.status(401).json({
+          error:
+            'Invalid SSO token signature. SolarPro handoff secret does not match app backend.',
+        });
+        return;
+      }
+
+      res.status(401).json({ error: 'Invalid SSO token. Please sign in again.' });
+      return;
+    }
+
     res.status(401).json({ error: 'Invalid or expired SSO token' });
     return;
   }
