@@ -107,20 +107,36 @@ export default function LoginScreen() {
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [debugInfo, setDebugInfo] = useState<string>('');
   const processedCallbackRef = useRef<string | null>(null);
+  const inFlightTokenRef = useRef<string | null>(null);
+  const completedTokenRef = useRef<string | null>(null);
 
   const callbackToken = firstParam(params.token);
   const callbackState = firstParam(params.state);
 
   const handleSolarProCallback = useCallback(async (token: string, state: string) => {
+    if (completedTokenRef.current === token || inFlightTokenRef.current === token) {
+      return;
+    }
+
+    inFlightTokenRef.current = token;
+
     const storedState = await AsyncStorage.getItem(PENDING_STATE_KEY);
     if (!storedState || storedState !== state) {
+      inFlightTokenRef.current = null;
       await AsyncStorage.removeItem(PENDING_STATE_KEY);
       throw new Error('This SolarPro sign-in link is no longer valid. Please try again from the app.');
     }
 
-    await signInWithSolarProToken(token);
-    await AsyncStorage.removeItem(PENDING_STATE_KEY);
-    router.replace('/');
+    try {
+      await signInWithSolarProToken(token);
+      completedTokenRef.current = token;
+      await AsyncStorage.removeItem(PENDING_STATE_KEY);
+      router.replace('/');
+    } finally {
+      if (inFlightTokenRef.current === token) {
+        inFlightTokenRef.current = null;
+      }
+    }
   }, [router, signInWithSolarProToken]);
 
   useEffect(() => {
@@ -240,6 +256,9 @@ export default function LoginScreen() {
       if (!token || !stateFromCallback) {
         throw new Error('SolarPro did not return a valid sign-in token.');
       }
+
+      // Keep AuthSession callback handling and route-param handling aligned.
+      processedCallbackRef.current = `${token}:${stateFromCallback}`;
 
       await handleSolarProCallback(token, stateFromCallback);
     } catch (err) {
