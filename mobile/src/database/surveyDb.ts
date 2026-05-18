@@ -360,6 +360,29 @@ export async function setSyncStatus(
   );
 }
 
+/**
+ * Recover records left in `syncing` state after an interrupted app/session.
+ * These records cannot progress until they are moved back to a retryable state.
+ */
+export async function recoverStuckSyncingSurveys(maxAgeMinutes = 10): Promise<number> {
+  const db = getDb();
+  const cutoffIso = new Date(Date.now() - maxAgeMinutes * 60 * 1000).toISOString();
+  const errorMsg = 'Previous sync was interrupted. Tap to retry.';
+  const nowIso = new Date().toISOString();
+
+  const result = await db.runAsync(
+    `UPDATE surveys
+        SET sync_status = 'error',
+            sync_error = ?,
+            updated_at = ?
+      WHERE sync_status = 'syncing'
+        AND updated_at <= ?`,
+    [errorMsg, nowIso, cutoffIso],
+  );
+
+  return result.changes ?? 0;
+}
+
 /** Add a photo record linked to an existing survey. */
 export async function addPhotoToSurvey(
   surveyId:  string,

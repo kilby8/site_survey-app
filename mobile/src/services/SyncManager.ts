@@ -20,6 +20,7 @@ import {
   setSyncStatus,
   ensureSurveyUuid,
   getSurveyById,
+  recoverStuckSyncingSurveys,
 } from '../database/surveyDb';
 import { postSurvey, uploadPhotos, completeSurvey } from '../api/client';
 import type { Survey } from '../types';
@@ -61,6 +62,17 @@ export async function initSyncManager(deviceId: string): Promise<void> {
     return;
   }
   _deviceId = deviceId;
+
+  // Recover stale `syncing` rows left behind by interrupted app sessions.
+  try {
+    const recovered = await recoverStuckSyncingSurveys();
+    if (recovered > 0) {
+      console.warn(`[SyncManager] Recovered ${recovered} stuck syncing survey(s)`);
+      await _notifyCallbacks();
+    }
+  } catch (err) {
+    console.warn('[SyncManager] Failed to recover stuck syncing surveys:', err);
+  }
 
   // Check initial network state
   const state = await Network.getNetworkStateAsync();
