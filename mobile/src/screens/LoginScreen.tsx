@@ -55,11 +55,17 @@ function isAllowedRedirectUri(value: string): boolean {
 }
 
 function resolveSolarProRedirectUri(): string {
-  // In Expo Go, use a stable callback URI. Using the runtime update URL form
-  // (exp://u.expo.dev/.../--/login) can cause AuthSession to return dismiss.
   const hostUri = Constants.expoConfig?.hostUri;
   const executionEnvironment = (Constants as unknown as { executionEnvironment?: string }).executionEnvironment;
-  if (hostUri || executionEnvironment === 'storeClient') {
+  const isExpoGo = Boolean(hostUri || executionEnvironment === 'storeClient');
+
+  // In Expo Go, use the full project callback URL (exp://<host>/--/login)
+  // so the browser returns to the current running app instance.
+  if (isExpoGo) {
+    const expoGoRedirect = ExpoLinking.createURL('login');
+    if (expoGoRedirect?.startsWith('exp://')) {
+      return expoGoRedirect;
+    }
     return 'exp://login';
   }
 
@@ -77,6 +83,10 @@ function resolveSolarProRedirectUri(): string {
 }
 
 const SOLARPRO_REDIRECT_URI = resolveSolarProRedirectUri();
+const IS_EXPO_GO = Boolean(
+  Constants.expoConfig?.hostUri ||
+  (Constants as unknown as { executionEnvironment?: string }).executionEnvironment === 'storeClient'
+);
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -182,6 +192,17 @@ export default function LoginScreen() {
 
       console.log('[SSO] Using redirect_uri:', redirectUri);
       setDebugInfo(`redirect_uri=${redirectUri}`);
+
+      // Expo Go on Android can throw java.io exceptions from Custom Tabs.
+      // Use the system browser directly and let deep-link callback complete auth.
+      if (Platform.OS === 'android' && IS_EXPO_GO) {
+        await Linking.openURL(authorizeUrl);
+        setStatus({
+          type: 'success',
+          message: 'Continuing sign-in in browser. Return to app after SolarPro login.',
+        });
+        return;
+      }
 
       // Use AuthSession so Expo Go can capture exp:// redirects without browser security blocks.
       let authResult: WebBrowser.WebBrowserAuthSessionResult;
