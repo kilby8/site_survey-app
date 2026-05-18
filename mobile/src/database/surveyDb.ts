@@ -428,6 +428,16 @@ export async function deleteSurvey(id: string): Promise<void> {
   await db.runAsync('DELETE FROM surveys WHERE id = ?', [id]);
 }
 
+/** Delete all local surveys that are not yet synced to the server. */
+export async function deleteUnsyncedSurveys(): Promise<number> {
+  const db = getDb();
+  const result = await db.runAsync(
+    `DELETE FROM surveys
+      WHERE sync_status IN ('pending', 'syncing', 'error')`,
+  );
+  return result.changes ?? 0;
+}
+
 /** Migrate legacy surveys with non-UUID IDs to new UUIDs. */
 export async function ensureSurveyUuid(surveyId: string): Promise<string> {
   if (isUuid(surveyId)) return surveyId;

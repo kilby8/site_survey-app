@@ -26,6 +26,8 @@ interface SyncState {
 interface UseSyncManagerResult extends SyncState {
   /** Manually trigger a sync. */
   triggerSync: () => Promise<void>;
+  /** Refresh local sync counts without triggering uploads. */
+  refreshStatus: () => Promise<void>;
 }
 
 const INITIAL: SyncState = {
@@ -71,5 +73,5 @@ export function useSyncManager(dbReady: boolean): UseSyncManagerResult {
     await refresh();
   }, [refresh]);
 
-  return { ...state, triggerSync };
+  return { ...state, triggerSync, refreshStatus: refresh };
 }

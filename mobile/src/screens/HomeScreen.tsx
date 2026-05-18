@@ -20,7 +20,7 @@ import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import type { Survey } from '../types';
-import { getAllSurveys, deleteSurvey } from '../database/surveyDb';
+import { getAllSurveys, deleteSurvey, deleteUnsyncedSurveys } from '../database/surveyDb';
 import { useSyncManager } from '../hooks/useSyncManager';
 import SyncStatusBar       from '../components/SyncStatusBar';
 import SurveyCard          from '../components/SurveyCard';
@@ -40,6 +40,7 @@ export default function HomeScreen() {
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
   const [deleting,     setDeleting]     = useState(false);
+  const [clearingUnsynced, setClearingUnsynced] = useState(false);
 
   const sync = useSyncManager(dbReady);
   const canResync = sync.isOnline && sync.syncing === 0;
@@ -101,6 +102,38 @@ export default function HomeScreen() {
     );
   }, [deleting, loadSurveys, surveys]);
 
+  const handleClearUnsynced = useCallback(() => {
+    if (sync.unsyncedCount === 0 || clearingUnsynced) return;
+
+    Alert.alert(
+      'Clear Unsynced Surveys',
+      `This will remove ${sync.unsyncedCount} unsynced local survey${sync.unsyncedCount !== 1 ? 's' : ''} (pending, syncing, or failed). Synced surveys will be kept.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear Unsynced',
+          style: 'destructive',
+          onPress: async () => {
+            setClearingUnsynced(true);
+            try {
+              const removed = await deleteUnsyncedSurveys();
+              await loadSurveys();
+              await sync.refreshStatus();
+              Alert.alert('Unsynced Cleared', `Removed ${removed} unsynced survey${removed !== 1 ? 's' : ''}.`);
+            } catch (err) {
+              Alert.alert(
+                'Clear Failed',
+                err instanceof Error ? err.message : 'Could not clear unsynced surveys.',
+              );
+            } finally {
+              setClearingUnsynced(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [clearingUnsynced, loadSurveys, sync]);
+
   const versionLabel = useMemo(() => {
     const installedVersion = nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'unknown';
     const installedBuild = nativeBuildVersion
@@ -140,7 +173,7 @@ export default function HomeScreen() {
         <View style={styles.titleBlock}>
           <Text style={styles.title}>Site Surveys</Text>
           <Text style={styles.subtitle}>
-            {surveys.length} total · {sync.pending} pending sync
+            {surveys.length} total · {sync.unsyncedCount} unsynced
           </Text>
           <Text style={styles.versionBadge}>{versionLabel}</Text>
         </View>
@@ -178,6 +211,16 @@ export default function HomeScreen() {
             {reportingBug
               ? <ActivityIndicator size="small" color={colors.white} />
               : <Text style={styles.bugBtnText}>🐞 Report</Text>
+            }
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.clearUnsyncedBtn, (clearingUnsynced || sync.unsyncedCount === 0) && styles.clearUnsyncedBtnDisabled]}
+            onPress={handleClearUnsynced}
+            disabled={clearingUnsynced || sync.unsyncedCount === 0}
+          >
+            {clearingUnsynced
+              ? <ActivityIndicator size="small" color={colors.white} />
+              : <Text style={styles.clearUnsyncedBtnText}>🧹 Clear Unsynced</Text>
             }
           </TouchableOpacity>
           <TouchableOpacity
@@ -306,6 +349,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  clearUnsyncedBtn: {
+    backgroundColor: '#b45309',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    minHeight: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearUnsyncedBtnDisabled: { opacity: 0.6 },
+  clearUnsyncedBtnText: { color: colors.white, fontWeight: '700', fontSize: 13 },
   bugBtn: {
     backgroundColor: colors.primary,
     paddingHorizontal: 12,
