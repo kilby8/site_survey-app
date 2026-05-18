@@ -74,14 +74,14 @@ export async function initSyncManager(deviceId: string): Promise<void> {
 
     // Auto-trigger sync when connectivity is restored
     if (wasOffline && _isOnline) {
-      syncPending().catch(console.error);
+      syncPending({ includeErrors: false }).catch(console.error);
     }
     _notifyCallbacks();
   });
 
   // Attempt an initial sync if already online
   if (_isOnline) {
-    syncPending().catch(console.error);
+    syncPending({ includeErrors: false }).catch(console.error);
   }
 }
 
@@ -111,12 +111,13 @@ export function isOnline(): boolean {
  * Manually trigger a sync. Safe to call multiple times — concurrent
  * runs are de-duplicated by the _isSyncing guard.
  */
-export async function syncPending(): Promise<void> {
+export async function syncPending(options?: { includeErrors?: boolean }): Promise<void> {
   if (_isSyncing || !_isOnline) return;
   _isSyncing = true;
+  const includeErrors = options?.includeErrors ?? true;
 
   try {
-    const surveys = await getPendingSurveys();
+    const surveys = await getPendingSurveys({ includeErrors });
     if (surveys.length === 0) return;
 
     for (const survey of surveys) {

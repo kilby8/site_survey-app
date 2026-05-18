@@ -326,12 +326,16 @@ export async function getSyncCounts(): Promise<{
 }
 
 /** Get all surveys that need to be pushed to the server. */
-export async function getPendingSurveys(): Promise<Survey[]> {
+export async function getPendingSurveys(options?: { includeErrors?: boolean }): Promise<Survey[]> {
   const db = getDb();
+  const includeErrors = options?.includeErrors ?? true;
+  const syncStatuses = includeErrors ? ["pending", "error"] : ["pending"];
+  const placeholders = syncStatuses.map(() => '?').join(', ');
   const rows = await db.getAllAsync<SurveyRow>(
     `SELECT * FROM surveys
-      WHERE sync_status IN ('pending', 'error')
+      WHERE sync_status IN (${placeholders})
       ORDER BY created_at ASC`
+    , syncStatuses
   );
   const surveys: Survey[] = [];
   for (const row of rows) {
