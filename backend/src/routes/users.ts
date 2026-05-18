@@ -73,6 +73,17 @@ const PASSWORD_RESET_TTL_MS = getIntEnv('PASSWORD_RESET_TTL_MINUTES', 30) * 60 *
 const PASSWORD_RESET_EXPOSE_TOKEN = process.env.PASSWORD_RESET_EXPOSE_TOKEN === 'true';
 const SUPPORTED_SOCIAL_PROVIDERS = new Set(['google', 'microsoft', 'apple']);
 
+function getSolarProHandoffSecrets(): string[] {
+  const primary = process.env.SOLARPRO_HANDOFF_SECRET?.trim() ?? '';
+  const fallbackRaw = process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS ?? '';
+  const fallbacks = fallbackRaw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return Array.from(new Set([primary, ...fallbacks].filter(Boolean)));
+}
+
 function ensureAuthStateTables(): Promise<void> {
   if (!authStateTablesReady) {
     authStateTablesReady = (async () => {
@@ -727,8 +738,8 @@ router.post('/solarpro-sso', async (req: Request, res: Response) => {
     return;
   }
 
-  const handoffSecret = process.env.SOLARPRO_HANDOFF_SECRET?.trim();
-  if (!handoffSecret) {
+  const handoffSecrets = getSolarProHandoffSecrets();
+  if (handoffSecrets.length === 0) {
     console.error('[solarpro-sso] SOLARPRO_HANDOFF_SECRET is not configured');
     res.status(500).json({ error: 'SSO not configured' });
     return;
@@ -748,12 +759,26 @@ router.post('/solarpro-sso', async (req: Request, res: Response) => {
   };
 
   try {
-    const verified = jwt.verify(token, handoffSecret, { algorithms: ['HS256'] });
-    if (!verified || typeof verified !== 'object') {
-      res.status(401).json({ error: 'Invalid SSO token' });
-      return;
+    let verifiedPayload: unknown;
+    let lastVerifyError: unknown;
+
+    for (const candidateSecret of handoffSecrets) {
+      try {
+        verifiedPayload = jwt.verify(token, candidateSecret, { algorithms: ['HS256'] });
+        break;
+      } catch (candidateErr) {
+        if (candidateErr instanceof TokenExpiredError) {
+          throw candidateErr;
+        }
+        lastVerifyError = candidateErr;
+      }
     }
-    decoded = verified as typeof decoded;
+
+    if (!verifiedPayload || typeof verifiedPayload !== 'object') {
+      throw (lastVerifyError ?? new JsonWebTokenError('invalid signature'));
+    }
+
+    decoded = verifiedPayload as typeof decoded;
   } catch (verifyErr) {
     if (verifyErr instanceof TokenExpiredError) {
       res.status(401).json({ error: 'SSO token expired. Please sign in again.' });

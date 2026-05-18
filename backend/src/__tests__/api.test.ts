@@ -170,6 +170,36 @@ describe("POST /api/users/solarpro-sso", () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("SSO token missing jti claim");
   });
+
+  it("accepts a token signed by a configured fallback handoff secret", async () => {
+    const originalFallbacks = process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS;
+    const fallbackSecret = `fallback-secret-${Date.now()}`;
+    process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS = fallbackSecret;
+
+    try {
+      const email = `solarpro-fallback-${Date.now()}-${Math.floor(Math.random() * 10000)}@example.com`;
+      const jti = `solarpro-fallback-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+      const token = jwt.sign(
+        {
+          jti,
+          solarpro_email: email,
+          solarpro_name: "SolarPro Fallback User",
+        },
+        fallbackSecret,
+        { expiresIn: "10m" },
+      );
+
+      const res = await request(app).post("/api/users/solarpro-sso").send({ token });
+      expect(res.status).toBe(200);
+      expect(res.body.user.email).toBe(email);
+
+      await pool.query("DELETE FROM refresh_tokens WHERE email = $1", [email]);
+      await pool.query("DELETE FROM users WHERE email = $1", [email]);
+      await pool.query("DELETE FROM used_solarpro_sso_tokens WHERE jti = $1", [jti]);
+    } finally {
+      process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS = originalFallbacks;
+    }
+  });
 });
 
 describe("POST /api/users/forgot-password and /reset-password", () => {
