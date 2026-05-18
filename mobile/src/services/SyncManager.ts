@@ -65,7 +65,7 @@ export async function initSyncManager(deviceId: string): Promise<void> {
 
   // Recover stale `syncing` rows left behind by interrupted app sessions.
   try {
-    const recovered = await recoverStuckSyncingSurveys();
+    const recovered = await recoverStuckSyncingSurveys(0);
     if (recovered > 0) {
       console.warn(`[SyncManager] Recovered ${recovered} stuck syncing survey(s)`);
       await _notifyCallbacks();
