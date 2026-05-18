@@ -32,6 +32,7 @@ export default function SyncStatusBar({
   const isBusy   = syncingCount > 0;
   const hasError = errorCount   > 0;
   const total    = pendingCount + syncingCount + errorCount;
+  const showRetryHint = isOnline && hasError && !isBusy;
 
   // When everything is synced and we're online, show nothing (all good)
   if (isOnline && total === 0) return null;
@@ -55,9 +56,14 @@ export default function SyncStatusBar({
         {isBusy && (
           <ActivityIndicator size="small" color={colors.white} style={styles.spinner} />
         )}
-        <Text style={styles.text}>{label}</Text>
+        <View style={styles.textBlock}>
+          <Text style={styles.text}>{label}</Text>
+          {showRetryHint && (
+            <Text style={styles.hint}>Error items won’t auto-retry — tap to retry manually.</Text>
+          )}
+        </View>
         {isOnline && !isBusy && total > 0 && (
-          <Text style={styles.cta}>Tap to sync</Text>
+          <Text style={styles.cta}>{hasError ? 'Tap to retry' : 'Tap to sync'}</Text>
         )}
       </View>
     </TouchableOpacity>
@@ -75,6 +81,10 @@ const styles = StyleSheet.create({
     alignItems:     'center',
     justifyContent: 'center',
   },
+  textBlock: {
+    flexShrink: 1,
+    alignItems: 'center',
+  },
   spinner: {
     marginRight: 8,
   },
@@ -83,6 +93,13 @@ const styles = StyleSheet.create({
     fontSize:   13,
     fontWeight: '600',
     textAlign:  'center',
+  },
+  hint: {
+    marginTop: 4,
+    color: colors.background,
+    fontSize: 11,
+    textAlign: 'center',
+    opacity: 0.9,
   },
   cta: {
     color:        colors.background,
