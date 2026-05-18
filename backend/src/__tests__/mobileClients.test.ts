@@ -88,6 +88,63 @@ describe("mobile clients pipeline proxy", () => {
     expect(capturedAuth).toBe("Bearer test-mobile-service-key");
   });
 
+  it("retries the next auth candidate when SolarPro rejects the first one", async () => {
+    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
+    process.env.MOBILE_SERVICE_API_KEY = "bad-mobile-service-key";
+    process.env.SOLARPRO_API_KEY = "good-solarpro-api-key";
+
+    const attempts: string[] = [];
+    global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
+      attempts.push(((opts.headers ?? {}) as Record<string, string>).Authorization ?? "");
+      if (attempts.length === 1) {
+        return Promise.resolve({
+          ok: false,
+          status: 401,
+          text: async () => JSON.stringify({ error: "unauthorized" }),
+        });
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ clients: [{ id: "client-1" }] }),
+      });
+    }) as unknown as typeof fetch;
+
+    const res = await request(app)
+      .get("/api/mobile/clients")
+      .set("Authorization", authHeader);
+
+    expect(res.status).toBe(200);
+    expect(attempts).toEqual([
+      "Bearer bad-mobile-service-key",
+      "Bearer good-solarpro-api-key",
+    ]);
+    expect(res.body.clients).toEqual([{ id: "client-1" }]);
+  });
+
+  it("uses minted handoff JWT after static service keys fail", async () => {
+    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
+    delete process.env.MOBILE_SERVICE_API_KEY;
+    delete process.env.SOLARPRO_API_KEY;
+    delete process.env.PARTNER_API_KEY;
+    process.env.SOLARPRO_HANDOFF_SECRET = "test-handoff-secret-value-that-is-long-enough-123456";
+
+    let capturedAuth = "";
+    global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
+      capturedAuth = ((opts.headers ?? {}) as Record<string, string>).Authorization ?? "";
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ clients: [] }),
+      });
+    }) as unknown as typeof fetch;
+
+    await request(app)
+      .get("/api/mobile/clients")
+      .set("Authorization", authHeader);
+
+    expect(capturedAuth).toMatch(/^Bearer eyJ/);
+  });
+
   it("normalizes email to lowercase before forwarding", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
     process.env.SOLARPRO_API_KEY = "test-service-key";

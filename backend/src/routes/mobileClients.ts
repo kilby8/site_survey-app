@@ -43,6 +43,17 @@ function getMobileServiceAuthToken(userEmail: string): string | null {
   return token || null;
 }
 
+function getMobileServiceAuthCandidates(userEmail: string): string[] {
+  const candidates = [
+    (process.env.MOBILE_SERVICE_API_KEY ?? "").trim(),
+    (process.env.SOLARPRO_API_KEY ?? "").trim(),
+    (process.env.PARTNER_API_KEY ?? "").trim(),
+    mintServiceJwt(userEmail) ?? "",
+  ].filter((value): value is string => Boolean(value));
+
+  return Array.from(new Set(candidates));
+}
+
 /**
  * Mint a short-lived HS256 JWT for service-to-service auth with SolarPro.
  *
@@ -133,8 +144,8 @@ async function proxyToSolarPro(
 ): Promise<void> {
   const solarProUrl = getSolarProUrl();
 
-  const headers = buildProxyHeaders(userEmail);
-  if (!headers) {
+  const authCandidates = getMobileServiceAuthCandidates(userEmail);
+  if (authCandidates.length === 0) {
     res.status(503).json({
       error: "configuration_error",
       message: "No mobile proxy auth secret is set — cannot authenticate with SolarPro.",
@@ -143,19 +154,39 @@ async function proxyToSolarPro(
   }
 
   try {
-    const upstream = await fetch(`${solarProUrl}${pathname}`, {
-      method: "GET",
-      headers,
-      signal: AbortSignal.timeout(8_000),
-    });
+    let lastAuthFailureText = "";
 
-    if (!upstream.ok) {
+    for (let i = 0; i < authCandidates.length; i += 1) {
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${authCandidates[i]}`,
+        "X-Mobile-User-Email": userEmail.trim().toLowerCase(),
+      };
+
+      const upstream = await fetch(`${solarProUrl}${pathname}`, {
+        method: "GET",
+        headers,
+        signal: AbortSignal.timeout(8_000),
+      });
+
+      if (upstream.ok) {
+        const data = (await upstream.json()) as unknown;
+        res.json(data);
+        return;
+      }
+
       const text = await upstream.text().catch(() => "");
       console.error(
         `[MOBILE_PROXY] upstream ${pathname} error ${upstream.status}: ${text.slice(0, 200)}`,
       );
 
       if (upstream.status === 401 || upstream.status === 403) {
+        lastAuthFailureText = text;
+        if (i < authCandidates.length - 1) {
+          continue;
+        }
+
         res.status(502).json({
           error: "upstream_auth_failed",
           message: "SolarPro pipeline API rejected backend authentication.",
@@ -178,8 +209,11 @@ async function proxyToSolarPro(
       return;
     }
 
-    const data = await upstream.json() as unknown;
-    res.json(data);
+    console.error(`[MOBILE_PROXY] upstream ${pathname} auth exhausted: ${lastAuthFailureText.slice(0, 200)}`);
+    res.status(502).json({
+      error: "upstream_auth_failed",
+      message: "SolarPro pipeline API rejected backend authentication.",
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[MOBILE_PROXY] upstream ${pathname} fetch error: ${msg}`);
