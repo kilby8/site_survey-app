@@ -34,6 +34,11 @@ function getSolarProUrl(): string {
   return (process.env.SOLARPRO_API_URL ?? "").trim().replace(/\/$/, "");
 }
 
+type AuthStrategy = {
+  id: string;
+  headers: Record<string, string>;
+};
+
 function getMobileServiceAuthToken(userEmail: string): string | null {
   const mobileServiceKey = (process.env.MOBILE_SERVICE_API_KEY ?? "").trim();
   const solarProApiKey = (process.env.SOLARPRO_API_KEY ?? "").trim();
@@ -54,6 +59,17 @@ function getMobileServiceAuthCandidates(userEmail: string): string[] {
   return Array.from(new Set(candidates));
 }
 
+function getSolarProHandoffSecrets(): string[] {
+  const primary = (process.env.SOLARPRO_HANDOFF_SECRET ?? "").trim();
+  const fallbackRaw = process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS ?? "";
+  const fallbacks = fallbackRaw
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length >= 32);
+
+  return Array.from(new Set([primary, ...fallbacks].filter((value) => value.length >= 32)));
+}
+
 /**
  * Mint a short-lived HS256 JWT for service-to-service auth with SolarPro.
  *
@@ -66,6 +82,10 @@ function getMobileServiceAuthCandidates(userEmail: string): string[] {
  */
 function mintServiceJwt(userEmail: string): string | null {
   const secret = (process.env.SOLARPRO_HANDOFF_SECRET ?? "").trim();
+  return mintServiceJwtWithSecret(userEmail, secret);
+}
+
+function mintServiceJwtWithSecret(userEmail: string, secret: string): string | null {
   if (!secret || secret.length < 32) {
     console.error(
       "[MOBILE_PROXY] SOLARPRO_HANDOFF_SECRET is not set or too short — cannot mint service JWT"
@@ -82,6 +102,53 @@ function mintServiceJwt(userEmail: string): string | null {
     secret,
     { algorithm: "HS256", noTimestamp: true }
   );
+}
+
+function getProxyAuthStrategies(userEmail: string): AuthStrategy[] {
+  const staticKeyCandidates = [
+    (process.env.MOBILE_SERVICE_API_KEY ?? "").trim(),
+    (process.env.SOLARPRO_API_KEY ?? "").trim(),
+    (process.env.PARTNER_API_KEY ?? "").trim(),
+  ].filter(Boolean);
+
+  const strategies: AuthStrategy[] = [];
+
+  for (const key of Array.from(new Set(staticKeyCandidates))) {
+    strategies.push({
+      id: `bearer:${key}`,
+      headers: {
+        Authorization: `Bearer ${key}`,
+      },
+    });
+    // Some SolarPro deployments expect API keys in x-api-key instead of Bearer.
+    strategies.push({
+      id: `x-api-key:${key}`,
+      headers: {
+        "x-api-key": key,
+      },
+    });
+  }
+
+  for (const handoffSecret of getSolarProHandoffSecrets()) {
+    const jwtToken = mintServiceJwtWithSecret(userEmail, handoffSecret);
+    if (!jwtToken) continue;
+    strategies.push({
+      id: `jwt:${handoffSecret.slice(0, 8)}`,
+      headers: {
+        Authorization: `Bearer ${jwtToken}`,
+      },
+    });
+  }
+
+  const seen = new Set<string>();
+  return strategies.filter((strategy) => {
+    const auth = strategy.headers.Authorization ?? "";
+    const apiKey = strategy.headers["x-api-key"] ?? "";
+    const fingerprint = `${auth}|${apiKey}`;
+    if (seen.has(fingerprint)) return false;
+    seen.add(fingerprint);
+    return true;
+  });
 }
 
 /**
@@ -144,8 +211,8 @@ async function proxyToSolarPro(
 ): Promise<void> {
   const solarProUrl = getSolarProUrl();
 
-  const authCandidates = getMobileServiceAuthCandidates(userEmail);
-  if (authCandidates.length === 0) {
+  const authStrategies = getProxyAuthStrategies(userEmail);
+  if (authStrategies.length === 0) {
     res.status(503).json({
       error: "configuration_error",
       message: "No mobile proxy auth secret is set — cannot authenticate with SolarPro.",
@@ -156,12 +223,13 @@ async function proxyToSolarPro(
   try {
     let lastAuthFailureText = "";
 
-    for (let i = 0; i < authCandidates.length; i += 1) {
+    for (let i = 0; i < authStrategies.length; i += 1) {
+      const strategy = authStrategies[i];
       const headers = {
         "Content-Type": "application/json",
         Accept: "application/json",
-        Authorization: `Bearer ${authCandidates[i]}`,
         "X-Mobile-User-Email": userEmail.trim().toLowerCase(),
+        ...strategy.headers,
       };
 
       const upstream = await fetch(`${solarProUrl}${pathname}`, {
@@ -183,7 +251,10 @@ async function proxyToSolarPro(
 
       if (upstream.status === 401 || upstream.status === 403) {
         lastAuthFailureText = text;
-        if (i < authCandidates.length - 1) {
+        if (i < authStrategies.length - 1) {
+          console.warn(
+            `[MOBILE_PROXY] auth rejected via ${strategy.id}; trying next auth strategy (${i + 2}/${authStrategies.length})`,
+          );
           continue;
         }
 

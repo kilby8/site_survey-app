@@ -7,6 +7,9 @@ describe("mobile clients pipeline proxy", () => {
   const originalApiUrl = process.env.SOLARPRO_API_URL;
   const originalApiKey = process.env.SOLARPRO_API_KEY;
   const originalMobileServiceApiKey = process.env.MOBILE_SERVICE_API_KEY;
+  const originalPartnerApiKey = process.env.PARTNER_API_KEY;
+  const originalHandoffSecret = process.env.SOLARPRO_HANDOFF_SECRET;
+  const originalHandoffFallbacks = process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS;
 
   const TEST_EMAIL = "mobile-clients@example.com";
   const authHeader = `Bearer ${signAuthToken({
@@ -20,6 +23,9 @@ describe("mobile clients pipeline proxy", () => {
     process.env.SOLARPRO_API_URL = originalApiUrl;
     process.env.SOLARPRO_API_KEY = originalApiKey;
     process.env.MOBILE_SERVICE_API_KEY = originalMobileServiceApiKey;
+    process.env.PARTNER_API_KEY = originalPartnerApiKey;
+    process.env.SOLARPRO_HANDOFF_SECRET = originalHandoffSecret;
+    process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS = originalHandoffFallbacks;
     jest.clearAllMocks();
   });
 
@@ -95,7 +101,47 @@ describe("mobile clients pipeline proxy", () => {
 
     const attempts: string[] = [];
     global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
-      attempts.push(((opts.headers ?? {}) as Record<string, string>).Authorization ?? "");
+      const headers = (opts.headers ?? {}) as Record<string, string>;
+      const attemptLabel = headers.Authorization
+        ? `auth:${headers.Authorization}`
+        : `x-api-key:${headers["x-api-key"] ?? ""}`;
+      attempts.push(attemptLabel);
+      if (attempts.length < 3) {
+        return Promise.resolve({
+          ok: false,
+          status: 401,
+          text: async () => JSON.stringify({ error: "unauthorized" }),
+        });
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ clients: [{ id: "client-1" }] }),
+      });
+    }) as unknown as typeof fetch;
+
+    const res = await request(app)
+      .get("/api/mobile/clients")
+      .set("Authorization", authHeader);
+
+    expect(res.status).toBe(200);
+    expect(attempts[0]).toBe("auth:Bearer bad-mobile-service-key");
+    expect(attempts[1]).toBe("x-api-key:bad-mobile-service-key");
+    expect(attempts[2]).toBe("auth:Bearer good-solarpro-api-key");
+    expect(res.body.clients).toEqual([{ id: "client-1" }]);
+  });
+
+  it("falls back to x-api-key header when Bearer auth is rejected", async () => {
+    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
+    process.env.MOBILE_SERVICE_API_KEY = "service-key-123";
+    delete process.env.SOLARPRO_API_KEY;
+    delete process.env.PARTNER_API_KEY;
+
+    const attempts: string[] = [];
+    global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
+      const headers = (opts.headers ?? {}) as Record<string, string>;
+      attempts.push(headers.Authorization ? "bearer" : "x-api-key");
+
       if (attempts.length === 1) {
         return Promise.resolve({
           ok: false,
@@ -115,11 +161,7 @@ describe("mobile clients pipeline proxy", () => {
       .set("Authorization", authHeader);
 
     expect(res.status).toBe(200);
-    expect(attempts).toEqual([
-      "Bearer bad-mobile-service-key",
-      "Bearer good-solarpro-api-key",
-    ]);
-    expect(res.body.clients).toEqual([{ id: "client-1" }]);
+    expect(attempts).toEqual(["bearer", "x-api-key"]);
   });
 
   it("uses minted handoff JWT after static service keys fail", async () => {
@@ -143,6 +185,44 @@ describe("mobile clients pipeline proxy", () => {
       .set("Authorization", authHeader);
 
     expect(capturedAuth).toMatch(/^Bearer eyJ/);
+  });
+
+  it("uses fallback handoff secret JWT if the primary handoff secret is rejected", async () => {
+    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
+    delete process.env.MOBILE_SERVICE_API_KEY;
+    delete process.env.SOLARPRO_API_KEY;
+    delete process.env.PARTNER_API_KEY;
+    process.env.SOLARPRO_HANDOFF_SECRET = "primary-handoff-secret-value-that-is-long-enough-123456";
+    process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS = "fallback-handoff-secret-value-that-is-long-enough-654321";
+
+    const attempts: string[] = [];
+    global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
+      const headers = (opts.headers ?? {}) as Record<string, string>;
+      attempts.push(headers.Authorization ?? "");
+
+      if (attempts.length === 1) {
+        return Promise.resolve({
+          ok: false,
+          status: 403,
+          text: async () => JSON.stringify({ error: "forbidden" }),
+        });
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ clients: [{ id: "client-1" }] }),
+      });
+    }) as unknown as typeof fetch;
+
+    const res = await request(app)
+      .get("/api/mobile/clients")
+      .set("Authorization", authHeader);
+
+    expect(res.status).toBe(200);
+    expect(attempts.length).toBeGreaterThanOrEqual(2);
+    expect(attempts[0]).toMatch(/^Bearer eyJ/);
+    expect(attempts[1]).toMatch(/^Bearer eyJ/);
+    expect(attempts[0]).not.toBe(attempts[1]);
   });
 
   it("normalizes email to lowercase before forwarding", async () => {
