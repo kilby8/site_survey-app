@@ -133,7 +133,7 @@ function uniqueStrings(values: Array<string | null>): string[] {
 
 const configuredApiUrl = normalizeApiUrl(process.env.EXPO_PUBLIC_API_URL);
 const bundledApiUrl = readExpoExtraApiUrl();
-const resolvedConfiguredApiUrl = configuredApiUrl ?? bundledApiUrl;
+const productionFallbackApiUrl = "https://site-survey-api-bpyz.onrender.com";
 
 const developmentFallbackCandidates = isDevelopmentRuntime
   ? uniqueStrings([
@@ -143,12 +143,23 @@ const developmentFallbackCandidates = isDevelopmentRuntime
     ])
   : [];
 
-export const API_URL = resolvedConfiguredApiUrl ?? developmentFallbackCandidates[0] ?? "";
+export const API_URL =
+  configuredApiUrl ??
+  bundledApiUrl ??
+  productionFallbackApiUrl ??
+  developmentFallbackCandidates[0] ??
+  "";
 
-const API_CANDIDATES = uniqueStrings([
-  resolvedConfiguredApiUrl,
-  ...developmentFallbackCandidates,
-]);
+const API_CANDIDATES = uniqueStrings(
+  isDevelopmentRuntime
+    ? [
+        configuredApiUrl,
+        bundledApiUrl,
+        ...developmentFallbackCandidates,
+        productionFallbackApiUrl,
+      ]
+    : [configuredApiUrl, bundledApiUrl, productionFallbackApiUrl],
+);
 
 const API_NETWORK_ERROR =
   API_CANDIDATES.length > 0
