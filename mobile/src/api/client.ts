@@ -419,32 +419,47 @@ export async function uploadPhotos(
   surveyId: string,
   photos: Array<{ uri: string; label: string; mimeType?: string }>,
 ): Promise<ApiPhotoUploadResponse> {
-  const form = new FormData();
+  const BATCH_SIZE = 20;
+  let uploaded = 0;
+  const uploadedPhotos: unknown[] = [];
 
-  const labels: string[] = [];
-  for (const photo of photos) {
-    // React Native FormData accepts an object with uri/type/name
-    form.append("photos", {
-      uri: photo.uri,
-      type: photo.mimeType ?? "image/jpeg",
-      name: photo.uri.split("/").pop() ?? "photo.jpg",
-    } as unknown as Blob);
-    labels.push(photo.label);
+  for (let i = 0; i < photos.length; i += BATCH_SIZE) {
+    const batch = photos.slice(i, i + BATCH_SIZE);
+    const form = new FormData();
+    const labels: string[] = [];
+
+    for (const photo of batch) {
+      // React Native FormData accepts an object with uri/type/name
+      form.append("photos", {
+        uri: photo.uri,
+        type: photo.mimeType ?? "image/jpeg",
+        name: photo.uri.split("/").pop() ?? "photo.jpg",
+      } as unknown as Blob);
+      labels.push(photo.label);
+    }
+
+    form.append("labels", JSON.stringify(labels));
+
+    const authHeaders = await getAuthHeaders();
+    const res = await fetchWithAuthRetry(
+      `/api/surveys/${surveyId}/photos`,
+      {
+        method: "POST",
+        headers: authHeaders,
+        body: form,
+        // Do NOT manually set Content-Type — fetch sets it with the boundary
+      },
+      { timeoutMs: 120_000 },
+    );
+
+    const batchResult = await handleResponse<ApiPhotoUploadResponse>(res);
+    uploaded += batchResult.uploaded;
+    if (Array.isArray(batchResult.photos)) {
+      uploadedPhotos.push(...batchResult.photos);
+    }
   }
-  form.append("labels", JSON.stringify(labels));
 
-  const authHeaders = await getAuthHeaders();
-  const res = await fetchWithAuthRetry(
-    `/api/surveys/${surveyId}/photos`,
-    {
-      method: "POST",
-      headers: authHeaders,
-      body: form,
-      // Do NOT manually set Content-Type — fetch sets it with the boundary
-    },
-    { timeoutMs: 120_000 },
-  );
-  return handleResponse<ApiPhotoUploadResponse>(res);
+  return { uploaded, photos: uploadedPhotos };
 }
 
 /** POST /api/surveys/sync — batch offline sync. */

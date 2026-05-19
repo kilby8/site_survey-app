@@ -542,6 +542,35 @@ describe("POST /api/surveys/:id/photos", () => {
     expect(res.headers["content-type"]).toContain("image/jpeg");
     expect(res.headers["cache-control"]).toContain("immutable");
   });
+
+  it("accepts multi-file uploads larger than 20 photos", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Photo Batch Test",
+        inspector_name: "Photo Tester",
+        site_name: "Batch Site",
+      });
+    createdIds.push(create.body.id);
+
+    const surveyId = create.body.id as string;
+    const req = request(app)
+      .post(`/api/surveys/${surveyId}/photos`)
+      .set("Authorization", authHeader)
+      .field("labels", JSON.stringify(Array.from({ length: 22 }, (_, i) => `P${i + 1}`)));
+
+    for (let i = 0; i < 22; i += 1) {
+      req.attach("photos", Buffer.from(`fake-image-${i}`), {
+        filename: `batch-${i}.jpg`,
+        contentType: "image/jpeg",
+      });
+    }
+
+    const res = await req;
+    expect(res.status).toBe(201);
+    expect(res.body.uploaded).toBe(22);
+  });
 });
 
 describe("PUT /api/surveys/:id", () => {

@@ -2061,7 +2061,7 @@ router.post(
   "/:id/photos",
   (req: Request, res: Response, next) => {
     upload.fields([
-      { name: "photos", maxCount: 20 },
+      { name: "photos", maxCount: 100 },
       { name: "photo", maxCount: 1 },
     ])(req, res, (err: unknown) => {
       if (err instanceof multer.MulterError) {
