@@ -2,56 +2,12 @@ import React from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import * as Updates from 'expo-updates';
 import { AppBootstrapProvider, useAppBootstrap } from '../src/context/AppBootstrapContext';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { BugReportProvider, BugReportFloatingButton } from '../src/context/BugReportContext';
 import { solarProTheme } from '../src/theme/solarProTheme';
 
 const { colors } = solarProTheme;
-
-// ----------------------------------------------------------------
-// Eager OTA update gate — checks and applies any pending update
-// before the rest of the app renders.
-// ----------------------------------------------------------------
-function OtaUpdateGate({ children }: { children: React.ReactNode }) {
-  const [checking, setChecking] = React.useState(!__DEV__);
-
-  React.useEffect(() => {
-    if (__DEV__) return; // Skip in dev — expo-updates not available
-    let mounted = true;
-
-    async function checkAndApply() {
-      try {
-        const result = await Updates.checkForUpdateAsync();
-        if (result.isAvailable) {
-          await Updates.fetchUpdateAsync();
-          // Reload immediately so the fresh bundle is active from the first user interaction
-          await Updates.reloadAsync();
-          // reloadAsync() never returns on success — safety stop
-          return;
-        }
-      } catch {
-        // Non-fatal: if update check fails, continue with current bundle
-      }
-      if (mounted) setChecking(false);
-    }
-
-    checkAndApply();
-    return () => { mounted = false; };
-  }, []);
-
-  if (checking) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Checking for updates…</Text>
-      </View>
-    );
-  }
-
-  return <>{children}</>;
-}
 
 function BootstrapGate({ children }: { children: React.ReactNode }) {
   const { ready, error } = useAppBootstrap();
@@ -128,37 +84,35 @@ function FloatingHomeButton() {
 
 export default function RootLayout() {
   return (
-    <OtaUpdateGate>
-      <AppBootstrapProvider>
-        <AuthProvider>
-          <BugReportProvider>
-            <StatusBar style="light" />
-            <BootstrapGate>
-              <AuthGate>
-                <View style={styles.rootShell}>
-                  <Stack
-                    screenOptions={{
-                      headerStyle: { backgroundColor: colors.card },
-                      headerTintColor: colors.textPrimary,
-                      headerTitleStyle: { fontWeight: '700', fontSize: 18 },
-                      contentStyle: { backgroundColor: colors.background },
-                    }}
-                  >
-                    <Stack.Screen name="index" options={{ title: 'Site Surveys', headerShown: false }} />
-                    <Stack.Screen name="login" options={{ title: 'Sign In', headerShown: false }} />
-                    <Stack.Screen name="new-survey" options={{ title: 'New Survey', headerShown: true }} />
-                    <Stack.Screen name="map" options={{ title: 'Survey Map', headerShown: true }} />
-                    <Stack.Screen name="survey/[id]" options={{ title: 'Survey Details', headerShown: true }} />
-                  </Stack>
-                  <FloatingHomeButton />
-                  <BugReportFloatingButton />
-                </View>
-              </AuthGate>
-            </BootstrapGate>
-          </BugReportProvider>
-        </AuthProvider>
-      </AppBootstrapProvider>
-    </OtaUpdateGate>
+    <AppBootstrapProvider>
+      <AuthProvider>
+        <BugReportProvider>
+          <StatusBar style="light" />
+          <BootstrapGate>
+            <AuthGate>
+              <View style={styles.rootShell}>
+                <Stack
+                  screenOptions={{
+                    headerStyle: { backgroundColor: colors.card },
+                    headerTintColor: colors.textPrimary,
+                    headerTitleStyle: { fontWeight: '700', fontSize: 18 },
+                    contentStyle: { backgroundColor: colors.background },
+                  }}
+                >
+                  <Stack.Screen name="index" options={{ title: 'Site Surveys', headerShown: false }} />
+                  <Stack.Screen name="login" options={{ title: 'Sign In', headerShown: false }} />
+                  <Stack.Screen name="new-survey" options={{ title: 'New Survey', headerShown: true }} />
+                  <Stack.Screen name="map" options={{ title: 'Survey Map', headerShown: true }} />
+                  <Stack.Screen name="survey/[id]" options={{ title: 'Survey Details', headerShown: true }} />
+                </Stack>
+                <FloatingHomeButton />
+                <BugReportFloatingButton />
+              </View>
+            </AuthGate>
+          </BootstrapGate>
+        </BugReportProvider>
+      </AuthProvider>
+    </AppBootstrapProvider>
   );
 }
 
