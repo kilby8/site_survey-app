@@ -15,6 +15,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 import * as ExpoLinking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '../context/AuthContext';
@@ -26,6 +27,10 @@ const { colors } = solarProTheme;
 const BRAND_PRIMARY = colors.primary;
 const LOGO_URL = 'https://img1.wsimg.com/isteam/ip/b4ef19f7-7f46-446b-bbe2-755512fcd4f8/UNDER%20THE%20SUN%20LOGO.jpg/:/rs=w:300,h:300,m';
 const PENDING_STATE_KEY = 'site-survey.auth.pending-solarpro-state.v1';
+
+const APP_VERSION = Constants.expoConfig?.version ?? '?.?.?';
+// Updates.updateId is the UUID of the currently running OTA bundle (null in dev builds)
+const UPDATE_ID = Updates.updateId ? Updates.updateId.slice(0, 8) : 'dev';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -306,6 +311,8 @@ export default function LoginScreen() {
                   <Text style={styles.buttonText}>Open SolarPro</Text>
                 )}
               </TouchableOpacity>
+
+              <Text style={styles.versionText}>v{APP_VERSION} · {UPDATE_ID}</Text>
             </View>
           </View>
         </ScrollView>
@@ -365,5 +372,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textMuted,
     lineHeight: 15,
+  },
+  versionText: {
+    marginTop: 16,
+    fontSize: 11,
+    color: colors.textMuted,
+    textAlign: 'center',
+    opacity: 0.6,
   },
 });
