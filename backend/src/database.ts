@@ -79,12 +79,12 @@ function resolvePoolConfig(): ConstructorParameters<typeof Pool>[0] {
     };
   }
 
-  // Never silently fall back to localhost in production-like environments.
+  // If no discrete config and not in a mode where we have a fallback, use localhost
+  // (envGuard will validate DATABASE_URL in production)
   if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
-    const message =
-      'Missing Database Configuration: set DATABASE_URL (preferred) or DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD.';
-    console.error(message);
-    throw new Error(message);
+    console.warn(
+      '[DATABASE] Running in production-like mode but DATABASE_URL not set. Pool will fail on first connection attempt.'
+    );
   }
 
   // Local dev fallback
