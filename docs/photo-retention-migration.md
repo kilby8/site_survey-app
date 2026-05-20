@@ -19,6 +19,25 @@ This rollout starts removing app-side photo storage only after SolarPro sync con
 - Stage A hold window: 7 days from `solarpro_synced_at`
 - Stage B hold window: 30 days from `solarpro_synced_at`
 - Audit row is written for every candidate action
+- Automatic scheduler runs daily at `1:00 AM America/Chicago` (Central Time)
+
+## Automatic schedule (1 AM Central)
+
+Backend now starts a scheduler worker that executes:
+
+1. Stage A apply
+2. Stage B apply
+
+The worker runs once per Central calendar day during a short 1:00 AM run window to avoid duplicate execution.
+
+Environment controls:
+
+- `PHOTO_RETENTION_SCHEDULE_ENABLED` (default `true`)
+- `PHOTO_RETENTION_SCHEDULE_WINDOW_MINUTES` (default `10`)
+- `PHOTO_RETENTION_STAGE_A_LIMIT` (default `100`)
+- `PHOTO_RETENTION_STAGE_B_LIMIT` (default `100`)
+- `PHOTO_RETENTION_STAGE_A_HOLD_DAYS` (default `7`)
+- `PHOTO_RETENTION_STAGE_B_HOLD_DAYS` (default `30`)
 
 ## Commands
 

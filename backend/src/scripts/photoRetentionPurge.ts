@@ -12,6 +12,17 @@ type Options = {
   holdDaysB: number;
 };
 
+export type PhotoRetentionRunSummary = {
+  runId: string;
+  stage: Stage;
+  apply: boolean;
+  limit: number;
+  holdDaysA: number;
+  holdDaysB: number;
+  candidateRows: number;
+  estimatedBlobBytes: number;
+};
+
 type CandidateRow = {
   photo_id: string;
   survey_id: string;
@@ -239,8 +250,7 @@ async function applyStageB(runId: string, rows: CandidateRow[], apply: boolean):
   }
 }
 
-async function main(): Promise<void> {
-  const options = parseOptions();
+export async function runPhotoRetentionPurge(options: Options): Promise<PhotoRetentionRunSummary> {
   const runId = randomUUID();
 
   await ensureRetentionSchema();
@@ -257,18 +267,34 @@ async function main(): Promise<void> {
     await applyStageB(runId, rows, options.apply);
   }
 
+  return {
+    runId,
+    stage: options.stage,
+    apply: options.apply,
+    limit: options.limit,
+    holdDaysA: options.holdDaysA,
+    holdDaysB: options.holdDaysB,
+    candidateRows: rows.length,
+    estimatedBlobBytes: totalBlobBytes,
+  };
+}
+
+async function main(): Promise<void> {
+  const options = parseOptions();
+  const result = await runPhotoRetentionPurge(options);
+
   console.info(
     JSON.stringify(
       {
         type: "photo_retention_purge_run",
-        run_id: runId,
-        stage: options.stage,
-        apply: options.apply,
-        limit: options.limit,
-        hold_days_a: options.holdDaysA,
-        hold_days_b: options.holdDaysB,
-        candidate_rows: rows.length,
-        estimated_blob_bytes: totalBlobBytes,
+        run_id: result.runId,
+        stage: result.stage,
+        apply: result.apply,
+        limit: result.limit,
+        hold_days_a: result.holdDaysA,
+        hold_days_b: result.holdDaysB,
+        candidate_rows: result.candidateRows,
+        estimated_blob_bytes: result.estimatedBlobBytes,
       },
       null,
       2,
@@ -276,12 +302,14 @@ async function main(): Promise<void> {
   );
 }
 
-main()
-  .catch((error) => {
-    console.error("photoRetentionPurge failed:", error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await pool.end();
-  });
+if (require.main === module) {
+  main()
+    .catch((error) => {
+      console.error("photoRetentionPurge failed:", error);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await pool.end();
+    });
+}
 

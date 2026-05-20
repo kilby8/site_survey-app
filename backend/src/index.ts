@@ -30,6 +30,7 @@ import { pool } from "./database";
 import { uploadFile, isS3Mode } from "./utils/storageClient";
 import { startWebhookWorker } from "./services/webhookService";
 import { startSqlServerSyncWorker } from "./services/sqlServerSyncService";
+import { startPhotoRetentionScheduleWorker } from "./services/photoRetentionScheduleService";
 import {
   incrementMetric,
   recordTiming,
@@ -382,6 +383,7 @@ if (require.main === module) {
     console.log(`Photo uploads served from /uploads`);
     startWebhookWorker();
     startSqlServerSyncWorker();
+    startPhotoRetentionScheduleWorker();
   });
 }
 
