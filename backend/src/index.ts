@@ -37,6 +37,7 @@ import {
   recordTiming,
   getMetricsSnapshot,
 } from "./services/metrics";
+import { resolveLatestApkUrl } from "./services/releaseAssetService";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "3001", 10);
@@ -171,11 +172,9 @@ app.get("/admin/pipeline-topology", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "pipeline-topology.html"));
 });
 
-app.get("/release/latest.apk", (_req, res) => {
-  const apkUrl = process.env.LATEST_APP_APK_URL?.trim();
-  const releasePageUrl = process.env.LATEST_APP_RELEASE_URL?.trim() || "https://github.com/kilby8/site_survey-app/releases/latest";
-
-  res.redirect(302, apkUrl || releasePageUrl);
+app.get("/release/latest.apk", async (_req, res) => {
+  const redirectUrl = await resolveLatestApkUrl();
+  res.redirect(302, redirectUrl);
 });
 
 app.get(["/release", "/download", "/release/latest"], (_req, res) => {

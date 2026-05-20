@@ -83,6 +83,16 @@ The backend now serves a public APK release page at `/release` (alias: `/downloa
 - Optional: set `LATEST_APP_RELEASE_URL` and `LATEST_APP_VERSION` for nicer labels.
 - The landing page button in `backend/public/index.html` links to the release page.
 
+If `LATEST_APP_APK_URL` is not set, `/release/latest.apk` auto-resolves the first APK asset from the latest GitHub release and redirects to it. If no APK asset is found, it falls back to the GitHub releases page.
+
+Optional resolver settings:
+
+- `GITHUB_RELEASE_OWNER` (default `kilby8`)
+- `GITHUB_RELEASE_REPO` (default `site_survey-app`)
+- `GITHUB_RELEASES_TOKEN` (recommended for private repos)
+- `GITHUB_APK_ASSET_REGEX` (default `\\.apk$`)
+- `RELEASE_APK_CACHE_SECONDS` (default `300`)
+
 ## Mobile EAS Builds
 
 The Expo project lives in `mobile/`, so EAS commands must run from that directory. If you run `eas build` from the repo root, EAS will try to read `/eas.json` and fail.

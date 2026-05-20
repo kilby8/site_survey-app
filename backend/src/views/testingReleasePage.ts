@@ -49,7 +49,7 @@ export function buildTestingReleasePage(params?: {
         <div><strong>Version:</strong> ${escapeHtml(versionLabel)}</div>
         <div><strong>Updated:</strong> ${escapeHtml(updatedAt)}</div>
         <div style="margin-top:8px;"><strong>Direct APK URL:</strong> <span class="url">${escapeHtml(apkUrl)}</span></div>
-        ${directLinkConfigured ? "" : "<div style=\"margin-top:8px;\">Set <code>LATEST_APP_APK_URL</code> in the backend environment to point this button at the direct APK asset.</div>"}
+        ${directLinkConfigured ? "" : "<div style=\"margin-top:8px;\">No fixed APK URL is set. The backend will auto-resolve the latest GitHub release APK when available, otherwise it falls back to the releases page. Set <code>LATEST_APP_APK_URL</code> for a deterministic direct APK link.</div>"}
       </div>
       <div class="meta">Built for mobile testing · Hosted by the Site Survey app backend</div>
     </main>
