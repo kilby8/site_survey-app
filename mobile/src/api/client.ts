@@ -199,6 +199,21 @@ async function fetchWithFallback(
   throw new Error(API_NETWORK_ERROR);
 }
 
+function isTransientNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("cannot reach api") ||
+    message.includes("network request failed") ||
+    message.includes("aborted") ||
+    message.includes("timed out")
+  );
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // ----------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------
@@ -430,7 +445,9 @@ export async function uploadPhotos(
   surveyId: string,
   photos: Array<{ uri: string; label: string; mimeType?: string }>,
 ): Promise<ApiPhotoUploadResponse> {
-  const BATCH_SIZE = 20;
+  const BATCH_SIZE = 5;
+  const BATCH_TIMEOUT_MS = 300_000;
+  const MAX_RETRIES_PER_BATCH = 2;
   let uploaded = 0;
   const uploadedPhotos: unknown[] = [];
 
@@ -451,19 +468,36 @@ export async function uploadPhotos(
 
     form.append("labels", JSON.stringify(labels));
 
-    const authHeaders = await getAuthHeaders();
-    const res = await fetchWithAuthRetry(
-      `/api/surveys/${surveyId}/photos`,
-      {
-        method: "POST",
-        headers: authHeaders,
-        body: form,
-        // Do NOT manually set Content-Type — fetch sets it with the boundary
-      },
-      { timeoutMs: 120_000 },
-    );
+    let batchResult: ApiPhotoUploadResponse | null = null;
 
-    const batchResult = await handleResponse<ApiPhotoUploadResponse>(res);
+    for (let attempt = 0; attempt <= MAX_RETRIES_PER_BATCH; attempt++) {
+      try {
+        const authHeaders = await getAuthHeaders();
+        const res = await fetchWithAuthRetry(
+          `/api/surveys/${surveyId}/photos`,
+          {
+            method: "POST",
+            headers: authHeaders,
+            body: form,
+            // Do NOT manually set Content-Type — fetch sets it with the boundary
+          },
+          { timeoutMs: BATCH_TIMEOUT_MS },
+        );
+
+        batchResult = await handleResponse<ApiPhotoUploadResponse>(res);
+        break;
+      } catch (error) {
+        const canRetry =
+          attempt < MAX_RETRIES_PER_BATCH && isTransientNetworkError(error);
+        if (!canRetry) throw error;
+        await delay(1_000 * (attempt + 1));
+      }
+    }
+
+    if (!batchResult) {
+      throw new Error("Photo upload failed for an unknown reason");
+    }
+
     uploaded += batchResult.uploaded;
     if (Array.isArray(batchResult.photos)) {
       uploadedPhotos.push(...batchResult.photos);
