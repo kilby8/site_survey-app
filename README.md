@@ -75,6 +75,14 @@ Backend production should use `DATABASE_URL` (single source) so both website and
 
 If website DB is the master, set Render `DATABASE_URL` to that same database connection string.
 
+## APK Testing Release Page
+
+The backend now serves a public APK release page at `/release` (alias: `/download`) so testers can grab the latest app build without hunting through the repo.
+
+- Set `LATEST_APP_APK_URL` in Render to the direct APK asset URL.
+- Optional: set `LATEST_APP_RELEASE_URL` and `LATEST_APP_VERSION` for nicer labels.
+- The landing page button in `backend/public/index.html` links to the release page.
+
 ## Mobile EAS Builds
 
 The Expo project lives in `mobile/`, so EAS commands must run from that directory. If you run `eas build` from the repo root, EAS will try to read `/eas.json` and fail.

@@ -24,6 +24,7 @@ import openApiRouter from "./routes/openapi";
 import bugReportsRouter from "./routes/bugReports";
 import mobileClientsRouter from "./routes/mobileClients";
 import webhooksRouter from "./routes/webhooks";
+import { buildTestingReleasePage } from "./views/testingReleasePage";
 import { requireAuth } from "./middleware/auth";
 import { adminOverrideDebug } from "./middleware/adminOverrideDebug";
 import { pool } from "./database";
@@ -168,6 +169,21 @@ app.get("/tools/map-simulator", (_req, res) => {
 
 app.get("/admin/pipeline-topology", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "pipeline-topology.html"));
+});
+
+app.get(["/release", "/download", "/release/latest"], (_req, res) => {
+  const apkUrl = process.env.LATEST_APP_APK_URL?.trim() || "https://github.com/kilby8/site_survey-app/releases/latest";
+  const releasePageUrl = process.env.LATEST_APP_RELEASE_URL?.trim() || "https://github.com/kilby8/site_survey-app/releases/latest";
+  const versionLabel = process.env.LATEST_APP_VERSION?.trim() || "Latest testing build";
+
+  res.type("html").send(
+    buildTestingReleasePage({
+      apkUrl,
+      releasePageUrl,
+      versionLabel,
+      updatedAt: new Date().toISOString(),
+    }),
+  );
 });
 
 app.use(fallbackSurveyRouter);
