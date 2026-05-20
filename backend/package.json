@@ -10,7 +10,11 @@
     "test": "jest --forceExit",
     "test:webhook": "node dist/scripts/testSolarProWebhook.js",
     "reconcile:users": "node dist/scripts/reconcileUsers.js",
-    "reconcile:users:apply": "node dist/scripts/reconcileUsers.js --apply"
+    "reconcile:users:apply": "node dist/scripts/reconcileUsers.js --apply",
+    "photos:purge:dry": "node dist/scripts/photoRetentionPurge.js",
+    "photos:purge:apply": "node dist/scripts/photoRetentionPurge.js --apply",
+    "photos:purge:stage-b:dry": "node dist/scripts/photoRetentionPurge.js --stage=b",
+    "photos:purge:stage-b:apply": "node dist/scripts/photoRetentionPurge.js --stage=b --apply"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1033.0",

@@ -42,6 +42,23 @@ interface WebhookDeliveryRow {
 
 const RETRY_MINUTES = [1, 5, 30, 120, 720];
 let tableReady: Promise<void> | null = null;
+let surveySyncColumnReady: Promise<void> | null = null;
+
+async function ensureSurveySyncColumn(): Promise<void> {
+  if (!surveySyncColumnReady) {
+    surveySyncColumnReady = pool
+      .query(
+        `ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_synced_at TIMESTAMPTZ`,
+      )
+      .then(() => undefined)
+      .catch((error) => {
+        surveySyncColumnReady = null;
+        throw error;
+      });
+  }
+
+  await surveySyncColumnReady;
+}
 
 function getWebhookUrl(): string | null {
   const url = process.env.SOLARPRO_WEBHOOK_URL?.trim();
@@ -139,7 +156,11 @@ export async function enqueueSurveyCompleteWebhook(params: {
   return eventId;
 }
 
-async function markDelivered(id: string, attemptCount: number): Promise<void> {
+async function markDelivered(
+  id: string,
+  attemptCount: number,
+  surveyId: string,
+): Promise<void> {
   await pool.query(
     `UPDATE webhook_deliveries
         SET status = 'delivered',
@@ -149,6 +170,15 @@ async function markDelivered(id: string, attemptCount: number): Promise<void> {
             updated_at = NOW()
       WHERE id = $1`,
     [id, attemptCount],
+  );
+
+  await ensureSurveySyncColumn();
+  await pool.query(
+    `UPDATE surveys
+        SET solarpro_synced_at = COALESCE(solarpro_synced_at, NOW()),
+            updated_at = NOW()
+      WHERE id = $1`,
+    [surveyId],
   );
 }
 
@@ -259,7 +289,7 @@ async function deliverOne(row: WebhookDeliveryRow): Promise<void> {
 
     const nextAttempt = row.attempt_count + 1;
     if (response.ok) {
-      await markDelivered(row.id, nextAttempt);
+      await markDelivered(row.id, nextAttempt, row.survey_id);
       incrementMetric("webhook_delivered_total");
       console.info(
         JSON.stringify({
