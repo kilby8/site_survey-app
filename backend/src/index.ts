@@ -171,17 +171,24 @@ app.get("/admin/pipeline-topology", (_req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "pipeline-topology.html"));
 });
 
+app.get("/release/latest.apk", (_req, res) => {
+  const apkUrl = process.env.LATEST_APP_APK_URL?.trim();
+  const releasePageUrl = process.env.LATEST_APP_RELEASE_URL?.trim() || "https://github.com/kilby8/site_survey-app/releases/latest";
+
+  res.redirect(302, apkUrl || releasePageUrl);
+});
+
 app.get(["/release", "/download", "/release/latest"], (_req, res) => {
-  const apkUrl = process.env.LATEST_APP_APK_URL?.trim() || "https://github.com/kilby8/site_survey-app/releases/latest";
   const releasePageUrl = process.env.LATEST_APP_RELEASE_URL?.trim() || "https://github.com/kilby8/site_survey-app/releases/latest";
   const versionLabel = process.env.LATEST_APP_VERSION?.trim() || "Latest testing build";
 
   res.type("html").send(
     buildTestingReleasePage({
-      apkUrl,
+      apkUrl: "/release/latest.apk",
       releasePageUrl,
       versionLabel,
       updatedAt: new Date().toISOString(),
+      directLinkConfigured: Boolean(process.env.LATEST_APP_APK_URL?.trim()),
     }),
   );
 });

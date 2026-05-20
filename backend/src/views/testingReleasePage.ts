@@ -12,12 +12,13 @@ export function buildTestingReleasePage(params?: {
   releasePageUrl?: string;
   versionLabel?: string;
   updatedAt?: string;
+  directLinkConfigured?: boolean;
 }): string {
   const apkUrl = params?.apkUrl?.trim() || "https://github.com/kilby8/site_survey-app/releases/latest";
   const releasePageUrl = params?.releasePageUrl?.trim() || "https://github.com/kilby8/site_survey-app/releases/latest";
   const versionLabel = params?.versionLabel?.trim() || "Latest testing build";
   const updatedAt = params?.updatedAt?.trim() || new Date().toISOString();
-  const directLinkConfigured = Boolean(params?.apkUrl?.trim());
+  const directLinkConfigured = Boolean(params?.directLinkConfigured);
 
   return `<!doctype html>
 <html lang="en">
