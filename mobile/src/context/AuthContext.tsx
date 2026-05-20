@@ -14,6 +14,7 @@ const REFRESH_TOKEN_KEY = 'site-survey.auth.refresh-token.v1';
 
 // Refresh the access token this many ms before it expires (2 minutes)
 const REFRESH_BUFFER_MS = 2 * 60 * 1000;
+const REFRESH_RETRY_DELAY_MS = 60 * 1000;
 
 async function getStoredToken(): Promise<string | null> {
   if (!AsyncStorage || typeof AsyncStorage.getItem !== 'function') return null;
@@ -58,6 +59,18 @@ function getTokenExpMs(token: string): number | null {
   }
 }
 
+function isSessionTerminalRefreshError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("http 401") ||
+    message.includes("http 403") ||
+    message.includes("invalid refresh token") ||
+    message.includes("expired or revoked") ||
+    message.includes("refresh token is required")
+  );
+}
+
 interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
@@ -83,7 +96,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshTokenRef.current = result.refreshToken;
       setToken(result.token);
       return result.token;
-    } catch {
+    } catch (error) {
+      if (!isSessionTerminalRefreshError(error)) {
+        return token;
+      }
       await clearStoredToken();
       await clearStoredRefreshToken();
       refreshTokenRef.current = null;
@@ -91,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       return null;
     }
-  }, []);
+  }, [token]);
 
   /** Schedule a proactive token refresh REFRESH_BUFFER_MS before expiry. */
   const scheduleRefresh = useCallback((accessToken: string, storedRefreshToken: string) => {
@@ -121,13 +137,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refreshTokenRef.current = result.refreshToken;
         setToken(result.token);
         scheduleRefresh(result.token, result.refreshToken);
-      } catch {
-        // Refresh failed — sign the user out gracefully
-        await clearStoredToken();
-        await clearStoredRefreshToken();
-        refreshTokenRef.current = null;
-        setToken(null);
-        setUser(null);
+      } catch (error) {
+        if (isSessionTerminalRefreshError(error)) {
+          await clearStoredToken();
+          await clearStoredRefreshToken();
+          refreshTokenRef.current = null;
+          setToken(null);
+          setUser(null);
+          return;
+        }
+
+        // Transient refresh failures (network hiccups / 5xx) should not force logout.
+        refreshTimerRef.current = setTimeout(async () => {
+          const activeRefreshToken = refreshTokenRef.current || storedRefreshToken;
+          const nextAccessToken = await refreshSession(activeRefreshToken);
+          if (!nextAccessToken || !refreshTokenRef.current) return;
+          scheduleRefresh(nextAccessToken, refreshTokenRef.current);
+        }, REFRESH_RETRY_DELAY_MS);
       }
     }, delay);
   }, [refreshSession]);
