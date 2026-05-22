@@ -6,6 +6,41 @@ Full-stack site survey platform with:
 - Frontend dashboard in React + Vite
 - Mobile clients and shared modules in the repository
 
+## Front Page Snapshot
+
+### What this repo does
+
+Site Survey is an offline-friendly field inspection app with a mobile client, backend API, and dashboard tooling. It supports end-to-end survey capture, photo upload, webhook delivery, and operational visibility for survey workflows.
+
+### Current status
+
+- Mobile stack upgraded to Expo SDK 56 and aligned dependencies.
+- Security hardening completed for config and token handling.
+- Backend and mobile efficiency improvements are in place.
+- Mobile production dependency audit reduced to 0 vulnerabilities.
+- Backend tests and smoke checks are passing in local validation.
+
+### Latest update (May 2026)
+
+- Removed hardcoded Maps API keys from tracked config and switched to env-backed injection.
+- Enforced strict JWT secret usage in auth token utilities.
+- Added list endpoint efficiency improvements:
+  - safer pagination defaults
+  - optional total-count skipping (`include_total=false`)
+  - short cache headers on survey list responses
+- Added webhook queue gauge metrics (pending depth and oldest age).
+- Added mobile API request dedupe and retry/backoff for transient network failures.
+- Added path-aware CI workflow so backend/mobile/frontend jobs run only when relevant paths change.
+- Added a lightweight latency printout command:
+  - `npm run bench:latency`
+
+### Quick links
+
+- Android command reference: [mobile/QUICK_REFERENCE.md](mobile/QUICK_REFERENCE.md)
+- Android troubleshooting: [mobile/ANDROID_TROUBLESHOOTING.md](mobile/ANDROID_TROUBLESHOOTING.md)
+- Audit checkpoint log: [audit/blue-team-audit-checkpoint.md](audit/blue-team-audit-checkpoint.md)
+- Credential reconciliation doc: [docs/user-credential-reconciliation.md](docs/user-credential-reconciliation.md)
+
 ## Local Development
 
 ### Quick Start - Full Stack with Android
