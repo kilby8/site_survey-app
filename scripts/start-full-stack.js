@@ -40,6 +40,27 @@ function startBackground(command, args, cwd, label) {
   return child;
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isBackendReady() {
+  const probe = spawnSync("curl", ["-fsS", "http://localhost:3001/api/health"], {
+    stdio: "ignore",
+    shell: isWindows,
+  });
+  return probe.status === 0;
+}
+
+async function waitForBackendReady(timeoutMs = 30_000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (isBackendReady()) return true;
+    await wait(1_000);
+  }
+  return false;
+}
+
 async function main() {
   console.log("=== Site Survey Full Stack Startup ===\n");
   
@@ -54,19 +75,23 @@ async function main() {
     process.exit(1);
   }
   
-  // Wait for DB to be ready
-  console.log("\nWaiting for database to be ready...");
-  await new Promise((resolve) => setTimeout(resolve, 5000));
-  
   // Step 2: Start Backend
   console.log("\n=== STEP 2: Starting Backend ===");
   console.log("Backend will run in the background. Check http://localhost:3001/api/health\n");
   
   const backendProcess = startBackground("npm", ["run", "dev"], backendDir, "Backend");
   
-  // Wait for backend to start
-  console.log("\nWaiting for backend to start...");
-  await new Promise((resolve) => setTimeout(resolve, 5000));
+  // Wait for backend readiness so Android start does not race API boot.
+  console.log("\nWaiting for backend health endpoint...");
+  const backendReady = await waitForBackendReady();
+  if (!backendReady) {
+    console.error("\n✗ Backend did not become ready within 30 seconds.");
+    if (backendProcess && !backendProcess.killed) {
+      backendProcess.kill();
+    }
+    process.exit(1);
+  }
+  console.log("[Backend] ✓ Health check passed");
   
   // Step 3: Run Android
   console.log("\n=== STEP 3: Starting Android Emulator & App ===");

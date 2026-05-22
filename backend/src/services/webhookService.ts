@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from "crypto";
 import { pool } from "../database";
 import { deleteFile } from "../utils/storageClient";
-import { incrementMetric } from "./metrics";
+import { incrementMetric, setGaugeMetric } from "./metrics";
 
 interface SurveyCompletePayload {
   event: "survey.completed";
@@ -81,6 +81,11 @@ export async function ensureWebhookDeliveriesTable(): Promise<void> {
   }
 
   await tableReady;
+
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status_next_attempt
+       ON webhook_deliveries(status, next_attempt_at)`,
+  );
 }
 
 function nextAttemptAt(attemptCount: number): Date | null {
@@ -150,6 +155,43 @@ async function markDelivered(id: string, attemptCount: number): Promise<void> {
       WHERE id = $1`,
     [id, attemptCount],
   );
+}
+
+async function claimWebhookDeliveries(limit = 25): Promise<WebhookDeliveryRow[]> {
+  const { rows } = await pool.query<WebhookDeliveryRow>(
+    `WITH candidates AS (
+       SELECT id
+         FROM webhook_deliveries
+        WHERE (
+          status = 'pending' AND next_attempt_at <= NOW()
+        )
+           OR (
+             status = 'processing'
+             AND updated_at <= NOW() - INTERVAL '10 minutes'
+           )
+        ORDER BY next_attempt_at ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT $1
+     )
+     UPDATE webhook_deliveries wd
+        SET status = 'processing',
+            updated_at = NOW()
+       FROM candidates
+      WHERE wd.id = candidates.id
+      RETURNING
+        wd.id,
+        wd.survey_id,
+        wd.event_type,
+        wd.event_id,
+        wd.payload::text AS payload,
+        wd.status,
+        wd.attempt_count,
+        wd.next_attempt_at::text AS next_attempt_at,
+        wd.last_error`,
+    [limit],
+  );
+
+  return rows;
 }
 
 async function markRetry(
@@ -326,23 +368,25 @@ async function deliverOne(row: WebhookDeliveryRow): Promise<void> {
 export async function processWebhookQueue(limit = 25): Promise<void> {
   await ensureWebhookDeliveriesTable();
 
-  const { rows } = await pool.query<WebhookDeliveryRow>(
+  const { rows: queueStatsRows } = await pool.query<{
+    pending_count: number;
+    oldest_age_seconds: number;
+  }>(
     `SELECT
-       id,
-       survey_id,
-       event_type,
-       event_id,
-       payload::text AS payload,
-       status,
-       attempt_count,
-       next_attempt_at::text AS next_attempt_at,
-       last_error
+       COUNT(*)::int AS pending_count,
+       COALESCE(
+         FLOOR(EXTRACT(EPOCH FROM NOW() - MIN(created_at))),
+         0
+       )::int AS oldest_age_seconds
      FROM webhook_deliveries
-     WHERE status = 'pending' AND next_attempt_at <= NOW()
-     ORDER BY next_attempt_at ASC
-     LIMIT $1`,
-    [limit],
+     WHERE status = 'pending'`,
   );
+
+  const queueStats = queueStatsRows[0] ?? { pending_count: 0, oldest_age_seconds: 0 };
+  setGaugeMetric("webhook_queue_pending", queueStats.pending_count);
+  setGaugeMetric("webhook_queue_oldest_age_seconds", queueStats.oldest_age_seconds);
+
+  const rows = await claimWebhookDeliveries(limit);
 
   for (const row of rows) {
     await deliverOne(row);

@@ -9,6 +9,8 @@ type CounterName =
 
 type TimerName = "http_request_duration_ms" | "survey_sync_duration_ms";
 
+type GaugeName = "webhook_queue_pending" | "webhook_queue_oldest_age_seconds";
+
 interface TimerStats {
   count: number;
   total_ms: number;
@@ -32,6 +34,11 @@ const timers: Record<TimerName, TimerStats> = {
   survey_sync_duration_ms: { count: 0, total_ms: 0, max_ms: 0 },
 };
 
+const gauges: Record<GaugeName, number> = {
+  webhook_queue_pending: 0,
+  webhook_queue_oldest_age_seconds: 0,
+};
+
 export function incrementMetric(name: CounterName, by = 1): void {
   counters[name] += by;
 }
@@ -46,10 +53,16 @@ export function recordTiming(name: TimerName, durationMs: number): void {
   }
 }
 
+export function setGaugeMetric(name: GaugeName, value: number): void {
+  const safeValue = Number.isFinite(value) && value >= 0 ? value : 0;
+  gauges[name] = safeValue;
+}
+
 export function getMetricsSnapshot() {
   return {
     uptime_seconds: Math.floor((Date.now() - startedAt) / 1000),
     counters: { ...counters },
+    gauges: { ...gauges },
     timings: {
       http_request_duration_ms: {
         ...timers.http_request_duration_ms,

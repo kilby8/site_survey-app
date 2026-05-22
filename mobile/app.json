@@ -13,9 +13,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sitesurvey.mobile",
-      "config": {
-        "googleMapsApiKey": "AIzaSyBcXQC-i7s2TJz8PNOM1OhiU-sEhPR41wE"
-      },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Site Survey needs your location to record GPS coordinates for each survey.",
         "NSCameraUsageDescription": "Site Survey needs camera access to capture site photos.",
@@ -25,11 +22,6 @@
     },
     "android": {
       "package": "com.sitesurvey.mobile",
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyBcXQC-i7s2TJz8PNOM1OhiU-sEhPR41wE"
-        }
-      },
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
@@ -56,6 +48,8 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
+      "expo-sharing",
+      "expo-status-bar",
       [
         "expo-location",
         {

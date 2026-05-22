@@ -155,14 +155,66 @@ const API_NETWORK_ERROR =
     ? `Cannot reach API. Tried: ${API_CANDIDATES.join(", ")}.${isDevelopmentRuntime ? " Ensure backend is running and your phone is on the same Wi-Fi as this machine." : ""}`
     : "API is not configured for this build. Set EXPO_PUBLIC_API_URL or expo.extra.apiUrl for your production EAS environment, then rebuild or publish an update.";
 
-function withTimeoutSignal(init: RequestInit, timeoutMs = 5_000): RequestInit {
+const inflightGetRequests = new Map<string, Promise<Response>>();
+
+function shouldRetryRequest(init: RequestInit): boolean {
+  const method = (init.method || "GET").toUpperCase();
+  return method === "GET" || method === "HEAD";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildRequestKey(path: string, init: RequestInit): string {
+  const method = (init.method || "GET").toUpperCase();
+  return `${method}:${path}`;
+}
+
+async function fetchWithRetry(
+  baseUrl: string,
+  path: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const maxAttempts = shouldRetryRequest(init) ? 3 : 1;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fetchWithTimeout(`${baseUrl}${path}`, init, timeoutMs);
+    } catch {
+      if (attempt >= maxAttempts) {
+        throw new Error("network_error");
+      }
+
+      const jitterMs = Math.floor(Math.random() * 120);
+      const backoffMs = Math.min(250 * 2 ** (attempt - 1) + jitterMs, 1_250);
+      await sleep(backoffMs);
+    }
+  }
+
+  throw new Error("network_error");
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
   if (init.signal || typeof AbortController === "undefined") {
-    return init;
+    return fetch(url, init);
   }
 
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), timeoutMs);
-  return { ...init, signal: controller.signal };
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 }
 
 async function fetchWithFallback(
@@ -170,15 +222,26 @@ async function fetchWithFallback(
   init: RequestInit,
   options?: { timeoutMs?: number },
 ): Promise<Response> {
+  const method = (init.method || "GET").toUpperCase();
+  const isDedupable = method === "GET" && !init.body;
+  const requestKey = isDedupable ? buildRequestKey(path, init) : null;
+
+  if (requestKey && inflightGetRequests.has(requestKey)) {
+    return inflightGetRequests.get(requestKey) as Promise<Response>;
+  }
+
+  const requestPromise = (async () => {
   if (API_CANDIDATES.length === 0) {
     throw new Error(API_NETWORK_ERROR);
   }
 
   for (const baseUrl of API_CANDIDATES) {
     try {
-      return await fetch(
-        `${baseUrl}${path}`,
-        withTimeoutSignal(init, options?.timeoutMs ?? 5_000),
+      return await fetchWithRetry(
+        baseUrl,
+        path,
+        init,
+        options?.timeoutMs ?? 5_000,
       );
     } catch {
       // Try next candidate URL.
@@ -186,6 +249,18 @@ async function fetchWithFallback(
   }
 
   throw new Error(API_NETWORK_ERROR);
+  })();
+
+  if (!requestKey) {
+    return requestPromise;
+  }
+
+  inflightGetRequests.set(requestKey, requestPromise);
+  try {
+    return await requestPromise;
+  } finally {
+    inflightGetRequests.delete(requestKey);
+  }
 }
 
 // ----------------------------------------------------------------
@@ -208,6 +283,19 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
 const AUTH_TOKEN_KEY = "site-survey.auth.token.v2";
 const REFRESH_TOKEN_KEY = "site-survey.auth.refresh-token.v1";
+let refreshInFlight: Promise<{ token: string; refreshToken: string }> | null = null;
+
+async function getOrRefreshAccessToken(
+  refreshToken: string,
+): Promise<{ token: string; refreshToken: string }> {
+  if (!refreshInFlight) {
+    refreshInFlight = refreshAccessToken(refreshToken).finally(() => {
+      refreshInFlight = null;
+    });
+  }
+
+  return refreshInFlight;
+}
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   try {
@@ -241,7 +329,7 @@ async function fetchWithAuthRetry(
   }
 
   try {
-    const refreshed = await refreshAccessToken(refreshToken);
+    const refreshed = await getOrRefreshAccessToken(refreshToken);
     await AsyncStorage.setItem(AUTH_TOKEN_KEY, refreshed.token);
     await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshed.refreshToken);
 

@@ -9,7 +9,11 @@ export interface AuthTokenPayload {
 }
 
 function getSecret(): string {
-  return process.env.JWT_SECRET || 'dev_jwt_secret_change_me';
+  const secret = process.env.JWT_SECRET;
+  if (!secret || !secret.trim()) {
+    throw new Error('JWT_SECRET is required for auth token operations');
+  }
+  return secret;
 }
 
 function getAccessTokenTTL(): jwt.SignOptions['expiresIn'] {

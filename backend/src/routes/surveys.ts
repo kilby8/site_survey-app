@@ -45,6 +45,9 @@ async function ensureSurveySoftDeleteColumn(): Promise<void> {
         await pool.query(`ALTER TABLE survey_photos ADD COLUMN IF NOT EXISTS photo_data BYTEA`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_solarpro_user_id ON surveys(solarpro_user_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_solarpro_project_id ON surveys(solarpro_project_id)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_active_updated_at ON surveys(deleted_at, updated_at DESC)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_active_survey_date ON surveys(deleted_at, survey_date DESC)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_active_project_status ON surveys(deleted_at, project_id, status)`);
       } catch (error) {
         console.warn("survey schema migration skipped:", error);
       }
@@ -1369,7 +1372,13 @@ router.get("/admin/surveys", async (req: Request, res: Response) => {
   try {
     await ensureSurveySoftDeleteColumn();
 
-    const { status, project_id, limit = "100", offset = "0" } = req.query as Record<
+    const {
+      status,
+      project_id,
+      include_total = "true",
+      limit = "100",
+      offset = "0",
+    } = req.query as Record<
       string,
       string
     >;
@@ -1397,11 +1406,16 @@ router.get("/admin/surveys", async (req: Request, res: Response) => {
       ? Math.min(Math.max(parsedLimit, 1), 500)
       : 100;
     const safeOffset = Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0;
+    const shouldIncludeTotal = include_total !== "false";
 
-    const { rows: countRows } = await pool.query<{ total: number }>(
-      `SELECT COUNT(*)::int AS total FROM surveys s ${where}`,
-      params,
-    );
+    let total = null;
+    if (shouldIncludeTotal) {
+      const { rows: countRows } = await pool.query<{ total: number }>(
+        `SELECT COUNT(*)::int AS total FROM surveys s ${where}`,
+        params,
+      );
+      total = countRows[0]?.total ?? 0;
+    }
 
     params.push(safeLimit, safeOffset);
 
@@ -1433,9 +1447,10 @@ router.get("/admin/surveys", async (req: Request, res: Response) => {
       params,
     );
 
+    res.setHeader("Cache-Control", "private, max-age=15, stale-while-revalidate=30");
     res.json({
       surveys: rows,
-      total: countRows[0]?.total ?? 0,
+      total,
     });
   } catch (err) {
     console.error("GET /api/surveys/admin/surveys error:", err);
@@ -1450,6 +1465,7 @@ router.get("/", async (req: Request, res: Response) => {
       project_id,
       status,
       category_id,
+      include_total = "true",
       limit = "100",
       offset = "0",
     } = req.query as Record<string, string>;
@@ -1468,13 +1484,22 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-    const lim = Math.min(parseInt(limit, 10), 500);
-    const off = parseInt(offset, 10);
+    const parsedLimit = Number.parseInt(limit, 10);
+    const parsedOffset = Number.parseInt(offset, 10);
+    const lim = Number.isFinite(parsedLimit)
+      ? Math.min(Math.max(parsedLimit, 1), 500)
+      : 100;
+    const off = Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0;
+    const shouldIncludeTotal = include_total !== "false";
 
-    const { rows: countRows } = await pool.query(
-      `SELECT COUNT(*)::int AS total FROM surveys s ${where}`,
-      params,
-    );
+    let total = null;
+    if (shouldIncludeTotal) {
+      const { rows: countRows } = await pool.query<{ total: number }>(
+        `SELECT COUNT(*)::int AS total FROM surveys s ${where}`,
+        params,
+      );
+      total = countRows[0]?.total ?? 0;
+    }
 
     params.push(lim, off);
 
@@ -1505,7 +1530,8 @@ router.get("/", async (req: Request, res: Response) => {
       params,
     );
 
-    res.json({ surveys: rows, total: countRows[0].total });
+    res.setHeader("Cache-Control", "private, max-age=15, stale-while-revalidate=30");
+    res.json({ surveys: rows, total });
   } catch (err) {
     console.error("GET /api/surveys error:", err);
     res.status(500).json({ error: "Failed to retrieve surveys" });

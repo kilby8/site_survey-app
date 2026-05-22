@@ -30,7 +30,8 @@
     "docker:logs": "docker compose logs -f",
     "docker:db": "docker compose up -d db",
     "deploy:backend": "powershell -ExecutionPolicy Bypass -File scripts/deploy-render.ps1",
-    "deploy:all": "npm run deploy:backend && cd mobile && npx eas update --branch production --message \"deploy:all\""
+    "deploy:all": "npm run deploy:backend && cd mobile && npx eas update --branch production --message \"deploy:all\"",
+    "bench:latency": "node scripts/latency-smoke.js"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
