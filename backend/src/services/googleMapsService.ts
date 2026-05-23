@@ -112,7 +112,7 @@ export async function validateAddressWithGoogle(
 ): Promise<AddressValidationResult | null> {
   const apiKey = (process.env.GOOGLE_MAPS_API_KEY || "").trim();
   if (!apiKey) {
-    console.warn("[GOOGLE_MAPS] GOOGLE_MAPS_API_KEY is not set — skipping Google validation");
+    console.error("[GOOGLE_MAPS] GOOGLE_MAPS_API_KEY is missing from environment variables.");
     return null;
   }
 
@@ -130,11 +130,22 @@ export async function validateAddressWithGoogle(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[GOOGLE_MAPS] API error ${response.status}: ${errorText}`);
+      console.error(`[GOOGLE_MAPS] Validation HTTP error ${response.status}: ${errorText}`);
       return null;
     }
 
-    const data = (await response.json()) as GoogleAddressValidationResponse;
+    const data = (await response.json()) as GoogleAddressValidationResponse & { error?: { message: string } };
+
+    if (data.error) {
+      console.error(`[GOOGLE_MAPS] Validation API error: ${data.error.message}`);
+      return null;
+    }
+
+    if (!data.result) {
+      console.error("[GOOGLE_MAPS] Validation API returned no result object");
+      return null;
+    }
+
     const { verdict, address: googleAddress, geocode } = data.result;
 
     const components: AddressValidationResult["components"] = {};
@@ -174,24 +185,33 @@ export async function reverseGeocodeWithGoogle(
   longitude: number,
 ): Promise<string | null> {
   const apiKey = (process.env.GOOGLE_MAPS_API_KEY || "").trim();
-  if (!apiKey) return null;
+  if (!apiKey) {
+    console.error("[GOOGLE_MAPS] GOOGLE_MAPS_API_KEY is missing from environment variables.");
+    return null;
+  }
 
   try {
     const response = await fetch(
       `${GOOGLE_GEOCODE_URL}?latlng=${latitude},${longitude}&key=${apiKey}`,
     );
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[GOOGLE_MAPS] Geocode HTTP error ${response.status}: ${errorText}`);
+      return null;
+    }
 
     const data = (await response.json()) as {
       results: Array<{ formatted_address: string }>;
       status: string;
+      error_message?: string;
     };
 
     if (data.status === "OK" && data.results.length > 0) {
       return data.results[0].formatted_address;
     }
 
+    console.error(`[GOOGLE_MAPS] Geocode API returned status: ${data.status}${data.error_message ? ` - ${data.error_message}` : ""}`);
     return null;
   } catch (err) {
     console.error("[GOOGLE_MAPS] reverse geocode failed:", err);
