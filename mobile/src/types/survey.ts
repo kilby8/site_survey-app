@@ -191,24 +191,23 @@ export const DEFAULT_CHECKLIST: Omit<
 >[] = [
   // 1) Project Arrival
   { label: "Arrival: Address Verification", status: "pending", notes: "", sort_order: 0 },
-  { label: "Arrival: Access Path Check", status: "pending", notes: "", sort_order: 1 },
+  { label: "Arrival: Attic Access", status: "pending", notes: "", sort_order: 1 },
   { label: "Arrival: Hazards Logged", status: "pending", notes: "", sort_order: 2 },
 
   // 2) Site Walkaround
-  { label: "Walkaround: Front/Back/Left/Right Elevations", status: "pending", notes: "", sort_order: 3 },
-  { label: "Walkaround: CAD Context Wide Shots", status: "pending", notes: "", sort_order: 4 },
+  { label: "Walk Around", status: "pending", notes: "", sort_order: 3 },
+  { label: "Walk Around: CAD Context Wide Shots", status: "pending", notes: "", sort_order: 4 },
 
   // 3) Roof & Array
   { label: "Roof: Plane Pitch/Azimuth/Obstructions", status: "pending", notes: "", sort_order: 5 },
   { label: "Roof: Plane Material + Plane ID Association", status: "pending", notes: "", sort_order: 6 },
 
   // 4) Utility Service
-  { label: "Utility: Meter Evidence Captured", status: "pending", notes: "", sort_order: 7 },
-  { label: "Utility: Service Entry + Riser/Mast", status: "pending", notes: "", sort_order: 8 },
+  { label: "Utility: Meter", status: "pending", notes: "", sort_order: 7 },
+  { label: "Utility: Service Entry", status: "pending", notes: "", sort_order: 8 },
 
   // 5) Electrical Equipment
-  { label: "Electrical: Main Panel + Bus + OCPD", status: "pending", notes: "", sort_order: 9 },
-  { label: "Electrical: Circuit Directory Recorded", status: "pending", notes: "", sort_order: 10 },
+  { label: "Electrical", status: "pending", notes: "", sort_order: 9 },
 ];
 
 export const SURVEY_CATEGORIES = [

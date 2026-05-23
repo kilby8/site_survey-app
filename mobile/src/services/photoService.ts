@@ -11,6 +11,8 @@ import * as FileSystem  from 'expo-file-system/legacy';
 
 const PHOTOS_DIR = `${FileSystem.documentDirectory}survey-photos/`;
 
+const VIDEOS_DIR = `${FileSystem.documentDirectory}survey-videos/`;
+
 function makeLocalId(): string {
   return `photo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -25,11 +27,26 @@ async function ensureDir(): Promise<void> {
   }
 }
 
+async function ensureVideoDir(): Promise<void> {
+  const info = await FileSystem.getInfoAsync(VIDEOS_DIR);
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(VIDEOS_DIR, { intermediates: true });
+  }
+}
+
 export interface CapturedPhoto {
   uri:      string;  // permanent local file path
   mimeType: string;
   width:    number;
   height:   number;
+}
+
+export interface CapturedVideo {
+  uri: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  durationMs: number;
 }
 
 // ----------------------------------------------------------------
@@ -50,7 +67,7 @@ export async function captureFromCamera(): Promise<CapturedPhoto | null> {
 
   if (result.canceled || !result.assets?.length) return null;
 
-  return _copyToDocuments(result.assets[0]);
+  return _copyPhotoToDocuments(result.assets[0]);
 }
 
 // ----------------------------------------------------------------
@@ -71,7 +88,43 @@ export async function pickFromLibrary(): Promise<CapturedPhoto | null> {
 
   if (result.canceled || !result.assets?.length) return null;
 
-  return _copyToDocuments(result.assets[0]);
+  return _copyPhotoToDocuments(result.assets[0]);
+}
+
+export async function captureVideoFromCamera(): Promise<CapturedVideo | null> {
+  const { status } = await ImagePicker.requestCameraPermissionsAsync();
+  if (status !== 'granted') {
+    throw new Error('Camera permission denied. Please enable it in Settings.');
+  }
+
+  const result = await ImagePicker.launchCameraAsync({
+    mediaTypes: ['videos'],
+    allowsEditing: false,
+    quality: 0.85,
+    exif: false,
+  });
+
+  if (result.canceled || !result.assets?.length) return null;
+
+  return _copyVideoToDocuments(result.assets[0]);
+}
+
+export async function pickVideoFromLibrary(): Promise<CapturedVideo | null> {
+  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (status !== 'granted') {
+    throw new Error('Media library permission denied. Please enable it in Settings.');
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['videos'],
+    allowsEditing: false,
+    quality: 0.85,
+    exif: false,
+  });
+
+  if (result.canceled || !result.assets?.length) return null;
+
+  return _copyVideoToDocuments(result.assets[0]);
 }
 
 // ----------------------------------------------------------------
@@ -121,14 +174,14 @@ export async function pickMultipleFromLibrary(
 
   if (result.canceled || !result.assets?.length) return [];
 
-  const photos = await Promise.all(result.assets.map((asset) => _copyToDocuments(asset)));
+  const photos = await Promise.all(result.assets.map((asset) => _copyPhotoToDocuments(asset)));
   return photos;
 }
 
 // ----------------------------------------------------------------
 // Copy a picked/captured asset into the app's documents directory
 // ----------------------------------------------------------------
-async function _copyToDocuments(
+async function _copyPhotoToDocuments(
   asset: ImagePicker.ImagePickerAsset
 ): Promise<CapturedPhoto> {
   await ensureDir();
@@ -144,6 +197,27 @@ async function _copyToDocuments(
     mimeType: asset.mimeType ?? 'image/jpeg',
     width:    asset.width    ?? 0,
     height:   asset.height   ?? 0,
+  };
+}
+
+async function _copyVideoToDocuments(
+  asset: ImagePicker.ImagePickerAsset
+): Promise<CapturedVideo> {
+  await ensureVideoDir();
+
+  const mimeType = asset.mimeType ?? 'video/mp4';
+  const ext = mimeType === 'video/quicktime' ? '.mov' : '.mp4';
+  const filename = `${makeLocalId()}${ext}`;
+  const destPath = `${VIDEOS_DIR}${filename}`;
+
+  await FileSystem.copyAsync({ from: asset.uri, to: destPath });
+
+  return {
+    uri: destPath,
+    mimeType,
+    width: asset.width ?? 0,
+    height: asset.height ?? 0,
+    durationMs: asset.duration ?? 0,
   };
 }
 

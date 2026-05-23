@@ -44,7 +44,11 @@ import type { ChecklistStatus, SurveyFormData, SurveyMetadata } from "../types";
 
 import { DEFAULT_CHECKLIST, SURVEY_CATEGORIES } from "../types";
 
-import ChecklistEditor, { type ChecklistItemDraft, type PhotoSlotDraft } from "../components/ChecklistEditor";
+import ChecklistEditor, {
+  type ChecklistItemDraft,
+  type InstallationTypeId,
+  type PhotoSlotDraft,
+} from "../components/ChecklistEditor";
 
 import GPSCapture from "../components/GPSCapture";
 
@@ -81,25 +85,64 @@ const ADDRESS_VERIFICATION_SLOTS: PhotoSlotDraft[] = [
   { slotId: 'av_mailbox',        label: 'Mailbox',         isRequired: true, photo: null },
 ];
 
+const ATTIC_ACCESS_SLOTS: PhotoSlotDraft[] = [
+  { slotId: 'attic_access', label: 'Attic Access', isRequired: true, photo: null },
+];
+
+const WALK_AROUND_DIRECTION_SLOTS: PhotoSlotDraft[] = [
+  { slotId: 'walk_south', label: 'South', isRequired: true, photo: null },
+  { slotId: 'walk_southeast', label: 'Southeast', isRequired: true, photo: null },
+  { slotId: 'walk_east', label: 'East', isRequired: true, photo: null },
+  { slotId: 'walk_northeast', label: 'Northeast', isRequired: true, photo: null },
+  { slotId: 'walk_north', label: 'North', isRequired: true, photo: null },
+  { slotId: 'walk_northwest', label: 'Northwest', isRequired: true, photo: null },
+  { slotId: 'walk_west', label: 'West', isRequired: true, photo: null },
+  { slotId: 'walk_southwest', label: 'Southwest', isRequired: true, photo: null },
+];
+
+const UTILITY_METER_SLOTS: PhotoSlotDraft[] = [
+  { slotId: 'meter_number_tag', label: 'Number Tag Close-up', isRequired: true, photo: null },
+  { slotId: 'meter_wall_wide', label: 'Wall Wide Shot', isRequired: true, photo: null },
+];
+
+const UTILITY_SERVICE_ENTRY_SLOTS: PhotoSlotDraft[] = [
+  { slotId: 'service_wide_shot', label: 'Wide Shot', isRequired: true, photo: null },
+  { slotId: 'service_close_up', label: 'Close-up', isRequired: true, photo: null },
+];
+
+const ELECTRICAL_SLOTS: PhotoSlotDraft[] = [
+  { slotId: 'elec_main_panel', label: 'Main Panel', isRequired: true, photo: null },
+  { slotId: 'elec_sub_panel', label: 'Sub Panel', isRequired: true, photo: null },
+  { slotId: 'elec_ocpd_rating', label: 'OCPD Rating', isRequired: true, photo: null },
+  { slotId: 'elec_circuit_layout', label: 'Circuit Layout', isRequired: true, photo: null },
+  { slotId: 'elec_main_breaker', label: 'Main Breaker', isRequired: true, photo: null },
+];
+
 /** Returns the initial photoSlots for a checklist label, or undefined. */
 function getInitialPhotoSlots(label: string): PhotoSlotDraft[] | undefined {
   if (label === 'Arrival: Address Verification') {
     return ADDRESS_VERIFICATION_SLOTS.map(s => ({ ...s }));
+  }
+  if (label === 'Arrival: Attic Access') {
+    return ATTIC_ACCESS_SLOTS.map((s) => ({ ...s }));
+  }
+  if (label === 'Walk Around' || label === 'Walkaround: Front/Back/Left/Right Elevations') {
+    return WALK_AROUND_DIRECTION_SLOTS.map((s) => ({ ...s }));
+  }
+  if (label === 'Utility: Meter') {
+    return UTILITY_METER_SLOTS.map((s) => ({ ...s }));
+  }
+  if (label === 'Utility: Service Entry') {
+    return UTILITY_SERVICE_ENTRY_SLOTS.map((s) => ({ ...s }));
+  }
+  if (label === 'Electrical') {
+    return ELECTRICAL_SLOTS.map((s) => ({ ...s }));
   }
   return undefined;
 }
 
 // ── Installation Type detection ─────────────────────────────────────────────
 export type SolarInstallationType = 'roof_mount' | 'ground_mount' | 'solar_fencing' | null;
-
-const INSTALL_TYPE_META: Record<
-  Exclude<SolarInstallationType, null>,
-  { label: string; icon: string; description: string; color: string; borderColor: string }
-> = {
-  roof_mount:     { label: 'Roof Mount',     icon: '🏠', description: 'Rooftop solar panel installation',         color: '#1e1b4b', borderColor: '#6d28d9' },
-  ground_mount:   { label: 'Ground Mount',   icon: '🌱', description: 'Ground-mount solar panel array',           color: '#052e16', borderColor: '#16a34a' },
-  solar_fencing:  { label: 'Solar Fencing',  icon: '🌾', description: 'Agrivoltaic / solar fence installation',  color: '#0c1a2e', borderColor: '#0891b2' },
-};
 
 function detectInstallationType(project: MobileProject): SolarInstallationType {
   const raw = [
@@ -120,6 +163,13 @@ function detectInstallationType(project: MobileProject): SolarInstallationType {
   if (raw.includes('roof') || raw.includes('rooftop')) return 'roof_mount';
   if (raw.includes('ground') || raw.includes('grounderect')) return 'ground_mount';
   if (raw.includes('fence') || raw.includes('fencing') || raw.includes('agri') || raw.includes('solar_fenc')) return 'solar_fencing';
+  return null;
+}
+
+function toInstallationTypeId(value: string | null): InstallationTypeId | null {
+  if (value === "roof_mount" || value === "ground_mount" || value === "solar_fencing") {
+    return value;
+  }
   return null;
 }
 
@@ -148,11 +198,13 @@ function evaluateChecklistItemEvidence(item: ChecklistItemDraft): DerivedCheckli
   }
 
   const capturedPhotoCount = item.photos?.length ?? 0;
+  const capturedVideoCount = item.videos?.length ?? 0;
+  const capturedEvidenceCount = capturedPhotoCount + capturedVideoCount;
   return {
-    status: capturedPhotoCount > 0 ? "pass" : "fail",
-    hasRequiredPhotoEvidence: capturedPhotoCount > 0,
-    missingPhotoCriteria: capturedPhotoCount > 0 ? [] : ["At least 1 photo required"],
-    capturedPhotoCount,
+    status: capturedEvidenceCount > 0 ? "pass" : "fail",
+    hasRequiredPhotoEvidence: capturedEvidenceCount > 0,
+    missingPhotoCriteria: capturedEvidenceCount > 0 ? [] : ["At least 1 photo or video required"],
+    capturedPhotoCount: capturedEvidenceCount,
   };
 }
 
@@ -257,6 +309,7 @@ export default function NewSurveyScreen() {
       notes: c.notes,
 
       photos: [],
+      videos: [],
 
       photoSlots: getInitialPhotoSlots(c.label),
 
@@ -776,7 +829,15 @@ export default function NewSurveyScreen() {
           mime_type: p.mimeType,
           captured_at: now,
         }));
-        return [...slotPhotos, ...freePhotos];
+
+        const itemVideos = (item.videos ?? []).map((v) => ({
+          file_path: v.uri,
+          label: v.label?.trim() || `${item.label} Video`,
+          mime_type: v.mimeType,
+          captured_at: now,
+        }));
+
+        return [...slotPhotos, ...freePhotos, ...itemVideos];
       });
 
       const payload: SurveyFormData = {
@@ -1122,72 +1183,6 @@ export default function NewSurveyScreen() {
               </Modal>
               {/* ─────���──────────────────────────────────────────── */}
 
-              {/* ── Solar Installation Type ──────────────────────── */}
-              {selectedProjectId !== null && (
-                <View style={styles.section}>
-                  <Text style={styles.label}>
-                    Solar Installation Type
-                    {instTypeSource === 'auto' && (
-                      <Text style={styles.autoDetectedBadge}> · Auto-detected</Text>
-                    )}
-                  </Text>
-
-                  {instTypeLoading ? (
-                    <View style={styles.instTypeLoading}>
-                      <ActivityIndicator size="small" color={colors.primary} />
-                      <Text style={styles.instTypeLoadingText}>Fetching from SolarPro…</Text>
-                    </View>
-                  ) : (
-                    <>
-                      {/* 3 type selection cards */}
-                      {(['roof_mount', 'ground_mount', 'solar_fencing'] as const).map((typeId) => {
-                        const meta = INSTALL_TYPE_META[typeId];
-                        const isSelected = categoryId === typeId;
-                        return (
-                          <TouchableOpacity
-                            key={typeId}
-                            style={[
-                              styles.instTypeCard,
-                              isSelected && {
-                                borderColor: meta.borderColor,
-                                backgroundColor: meta.color,
-                              },
-                            ]}
-                            onPress={() => {
-                              setCategoryId(typeId);
-                              setInstTypeSource('manual');
-                            }}
-                            activeOpacity={0.8}
-                          >
-                            <Text style={styles.instTypeIcon}>{meta.icon}</Text>
-                            <View style={styles.instTypeCardBody}>
-                              <Text style={[styles.instTypeCardLabel, isSelected && { color: colors.textPrimary }]}>
-                                {meta.label}
-                              </Text>
-                              <Text style={styles.instTypeCardDesc}>{meta.description}</Text>
-                            </View>
-                            {isSelected && (
-                              <View style={[styles.instTypeCheckBadge, { backgroundColor: meta.borderColor }]}>
-                                <Text style={styles.instTypeCheckText}>✓</Text>
-                              </View>
-                            )}
-                          </TouchableOpacity>
-                        );
-                      })}
-
-                      {instTypeSource === 'auto' && (
-                        <View style={styles.instTypeSourceHint}>
-                          <Text style={styles.instTypeSourceHintText}>
-                            ☁️ Installation type pulled from SolarPro project data. Tap a card above to change.
-                          </Text>
-                        </View>
-                      )}
-                    </>
-                  )}
-                </View>
-              )}
-              {/* ─────────────────────────────────────────────────── */}
-
               <GPSCapture
 
                 coordinates={location.coordinates}
@@ -1221,7 +1216,17 @@ export default function NewSurveyScreen() {
           {currentStep === 2 && (
 
             <>
-              <ChecklistEditor items={checklist} onChange={setChecklist} />
+              <ChecklistEditor
+                items={checklist}
+                onChange={setChecklist}
+                installationType={toInstallationTypeId(categoryId)}
+                installationTypeLoading={instTypeLoading}
+                installationTypeSource={instTypeSource}
+                onInstallationTypeChange={(nextType) => {
+                  setCategoryId(nextType);
+                  setInstTypeSource("manual");
+                }}
+              />
 
               {!hasMinimumPhotos && (
                 <View style={styles.warningBanner}>
