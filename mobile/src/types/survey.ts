@@ -116,7 +116,7 @@ export interface Survey {
   category_id: string | null;
   category_name: string | null;
   inspector_name: string;
-  site_name: string;
+  site_name?: string;
   site_address: string;
   latitude: number | null;
   longitude: number | null;
@@ -216,6 +216,8 @@ export interface AddressValidationResult {
     postalCode?: string;
     countryCode?: string;
   };
+  /** Indicates which engine provided the result. */
+  source?: "google" | "solarpro";
 }
 
 // ------------------------------------------------------------------
@@ -235,17 +237,17 @@ export const DEFAULT_CHECKLIST: Omit<
   { label: "Walkaround: Front/Back/Left/Right Elevations", status: "pending", notes: "", sort_order: 3 },
   { label: "Walkaround: CAD Context Wide Shots", status: "pending", notes: "", sort_order: 4 },
 
-  // 3) Utility Service
-  { label: "Utility: Meter Evidence Captured", status: "pending", notes: "", sort_order: 5 },
-  { label: "Utility: Service Entry + Riser/Mast", status: "pending", notes: "", sort_order: 6 },
+  // 3) Roof & Array
+  { label: "Roof: Plane Pitch/Azimuth/Obstructions", status: "pending", notes: "", sort_order: 5 },
+  { label: "Roof: Plane Material + Plane ID Association", status: "pending", notes: "", sort_order: 6 },
 
-  // 4) Electrical Equipment
-  { label: "Electrical: Main Panel + Bus + OCPD", status: "pending", notes: "", sort_order: 7 },
-  { label: "Electrical: Circuit Directory Recorded", status: "pending", notes: "", sort_order: 8 },
+  // 4) Utility Service
+  { label: "Utility: Meter Evidence Captured", status: "pending", notes: "", sort_order: 7 },
+  { label: "Utility: Service Entry + Riser/Mast", status: "pending", notes: "", sort_order: 8 },
 
-  // 5) Roof & Array
-  { label: "Roof: Plane Pitch/Azimuth/Obstructions", status: "pending", notes: "", sort_order: 9 },
-  { label: "Roof: Plane Material + Plane ID Association", status: "pending", notes: "", sort_order: 10 },
+  // 5) Electrical Equipment
+  { label: "Electrical: Main Panel + Bus + OCPD", status: "pending", notes: "", sort_order: 9 },
+  { label: "Electrical: Circuit Directory Recorded", status: "pending", notes: "", sort_order: 10 },
 ];
 
 export const SURVEY_CATEGORIES = [

@@ -433,6 +433,22 @@ export async function validateSurveyAddress(
   return payload;
 }
 
+/**
+ * POST GPS coordinates to suggest a physical address.
+ */
+export async function reverseGeocode(
+  latitude: number,
+  longitude: number,
+): Promise<{ address: string }> {
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithAuthRetry("/api/mobile/reverse-geocode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders },
+    body: JSON.stringify({ latitude, longitude }),
+  });
+  return handleResponse<{ address: string }>(res);
+}
+
 // ----------------------------------------------------------------
 // Surveys
 // ----------------------------------------------------------------

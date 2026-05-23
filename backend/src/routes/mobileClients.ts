@@ -23,6 +23,10 @@
 
 import jwt from "jsonwebtoken";
 import { Router, type Request, type Response } from "express";
+import {
+  validateAddressWithGoogle,
+  reverseGeocodeWithGoogle,
+} from "../services/googleMapsService";
 
 const router = Router();
 
@@ -449,6 +453,19 @@ router.post("/address-validation", async (req: Request, res: Response) => {
     `incomingEmail=${normalizedEmail} source=mobile_api`,
   );
 
+  // 1) Attempt Google Address Validation first (highest fidelity for CAD/Permit)
+  try {
+    const googleResult = await validateAddressWithGoogle(rawAddress, placeId);
+    if (googleResult) {
+      console.log(`[MOBILE_SCOPE] Address validated via Google Maps API for ${normalizedEmail}`);
+      res.json(googleResult);
+      return;
+    }
+  } catch (err) {
+    console.error(`[MOBILE_SCOPE] Google validation fallback trigger: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // 2) Fallback to SolarPro proxy if Google is not configured or fails
   await proxyToSolarPro(
     "/api/mobile/address-validation",
     normalizedEmail,
@@ -466,6 +483,31 @@ router.post("/address-validation", async (req: Request, res: Response) => {
       },
     },
   );
+});
+
+/**
+ * POST /api/mobile/reverse-geocode
+ *
+ * Suggests an address based on GPS coordinates.
+ */
+router.post("/reverse-geocode", async (req: Request, res: Response) => {
+  const { latitude, longitude } = (req.body || {}) as {
+    latitude?: number;
+    longitude?: number;
+  };
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    res.status(400).json({ error: "latitude and longitude are required numbers." });
+    return;
+  }
+
+  const address = await reverseGeocodeWithGoogle(latitude!, longitude!);
+  if (!address) {
+    res.status(404).json({ error: "Could not suggest address for these coordinates." });
+    return;
+  }
+
+  res.json({ address });
 });
 
 export default router;

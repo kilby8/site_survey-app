@@ -60,6 +60,7 @@ import {
   fetchHandoffToken,
   fetchMobileClients,
   fetchMobileClientProjects,
+  reverseGeocode,
   type MobileClient,
   type MobileProject,
 } from "../api/client";
@@ -82,8 +83,6 @@ interface NewSurveyDraft {
   project_name: string;
 
   inspector_name: string;
-
-  site_name: string;
 
   site_address: string;
 
@@ -164,8 +163,6 @@ export default function NewSurveyScreen() {
 
   const [inspectorName, setInspectorName] = useState(user?.fullName ?? "");
 
-  const [siteName, setSiteName] = useState("");
-
   const [siteAddress, setSiteAddress] = useState("");
 
   const [categoryId, setCategoryId] = useState<string | null>("roof_mount");
@@ -218,6 +215,8 @@ export default function NewSurveyScreen() {
   const [clientModalVisible, setClientModalVisible] = useState(false);
   const [projectModalVisible, setProjectModalVisible] = useState(false);
 
+  const [suggestingAddress, setSuggestingAddress] = useState(false);
+
   const [addressValidationState, setAddressValidationState] =
     useState<AddressValidationState>("idle");
   const [addressValidationMessage, setAddressValidationMessage] = useState<string | null>(null);
@@ -261,7 +260,6 @@ export default function NewSurveyScreen() {
 
   function handleProjectSelect(project: MobileProject) {
     const upstreamProjectName = project.project_name?.trim() || project.name?.trim() || "";
-    const upstreamSiteName = project.site_name?.trim() || project.siteName?.trim() || "";
     const upstreamSiteAddress =
       project.site_address?.trim() ||
       project.siteAddress?.trim() ||
@@ -274,16 +272,11 @@ export default function NewSurveyScreen() {
     if (upstreamProjectName) {
       setProjectName(upstreamProjectName);
     }
-    // Keep manual values unless upstream explicitly provides a site value.
-    if (upstreamSiteName) {
-      setSiteName(upstreamSiteName);
-    }
     if (upstreamSiteAddress) {
       setSiteAddress(upstreamSiteAddress);
     }
 
     const missingParts: string[] = [];
-    if (!upstreamSiteName) missingParts.push("site name");
     if (!upstreamSiteAddress) missingParts.push("site address");
     setProjectDataHint(
       missingParts.length > 0
@@ -304,7 +297,6 @@ export default function NewSurveyScreen() {
 
     inspectorName.trim().length > 0 &&
 
-    siteName.trim().length > 0 &&
     selectedProjectId !== null;
 
   const hasAddressForValidation = siteAddress.trim().length > 0;
@@ -369,7 +361,7 @@ export default function NewSurveyScreen() {
       if (result.isValid) {
         setAddressValidationState("validated");
         setAddressValidationMessage(
-          `Validated (${result.granularity}). ${result.formattedAddress}`,
+          `${result.source === "google" ? "Google Validated" : "Validated"} (${result.granularity}). ${result.formattedAddress}`,
         );
         return;
       }
@@ -390,7 +382,32 @@ export default function NewSurveyScreen() {
     }
   }, [siteAddress, location.coordinates]);
 
+  const handleSuggestAddress = useCallback(async () => {
+    if (!location.coordinates) {
+      Alert.alert("GPS Required", "Please capture your GPS location first so we can suggest an address.");
+      return;
+    }
 
+    setSuggestingAddress(true);
+    try {
+      const { address } = await reverseGeocode(
+        location.coordinates.latitude,
+        location.coordinates.longitude,
+      );
+      if (address) {
+        setSiteAddress(address);
+        // Automatically trigger validation for the suggested address
+        setAddressValidationState("idle");
+      }
+    } catch (error) {
+      Alert.alert(
+        "Suggestion Failed",
+        error instanceof Error ? error.message : "Could not suggest an address.",
+      );
+    } finally {
+      setSuggestingAddress(false);
+    }
+  }, [location.coordinates]);
 
   const checklistPhotoCoverage = useMemo(() => {
     const itemSummaries = checklist.map((item) => {
@@ -440,8 +457,6 @@ export default function NewSurveyScreen() {
 
     inspector_name: inspectorName,
 
-    site_name: siteName,
-
     site_address: siteAddress,
 
     category_id: categoryId,
@@ -471,8 +486,6 @@ export default function NewSurveyScreen() {
     projectName,
 
     inspectorName,
-
-    siteName,
 
     siteAddress,
 
@@ -646,8 +659,6 @@ export default function NewSurveyScreen() {
 
         if (handoff.inspector_name) setInspectorName(handoff.inspector_name);
 
-        if (handoff.site_name) setSiteName(handoff.site_name);
-
         if (handoff.site_address) setSiteAddress(handoff.site_address);
 
         if (handoff.category_id) setCategoryId(handoff.category_id);
@@ -704,11 +715,6 @@ export default function NewSurveyScreen() {
 
     if (!inspectorName.trim()) {
       Alert.alert("Validation Error", "Inspector name is required.");
-      return false;
-    }
-
-    if (!siteName.trim()) {
-      Alert.alert("Validation Error", "Site name is required.");
       return false;
     }
 
@@ -808,7 +814,6 @@ export default function NewSurveyScreen() {
         category_id: categoryId,
         category_name: selectedCategoryName,
         inspector_name: inspectorName.trim(),
-        site_name: siteName.trim(),
         site_address: siteAddress.trim(),
         latitude: location.coordinates?.latitude ?? null,
         longitude: location.coordinates?.longitude ?? null,
@@ -1045,28 +1050,6 @@ export default function NewSurveyScreen() {
 
               <View style={styles.section}>
 
-                <Text style={styles.label}>Site Name</Text>
-
-                <TextInput
-
-                  style={styles.input}
-
-                  placeholder="Enter site name"
-
-                  value={siteName}
-
-                  onChangeText={setSiteName}
-
-                  placeholderTextColor={colors.textMuted}
-
-                />
-
-              </View>
-
-
-
-              <View style={styles.section}>
-
                 <Text style={styles.label}>Site Address</Text>
 
                 <TextInput
@@ -1089,22 +1072,43 @@ export default function NewSurveyScreen() {
 
                 />
 
-                <TouchableOpacity
-                  style={[
-                    styles.validateAddressBtn,
-                    addressValidationState === "validating" && styles.validateAddressBtnDisabled,
-                  ]}
-                  onPress={() => {
-                    void runAddressValidation();
-                  }}
-                  disabled={addressValidationState === "validating"}
-                >
-                  {addressValidationState === "validating" ? (
-                    <ActivityIndicator color={colors.white} />
-                  ) : (
-                    <Text style={styles.validateAddressBtnText}>Validate Address with GPS</Text>
-                  )}
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                  <TouchableOpacity
+                    style={[
+                      styles.validateAddressBtn,
+                      { flex: 1, marginTop: 0 },
+                      addressValidationState === "validating" && styles.validateAddressBtnDisabled,
+                    ]}
+                    onPress={() => {
+                      void runAddressValidation();
+                    }}
+                    disabled={addressValidationState === "validating"}
+                  >
+                    {addressValidationState === "validating" ? (
+                      <ActivityIndicator color={colors.white} />
+                    ) : (
+                      <Text style={styles.validateAddressBtnText}>Validate</Text>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.validateAddressBtn,
+                      { flex: 1, marginTop: 0, backgroundColor: colors.inputBg, borderWidth: 1, borderColor: colors.primary },
+                      suggestingAddress && styles.validateAddressBtnDisabled,
+                    ]}
+                    onPress={() => {
+                      void handleSuggestAddress();
+                    }}
+                    disabled={suggestingAddress}
+                  >
+                    {suggestingAddress ? (
+                      <ActivityIndicator color={colors.primary} />
+                    ) : (
+                      <Text style={[styles.validateAddressBtnText, { color: colors.primary }]}>Suggest from GPS</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
 
                 {addressValidationMessage && (
                   <View
@@ -1394,14 +1398,6 @@ export default function NewSurveyScreen() {
                 <Text style={styles.reviewKey}>Inspector</Text>
 
                 <Text style={styles.reviewVal}>{inspectorName || '—'}</Text>
-
-              </View>
-
-              <View style={styles.reviewRow}>
-
-                <Text style={styles.reviewKey}>Site</Text>
-
-                <Text style={styles.reviewVal}>{siteName || '—'}</Text>
 
               </View>
 

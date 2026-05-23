@@ -119,6 +119,15 @@ export function runEnvGuard(): void {
     console.log(`[ENV_GUARD] OK: ${spec.name} (len=${val.length})`);
   }
 
+  // ── Optional integrations ───────────────────────────────────────────────
+  const hasGoogleMapsKey = (process.env.GOOGLE_MAPS_API_KEY ?? "").trim().length > 0;
+  if (!hasGoogleMapsKey) {
+    warnings.push(
+      "[ENV_GUARD] OPTIONAL: GOOGLE_MAPS_API_KEY is not set. " +
+      "Google Address Validation is disabled; falling back to SolarPro proxy."
+    );
+  }
+
   // Also warn if all upstream service auth keys are absent
   // (these are optional in code but should be set for Path B auth)
   const hasMobileKey =
