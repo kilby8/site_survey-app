@@ -40,11 +40,11 @@ import { useAppBootstrap } from "../context/AppBootstrapContext";
 
 import { createSurvey } from "../database/surveyDb";
 
-import type { SurveyFormData, SurveyMetadata } from "../types";
+import type { ChecklistStatus, SurveyFormData, SurveyMetadata } from "../types";
 
 import { DEFAULT_CHECKLIST, SURVEY_CATEGORIES } from "../types";
 
-import ChecklistEditor, { type ChecklistItemDraft } from "../components/ChecklistEditor";
+import ChecklistEditor, { type ChecklistItemDraft, type PhotoSlotDraft } from "../components/ChecklistEditor";
 
 import GPSCapture from "../components/GPSCapture";
 
@@ -60,11 +60,10 @@ import {
   fetchHandoffToken,
   fetchMobileClients,
   fetchMobileClientProjects,
-  reverseGeocode,
+  fetchMobileProjectDetail,
   type MobileClient,
   type MobileProject,
 } from "../api/client";
-import { validateAddressWithGps } from "../api/addressValidation";
 
 
 
@@ -73,6 +72,89 @@ const { colors } = solarProTheme;
 const AUTO_SAVE_INTERVAL_MS = 300_000;
 
 const DRAFTS_DIR = `${FileSystem.documentDirectory}survey-drafts/`;
+
+// ── Structured photo slots for "Arrival: Address Verification" ──────────────
+// Each slot enforces a 1-photo cap (solarProUsageMapping: Permit Elevation).
+const ADDRESS_VERIFICATION_SLOTS: PhotoSlotDraft[] = [
+  { slotId: 'av_house_number',   label: 'House Number',    isRequired: true, photo: null },
+  { slotId: 'av_front_of_house', label: 'Front of House',  isRequired: true, photo: null },
+  { slotId: 'av_mailbox',        label: 'Mailbox',         isRequired: true, photo: null },
+];
+
+/** Returns the initial photoSlots for a checklist label, or undefined. */
+function getInitialPhotoSlots(label: string): PhotoSlotDraft[] | undefined {
+  if (label === 'Arrival: Address Verification') {
+    return ADDRESS_VERIFICATION_SLOTS.map(s => ({ ...s }));
+  }
+  return undefined;
+}
+
+// ── Installation Type detection ─────────────────────────────────────────────
+export type SolarInstallationType = 'roof_mount' | 'ground_mount' | 'solar_fencing' | null;
+
+const INSTALL_TYPE_META: Record<
+  Exclude<SolarInstallationType, null>,
+  { label: string; icon: string; description: string; color: string; borderColor: string }
+> = {
+  roof_mount:     { label: 'Roof Mount',     icon: '🏠', description: 'Rooftop solar panel installation',         color: '#1e1b4b', borderColor: '#6d28d9' },
+  ground_mount:   { label: 'Ground Mount',   icon: '🌱', description: 'Ground-mount solar panel array',           color: '#052e16', borderColor: '#16a34a' },
+  solar_fencing:  { label: 'Solar Fencing',  icon: '🌾', description: 'Agrivoltaic / solar fence installation',  color: '#0c1a2e', borderColor: '#0891b2' },
+};
+
+function detectInstallationType(project: MobileProject): SolarInstallationType {
+  const raw = [
+    project.installation_type,
+    project.installationType,
+    project.system_type,
+    project.systemType,
+    project.mount_type,
+    project.mountType,
+    project.project_type,
+    project.projectType,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .replace(/[_\s-]/g, '');
+
+  if (raw.includes('roof') || raw.includes('rooftop')) return 'roof_mount';
+  if (raw.includes('ground') || raw.includes('grounderect')) return 'ground_mount';
+  if (raw.includes('fence') || raw.includes('fencing') || raw.includes('agri') || raw.includes('solar_fenc')) return 'solar_fencing';
+  return null;
+}
+
+type DerivedChecklistEvaluation = {
+  status: ChecklistStatus;
+  hasRequiredPhotoEvidence: boolean;
+  missingPhotoCriteria: string[];
+  capturedPhotoCount: number;
+};
+
+function evaluateChecklistItemEvidence(item: ChecklistItemDraft): DerivedChecklistEvaluation {
+  const slots = item.photoSlots ?? [];
+
+  if (slots.length > 0) {
+    const requiredSlots = slots.filter((slot) => slot.isRequired);
+    const missingPhotoCriteria = requiredSlots
+      .filter((slot) => slot.photo === null)
+      .map((slot) => slot.label);
+
+    return {
+      status: missingPhotoCriteria.length === 0 ? "pass" : "fail",
+      hasRequiredPhotoEvidence: missingPhotoCriteria.length === 0,
+      missingPhotoCriteria,
+      capturedPhotoCount: slots.filter((slot) => slot.photo !== null).length,
+    };
+  }
+
+  const capturedPhotoCount = item.photos?.length ?? 0;
+  return {
+    status: capturedPhotoCount > 0 ? "pass" : "fail",
+    hasRequiredPhotoEvidence: capturedPhotoCount > 0,
+    missingPhotoCriteria: capturedPhotoCount > 0 ? [] : ["At least 1 photo required"],
+    capturedPhotoCount,
+  };
+}
 
 
 
@@ -109,15 +191,6 @@ interface NewSurveyDraft {
   solarpro_org_id: string | null;
 
 }
-
-type AddressValidationState =
-  | "idle"
-  | "validating"
-  | "validated"
-  | "needs_review"
-  | "error";
-
-
 
 export default function NewSurveyScreen() {
 
@@ -185,6 +258,8 @@ export default function NewSurveyScreen() {
 
       photos: [],
 
+      photoSlots: getInitialPhotoSlots(c.label),
+
     })),
 
   );
@@ -215,13 +290,9 @@ export default function NewSurveyScreen() {
   const [clientModalVisible, setClientModalVisible] = useState(false);
   const [projectModalVisible, setProjectModalVisible] = useState(false);
 
-  const [suggestingAddress, setSuggestingAddress] = useState(false);
-
-  const [addressValidationState, setAddressValidationState] =
-    useState<AddressValidationState>("idle");
-  const [addressValidationMessage, setAddressValidationMessage] = useState<string | null>(null);
-  const [lastValidatedAddress, setLastValidatedAddress] = useState<string>("");
-  const [lastValidatedGpsKey, setLastValidatedGpsKey] = useState<string>("");
+  // ── Installation Type (pulled from SolarPro project detail) ─────────────
+  const [instTypeLoading, setInstTypeLoading] = useState(false);
+  const [instTypeSource, setInstTypeSource] = useState<'auto' | 'manual' | null>(null);
 
   // Load clients once on mount
   useEffect(() => {
@@ -245,6 +316,42 @@ export default function NewSurveyScreen() {
       .finally(() => { if (!cancelled) setProjectsLoading(false); });
     return () => { cancelled = true; };
   }, [selectedClientId]);
+
+  // Fetch project detail to get installation_type from SolarPro
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setInstTypeSource(null);
+      return;
+    }
+
+    // First, try to detect from already-loaded list data
+    const listProject = projects.find(p => p.id === selectedProjectId);
+    if (listProject) {
+      const detected = detectInstallationType(listProject);
+      if (detected) {
+        setCategoryId(detected);
+        setInstTypeSource('auto');
+        return;
+      }
+    }
+
+    // Fallback: fetch full project detail from SolarPro
+    let cancelled = false;
+    setInstTypeLoading(true);
+    fetchMobileProjectDetail(selectedProjectId)
+      .then((detail) => {
+        if (cancelled || !detail) return;
+        const detected = detectInstallationType(detail);
+        if (detected) {
+          setCategoryId(detected);
+          setInstTypeSource('auto');
+        }
+      })
+      .catch(() => { /* silent — user can select manually */ })
+      .finally(() => { if (!cancelled) setInstTypeLoading(false); });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProjectId]);
 
   function handleClientSelect(client: MobileClient) {
     setSelectedClientId(client.id);
@@ -285,6 +392,17 @@ export default function NewSurveyScreen() {
     );
 
     setSolarproProjectId(project.id);  // maps to solarpro_project_id
+
+    // Immediately try to detect installation type from the list-level data
+    const detected = detectInstallationType(project);
+    if (detected) {
+      setCategoryId(detected);
+      setInstTypeSource('auto');
+    } else {
+      // Reset so the detail fetch useEffect can try again
+      setInstTypeSource(null);
+    }
+
     setProjectModalVisible(false);
   }
   // ────────────────────────────────────────────────────────────────
@@ -299,125 +417,22 @@ export default function NewSurveyScreen() {
 
     selectedProjectId !== null;
 
-  const hasAddressForValidation = siteAddress.trim().length > 0;
-  const hasGpsForValidation = Boolean(location.coordinates);
-  const canEvaluateAddressValidation = hasAddressForValidation && hasGpsForValidation;
 
-  const currentGpsKey = useMemo(() => {
-    if (!location.coordinates) return "";
-    const { latitude, longitude } = location.coordinates;
-    return `${latitude.toFixed(6)}:${longitude.toFixed(6)}`;
-  }, [location.coordinates]);
-
-  useEffect(() => {
-    const addressChanged = siteAddress.trim() !== lastValidatedAddress;
-    const gpsChanged = currentGpsKey !== lastValidatedGpsKey;
-    if ((addressChanged || gpsChanged) && addressValidationState !== "idle") {
-      setAddressValidationState("idle");
-      setAddressValidationMessage(null);
-    }
-  }, [
-    siteAddress,
-    currentGpsKey,
-    lastValidatedAddress,
-    lastValidatedGpsKey,
-    addressValidationState,
-  ]);
-
-  const runAddressValidation = useCallback(async () => {
-    const rawAddress = siteAddress.trim();
-    if (!rawAddress) {
-      setAddressValidationState("idle");
-      setAddressValidationMessage(null);
-      return;
-    }
-
-    if (!location.coordinates) {
-      setAddressValidationState("needs_review");
-      setAddressValidationMessage("Capture GPS first, then validate address.");
-      return;
-    }
-
-    setAddressValidationState("validating");
-    setAddressValidationMessage("Validating address against GPS…");
-
-    const gpsKey = `${location.coordinates.latitude.toFixed(6)}:${location.coordinates.longitude.toFixed(6)}`;
-
-    try {
-      const result = await validateAddressWithGps({
-        rawAddress,
-        gps: {
-          latitude: location.coordinates.latitude,
-          longitude: location.coordinates.longitude,
-          ...(Number.isFinite(location.coordinates.accuracy)
-            ? { accuracy: location.coordinates.accuracy }
-            : {}),
-        },
-      });
-
-      setLastValidatedAddress(rawAddress);
-      setLastValidatedGpsKey(gpsKey);
-
-      if (result.isValid) {
-        setAddressValidationState("validated");
-        setAddressValidationMessage(
-          `${result.source === "google" ? "Google Validated" : "Validated"} (${result.granularity}). ${result.formattedAddress}`,
-        );
-        return;
-      }
-
-      setAddressValidationState("needs_review");
-      setAddressValidationMessage(
-        `Needs review (${result.granularity}). Confirm address and GPS are correct.`,
-      );
-    } catch (error) {
-      setLastValidatedAddress(rawAddress);
-      setLastValidatedGpsKey(gpsKey);
-      setAddressValidationState("error");
-      setAddressValidationMessage(
-        error instanceof Error
-          ? `Address validation failed: ${error.message}`
-          : "Address validation failed.",
-      );
-    }
-  }, [siteAddress, location.coordinates]);
-
-  const handleSuggestAddress = useCallback(async () => {
-    if (!location.coordinates) {
-      Alert.alert("GPS Required", "Please capture your GPS location first so we can suggest an address.");
-      return;
-    }
-
-    setSuggestingAddress(true);
-    try {
-      const { address } = await reverseGeocode(
-        location.coordinates.latitude,
-        location.coordinates.longitude,
-      );
-      if (address) {
-        setSiteAddress(address);
-        // Automatically trigger validation for the suggested address
-        setAddressValidationState("idle");
-      }
-    } catch (error) {
-      Alert.alert(
-        "Suggestion Failed",
-        error instanceof Error ? error.message : "Could not suggest an address.",
-      );
-    } finally {
-      setSuggestingAddress(false);
-    }
-  }, [location.coordinates]);
+  const checklistEvaluation = useMemo(
+    () => checklist.map((item) => ({
+      label: item.label,
+      notes: item.notes,
+      ...evaluateChecklistItemEvidence(item),
+    })),
+    [checklist],
+  );
 
   const checklistPhotoCoverage = useMemo(() => {
-    const itemSummaries = checklist.map((item) => {
-      const photoCount = item.photos?.length ?? 0;
-      return {
-        label: item.label,
-        photoCount,
-        hasPhoto: photoCount > 0,
-      };
-    });
+    const itemSummaries = checklistEvaluation.map((item) => ({
+      label: item.label,
+      photoCount: item.capturedPhotoCount,
+      hasPhoto: item.hasRequiredPhotoEvidence,
+    }));
 
     const itemsMissingPhotos = itemSummaries.filter((item) => !item.hasPhoto);
     const itemsWithPhotos = itemSummaries.length - itemsMissingPhotos.length;
@@ -427,7 +442,7 @@ export default function NewSurveyScreen() {
       itemsWithPhotos,
       itemsMissingPhotos,
     };
-  }, [checklist]);
+  }, [checklistEvaluation]);
 
   const hasMinimumPhotos =
     checklistPhotoCoverage.totalItems > 0 &&
@@ -721,67 +736,12 @@ export default function NewSurveyScreen() {
     return true;
   }
 
-  function isAddressValidationRecommendedAtSubmit(): boolean {
-    return (
-      canEvaluateAddressValidation &&
-      addressValidationState !== "validated" &&
-      addressValidationState !== "validating"
-    );
-  }
-
-  function getSubmitValidationPromptMessage(): string {
-    if (addressValidationState === "needs_review") {
-      return "Address check suggests this may need review. Create survey anyway and validate later?";
-    }
-    if (addressValidationState === "error") {
-      return "Address validation failed. Create survey anyway and validate later?";
-    }
-    return "Address + GPS are present, but validation has not been run yet. Create survey anyway and validate later?";
-  }
-
   function handleNextStep() {
     if (currentStep !== 1) {
       setCurrentStep((prev) => (prev + 1) as 1 | 2 | 3 | 4);
       return;
     }
-
-    if (addressValidationState === "validating") {
-      Alert.alert(
-        "Validation In Progress",
-        "Address validation is still running. Please wait a moment or continue once it finishes.",
-      );
-      return;
-    }
-
-    if (!canEvaluateAddressValidation) {
-      setCurrentStep(2);
-      return;
-    }
-
-    if (addressValidationState === "validated") {
-      setCurrentStep(2);
-      return;
-    }
-
-    const promptMessage =
-      addressValidationState === "needs_review"
-        ? "Address check suggests this may need review. Continue anyway and validate later?"
-        : addressValidationState === "error"
-          ? "Address validation failed. Continue anyway and validate later?"
-          : "Address + GPS are present, but validation has not been run yet. Continue anyway and validate later?";
-
-    Alert.alert(
-      "Address Validation Recommended",
-      promptMessage,
-      [
-        { text: "Stay Here", style: "cancel" },
-        {
-          text: "Continue",
-          style: "default",
-          onPress: () => setCurrentStep(2),
-        },
-      ],
-    );
+    setCurrentStep(2);
   }
 
   async function executeSubmitSurvey() {
@@ -799,14 +759,25 @@ export default function NewSurveyScreen() {
     try {
       const now = new Date().toISOString();
 
-      const checklistPhotos = checklist.flatMap((item) =>
-        (item.photos ?? []).map((p) => ({
+      const checklistPhotos = checklist.flatMap((item) => {
+        // Flatten structured slot photos (labeled with slot name)
+        const slotPhotos = (item.photoSlots ?? [])
+          .filter(s => s.photo !== null)
+          .map(s => ({
+            file_path: s.photo!.uri,
+            label: `${item.label} — ${s.label}`,
+            mime_type: s.photo!.mimeType,
+            captured_at: now,
+          }));
+        // Flatten legacy free-form photos
+        const freePhotos = (item.photos ?? []).map((p) => ({
           file_path: p.uri,
           label: p.label?.trim() || `${item.label} Photo`,
           mime_type: p.mimeType,
           captured_at: now,
-        })),
-      );
+        }));
+        return [...slotPhotos, ...freePhotos];
+      });
 
       const payload: SurveyFormData = {
         project_name: projectName.trim(),
@@ -829,7 +800,7 @@ export default function NewSurveyScreen() {
         metadata: metadata ?? null,
         checklist: checklist.map((item, i) => ({
           label: item.label.trim() || `Checklist Item ${i + 1}`,
-          status: item.status,
+          status: evaluateChecklistItemEvidence(item).status,
           notes: item.notes ?? "",
           sort_order: i,
         })),
@@ -879,41 +850,6 @@ export default function NewSurveyScreen() {
           {
             text: "Use Override",
             style: "destructive",
-            onPress: () => {
-              if (isAddressValidationRecommendedAtSubmit()) {
-                Alert.alert(
-                  "Address Validation Recommended",
-                  getSubmitValidationPromptMessage(),
-                  [
-                    { text: "Stay Here", style: "cancel" },
-                    {
-                      text: "Create Anyway",
-                      style: "default",
-                      onPress: () => {
-                        void executeSubmitSurvey();
-                      },
-                    },
-                  ],
-                );
-                return;
-              }
-              void executeSubmitSurvey();
-            },
-          },
-        ],
-      );
-      return;
-    }
-
-    if (isAddressValidationRecommendedAtSubmit()) {
-      Alert.alert(
-        "Address Validation Recommended",
-        getSubmitValidationPromptMessage(),
-        [
-          { text: "Stay Here", style: "cancel" },
-          {
-            text: "Create Anyway",
-            style: "default",
             onPress: () => {
               void executeSubmitSurvey();
             },
@@ -1062,76 +998,15 @@ export default function NewSurveyScreen() {
 
                   onChangeText={setSiteAddress}
 
-                  onBlur={() => {
-                    if (siteAddress.trim().length > 0) {
-                      void runAddressValidation();
-                    }
-                  }}
-
                   placeholderTextColor={colors.textMuted}
 
                 />
 
-                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                  <TouchableOpacity
-                    style={[
-                      styles.validateAddressBtn,
-                      { flex: 1, marginTop: 0 },
-                      addressValidationState === "validating" && styles.validateAddressBtnDisabled,
-                    ]}
-                    onPress={() => {
-                      void runAddressValidation();
-                    }}
-                    disabled={addressValidationState === "validating"}
-                  >
-                    {addressValidationState === "validating" ? (
-                      <ActivityIndicator color={colors.white} />
-                    ) : (
-                      <Text style={styles.validateAddressBtnText}>Validate</Text>
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.validateAddressBtn,
-                      { flex: 1, marginTop: 0, backgroundColor: colors.inputBg, borderWidth: 1, borderColor: colors.primary },
-                      suggestingAddress && styles.validateAddressBtnDisabled,
-                    ]}
-                    onPress={() => {
-                      void handleSuggestAddress();
-                    }}
-                    disabled={suggestingAddress}
-                  >
-                    {suggestingAddress ? (
-                      <ActivityIndicator color={colors.primary} />
-                    ) : (
-                      <Text style={[styles.validateAddressBtnText, { color: colors.primary }]}>Suggest from GPS</Text>
-                    )}
-                  </TouchableOpacity>
+                <View style={styles.infoHint}>
+                  <Text style={styles.infoHintText}>
+                    Address auto-populates from selected project info. Edit manually only if project data is missing or outdated.
+                  </Text>
                 </View>
-
-                {addressValidationMessage && (
-                  <View
-                    style={[
-                      styles.addressValidationBanner,
-                      addressValidationState === "validated" && styles.addressValidationBannerValid,
-                      addressValidationState === "needs_review" && styles.addressValidationBannerWarn,
-                      addressValidationState === "error" && styles.addressValidationBannerError,
-                    ]}
-                  >
-                    <Text style={styles.addressValidationText}>{addressValidationMessage}</Text>
-                  </View>
-                )}
-
-                {canEvaluateAddressValidation &&
-                  addressValidationState !== "validated" &&
-                  addressValidationState !== "validating" && (
-                    <View style={styles.infoHint}>
-                      <Text style={styles.infoHintText}>
-                        Address validation is recommended before continuing. You can still continue and validate later.
-                      </Text>
-                    </View>
-                  )}
 
               </View>
 
@@ -1245,7 +1120,73 @@ export default function NewSurveyScreen() {
                   </View>
                 </TouchableOpacity>
               </Modal>
-              {/* ────────────────────────────────────────────────── */}
+              {/* ─────���──────────────────────────────────────────── */}
+
+              {/* ── Solar Installation Type ──────────────────────── */}
+              {selectedProjectId !== null && (
+                <View style={styles.section}>
+                  <Text style={styles.label}>
+                    Solar Installation Type
+                    {instTypeSource === 'auto' && (
+                      <Text style={styles.autoDetectedBadge}> · Auto-detected</Text>
+                    )}
+                  </Text>
+
+                  {instTypeLoading ? (
+                    <View style={styles.instTypeLoading}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                      <Text style={styles.instTypeLoadingText}>Fetching from SolarPro…</Text>
+                    </View>
+                  ) : (
+                    <>
+                      {/* 3 type selection cards */}
+                      {(['roof_mount', 'ground_mount', 'solar_fencing'] as const).map((typeId) => {
+                        const meta = INSTALL_TYPE_META[typeId];
+                        const isSelected = categoryId === typeId;
+                        return (
+                          <TouchableOpacity
+                            key={typeId}
+                            style={[
+                              styles.instTypeCard,
+                              isSelected && {
+                                borderColor: meta.borderColor,
+                                backgroundColor: meta.color,
+                              },
+                            ]}
+                            onPress={() => {
+                              setCategoryId(typeId);
+                              setInstTypeSource('manual');
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.instTypeIcon}>{meta.icon}</Text>
+                            <View style={styles.instTypeCardBody}>
+                              <Text style={[styles.instTypeCardLabel, isSelected && { color: colors.textPrimary }]}>
+                                {meta.label}
+                              </Text>
+                              <Text style={styles.instTypeCardDesc}>{meta.description}</Text>
+                            </View>
+                            {isSelected && (
+                              <View style={[styles.instTypeCheckBadge, { backgroundColor: meta.borderColor }]}>
+                                <Text style={styles.instTypeCheckText}>✓</Text>
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+
+                      {instTypeSource === 'auto' && (
+                        <View style={styles.instTypeSourceHint}>
+                          <Text style={styles.instTypeSourceHintText}>
+                            ☁️ Installation type pulled from SolarPro project data. Tap a card above to change.
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  )}
+                </View>
+              )}
+              {/* ─────────────────────────────────────────────────── */}
 
               <GPSCapture
 
@@ -1285,7 +1226,7 @@ export default function NewSurveyScreen() {
               {!hasMinimumPhotos && (
                 <View style={styles.warningBanner}>
                   <Text style={styles.warningText}>
-                    Add at least 1 photo per checklist line item ({checklistPhotoCoverage.itemsWithPhotos}/{checklistPhotoCoverage.totalItems}).
+                    Complete the required photo criteria for each checklist line item ({checklistPhotoCoverage.itemsWithPhotos}/{checklistPhotoCoverage.totalItems}).
                   </Text>
                 </View>
               )}
@@ -1323,7 +1264,7 @@ export default function NewSurveyScreen() {
 
                   <Text style={styles.warningText}>
 
-                    Line-item photo verification is incomplete ({checklistPhotoCoverage.itemsWithPhotos}/{checklistPhotoCoverage.totalItems}).
+                    Line-item photo criteria are incomplete ({checklistPhotoCoverage.itemsWithPhotos}/{checklistPhotoCoverage.totalItems}).
 
                   </Text>
 
@@ -1418,10 +1359,35 @@ export default function NewSurveyScreen() {
               </View>
 
               <View style={styles.reviewRow}>
-                <Text style={styles.reviewKey}>Checklist Line Items With Photos</Text>
+                <Text style={styles.reviewKey}>Checklist Items Meeting Photo Criteria</Text>
                 <Text style={styles.reviewVal}>
                   {checklistPhotoCoverage.itemsWithPhotos}/{checklistPhotoCoverage.totalItems}
                 </Text>
+              </View>
+
+              <View style={styles.section}>
+                <Text style={styles.label}>Auto-Evaluated Checklist Status</Text>
+                {checklistEvaluation.map((item, idx) => {
+                  const isPass = item.status === 'pass';
+                  return (
+                    <View key={`${item.label}-${idx}`} style={styles.derivedStatusRow}>
+                      <View style={styles.derivedStatusBody}>
+                        <Text style={styles.derivedStatusLabel}>{item.label}</Text>
+                        <Text style={styles.derivedStatusDetail}>
+                          {isPass
+                            ? `${item.capturedPhotoCount} required photo${item.capturedPhotoCount === 1 ? '' : 's'} captured`
+                            : `Missing: ${item.missingPhotoCriteria.join(', ')}`}
+                        </Text>
+                      </View>
+                      <View style={[
+                        styles.derivedStatusBadge,
+                        isPass ? styles.derivedStatusBadgePass : styles.derivedStatusBadgeFail,
+                      ]}>
+                        <Text style={styles.derivedStatusBadgeText}>{isPass ? 'PASS' : 'FAIL'}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
 
               {checklistPhotoCoverage.itemsMissingPhotos.length > 0 && (
@@ -1749,54 +1715,6 @@ const styles = StyleSheet.create({
 
   },
 
-  validateAddressBtn: {
-    marginTop: 10,
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-
-  validateAddressBtnDisabled: {
-    opacity: 0.7,
-  },
-
-  validateAddressBtnText: {
-    color: colors.white,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-
-  addressValidationBanner: {
-    marginTop: 10,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: colors.inputBg,
-    borderColor: colors.inputBorder,
-  },
-
-  addressValidationBannerValid: {
-    backgroundColor: colors.successBg,
-    borderColor: colors.successBorder,
-  },
-
-  addressValidationBannerWarn: {
-    backgroundColor: '#3A2F16',
-    borderColor: '#B98A22',
-  },
-
-  addressValidationBannerError: {
-    backgroundColor: colors.errorBg,
-    borderColor: colors.errorBorder,
-  },
-
-  addressValidationText: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: "600",
-  },
 
   textArea: {
 
@@ -1847,6 +1765,57 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 8,
     fontWeight: '600',
+  },
+
+  derivedStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 8,
+    backgroundColor: colors.inputBg,
+  },
+
+  derivedStatusBody: {
+    flex: 1,
+    marginRight: 10,
+  },
+
+  derivedStatusLabel: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  derivedStatusDetail: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+
+  derivedStatusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  derivedStatusBadgePass: {
+    backgroundColor: '#166534',
+  },
+
+  derivedStatusBadgeFail: {
+    backgroundColor: '#991b1b',
+  },
+
+  derivedStatusBadgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
 
   reviewRow: {
@@ -2100,6 +2069,89 @@ const styles = StyleSheet.create({
 
     fontWeight: '600',
 
+  },
+
+  // ── Installation Type section ────────────────────────────────
+  autoDetectedBadge: {
+    color: '#4ade80',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  instTypeLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+  },
+
+  instTypeLoadingText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  instTypeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.inputBorder,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    backgroundColor: colors.inputBg,
+  },
+
+  instTypeIcon: {
+    fontSize: 26,
+    marginRight: 12,
+  },
+
+  instTypeCardBody: {
+    flex: 1,
+  },
+
+  instTypeCardLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+
+  instTypeCardDesc: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '500',
+  },
+
+  instTypeCheckBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+
+  instTypeCheckText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  instTypeSourceHint: {
+    backgroundColor: '#0b1e30',
+    borderColor: '#1e3a5f',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 4,
+  },
+
+  instTypeSourceHintText: {
+    color: '#7eb5e8',
+    fontSize: 12,
+    fontWeight: '600',
   },
 
   // Modal styles

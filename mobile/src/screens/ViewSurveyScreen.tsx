@@ -191,7 +191,7 @@ export default function ViewSurveyScreen() {
             </View>
           )}
 
-          <Row label="Site"      value={survey.site_name} />
+          <Row label="Site"      value={survey.site_name ?? ""} />
           {!!survey.site_address && <Row label="Address"   value={survey.site_address} />}
           <Row label="Inspector" value={survey.inspector_name} />
           <Row label="Date"      value={formattedDate} />

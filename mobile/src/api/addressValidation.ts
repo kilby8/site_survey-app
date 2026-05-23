@@ -1,22 +1,4 @@
-import type {
-  AddressValidationRequest,
-  AddressValidationResult,
-} from "../types";
-import {
-  type AddressValidationOptions,
-  validateSurveyAddress,
-} from "./client";
-
-/**
- * API wrapper dedicated to address-validation workflows.
- *
- * Keeps call sites decoupled from the larger client module and
- * enforces GPS-inclusive payloads via AddressValidationRequest.
- */
-export async function validateAddressWithGps(
-  input: AddressValidationRequest,
-  options?: AddressValidationOptions,
-): Promise<AddressValidationResult> {
-  return validateSurveyAddress(input, options);
-}
+// Address validation API wrappers are intentionally retired.
+// Address is now auto-populated from selected project info in New Survey flow.
+export {};
 

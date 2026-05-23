@@ -137,7 +137,7 @@ export async function createSurvey(data: SurveyFormData, deviceId: string): Prom
         data.category_id         ?? null,
         data.category_name       ?? null,
         data.inspector_name,
-        data.site_name,
+        data.site_name          ?? '',
         data.site_address        ?? '',
         data.latitude            ?? null,
         data.longitude           ?? null,

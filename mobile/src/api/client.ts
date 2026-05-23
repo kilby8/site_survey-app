@@ -13,8 +13,6 @@ import type {
   SurveyFormData,
   ApiSyncResponse,
   ApiPhotoUploadResponse,
-  AddressValidationRequest,
-  AddressValidationResult,
 } from "../types";
 
 export interface AuthUser {
@@ -224,8 +222,10 @@ async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) message = body.error;
+      const body = (await res.json()) as { error?: string; message?: string };
+      // Prefer human-readable message over terse error code
+      if (body.message) message = body.message;
+      else if (body.error) message = body.error;
     } catch {
       /* ignore */
     }
@@ -392,62 +392,6 @@ export async function fetchCategories(): Promise<ApiCategory[]> {
   return data.categories;
 }
 
-// ----------------------------------------------------------------
-// Address validation
-// ----------------------------------------------------------------
-
-export interface AddressValidationOptions {
-  /**
-   * Default endpoint is a mobile-scoped API route.
-   * Override this during rollout if backend path changes.
-   */
-  path?: string;
-}
-
-/**
- * POST address + GPS for validator normalization.
- * Keeps GPS coordinates mandatory so we can compare captured point vs geocode result.
- */
-export async function validateSurveyAddress(
-  input: AddressValidationRequest,
-  options?: AddressValidationOptions,
-): Promise<AddressValidationResult> {
-  const authHeaders = await getAuthHeaders();
-  const endpoint = options?.path?.trim() || "/api/mobile/address-validation";
-
-  const res = await fetchWithAuthRetry(
-    endpoint.startsWith("/") ? endpoint : `/${endpoint}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders },
-      body: JSON.stringify(input),
-    },
-    { timeoutMs: 8_000 },
-  );
-
-  // Support either { result } or direct object response shape.
-  const payload = await handleResponse<
-    AddressValidationResult | { result: AddressValidationResult }
-  >(res);
-  if ("result" in payload) return payload.result;
-  return payload;
-}
-
-/**
- * POST GPS coordinates to suggest a physical address.
- */
-export async function reverseGeocode(
-  latitude: number,
-  longitude: number,
-): Promise<{ address: string }> {
-  const authHeaders = await getAuthHeaders();
-  const res = await fetchWithAuthRetry("/api/mobile/reverse-geocode", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders },
-    body: JSON.stringify({ latitude, longitude }),
-  });
-  return handleResponse<{ address: string }>(res);
-}
 
 // ----------------------------------------------------------------
 // Surveys
@@ -735,6 +679,15 @@ export interface MobileProject {
   site_address?: string | null;
   siteAddress?: string | null;
   address?: string | null;
+  // Installation type — SolarPro may return any of these field names
+  installation_type?: string | null;
+  installationType?: string | null;
+  system_type?: string | null;
+  systemType?: string | null;
+  mount_type?: string | null;
+  mountType?: string | null;
+  project_type?: string | null;
+  projectType?: string | null;
 }
 
 /**
@@ -764,6 +717,33 @@ export async function fetchMobileClientProjects(
   );
   const data = await handleResponse<{ projects: MobileProject[] }>(res);
   return data.projects;
+}
+
+/**
+ * GET /api/mobile/projects/:projectId
+ * Returns full detail for a single project, including installation_type
+ * and other fields that may not appear in the list endpoint.
+ * Returns null if the project is not found or the request fails.
+ */
+export async function fetchMobileProjectDetail(
+  projectId: string,
+): Promise<MobileProject | null> {
+  try {
+    const authHeaders = await getAuthHeaders();
+    const res = await fetchWithFallback(
+      `/api/mobile/projects/${encodeURIComponent(projectId)}`,
+      { headers: authHeaders },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as MobileProject | { project: MobileProject };
+    // SolarPro may wrap in { project: ... } or return flat
+    if (data && typeof data === 'object' && 'project' in data && data.project) {
+      return data.project as MobileProject;
+    }
+    return data as MobileProject;
+  } catch {
+    return null;
+  }
 }
 
 // ----------------------------------------------------------------

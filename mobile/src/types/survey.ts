@@ -180,45 +180,6 @@ export interface ApiPhotoUploadResponse {
   photos: unknown[];
 }
 
-// ------------------------------------------------------------------
-// Address validation (Google API integration scaffolding)
-// ------------------------------------------------------------------
-
-export interface AddressValidationRequest {
-  /** User-entered address string before normalization. */
-  rawAddress: string;
-  /** GPS capture must be preserved for reverse/confirm validation. */
-  gps: GpsCoordinates;
-  /** Optional Google Place ID if already resolved on device. */
-  placeId?: string;
-}
-
-export type AddressValidationGranularity =
-  | "PREMISE"
-  | "ROUTE"
-  | "LOCALITY"
-  | "ADMINISTRATIVE_AREA"
-  | "COUNTRY"
-  | "UNKNOWN";
-
-export interface AddressValidationResult {
-  isValid: boolean;
-  formattedAddress: string;
-  granularity: AddressValidationGranularity;
-  /** Keep GPS in response to compare geocoded point vs captured point. */
-  gps: GpsCoordinates;
-  /** Optional normalized components from the validator response. */
-  components?: {
-    streetNumber?: string;
-    route?: string;
-    locality?: string;
-    administrativeArea?: string;
-    postalCode?: string;
-    countryCode?: string;
-  };
-  /** Indicates which engine provided the result. */
-  source?: "google" | "solarpro";
-}
 
 // ------------------------------------------------------------------
 // Default checklist items for new surveys

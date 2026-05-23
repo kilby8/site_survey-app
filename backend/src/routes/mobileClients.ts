@@ -204,6 +204,88 @@ function validateConfig(res: Response): boolean {
   return true;
 }
 
+type SolarProFetchResult =
+  | { ok: true; data: unknown }
+  | { ok: false; status: number; error: string; message: string };
+
+/**
+ * Fetch from SolarPro and return a typed result WITHOUT writing to res.
+ * Use this when the caller needs to inspect the result before responding
+ * (e.g. for graceful fallback logic).
+ */
+async function fetchFromSolarPro(
+  pathname: string,
+  userEmail: string,
+  requestInit?: { method?: "GET" | "POST"; body?: unknown },
+): Promise<SolarProFetchResult> {
+  const solarProUrl = getSolarProUrl();
+  const method = requestInit?.method ?? "GET";
+  const serializedBody =
+    method === "POST" && typeof requestInit?.body !== "undefined"
+      ? JSON.stringify(requestInit.body)
+      : undefined;
+
+  const authStrategies = getProxyAuthStrategies(userEmail);
+  if (authStrategies.length === 0) {
+    return {
+      ok: false,
+      status: 503,
+      error: "configuration_error",
+      message: "No mobile proxy auth secret is set — cannot authenticate with SolarPro.",
+    };
+  }
+
+  try {
+    let lastAuthFailureText = "";
+
+    for (let i = 0; i < authStrategies.length; i += 1) {
+      const strategy = authStrategies[i];
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "X-Mobile-User-Email": userEmail.trim().toLowerCase(),
+        ...strategy.headers,
+      };
+
+      const upstream = await fetch(`${solarProUrl}${pathname}`, {
+        method,
+        headers,
+        body: serializedBody,
+        signal: AbortSignal.timeout(8_000),
+      });
+
+      if (upstream.ok) {
+        const data = (await upstream.json()) as unknown;
+        return { ok: true, data };
+      }
+
+      const text = await upstream.text().catch(() => "");
+      console.error(
+        `[MOBILE_PROXY] upstream ${pathname} error ${upstream.status}: ${text.slice(0, 200)}`,
+      );
+
+      if (upstream.status === 401 || upstream.status === 403) {
+        lastAuthFailureText = text;
+        if (i < authStrategies.length - 1) continue;
+        return { ok: false, status: 502, error: "upstream_auth_failed", message: "SolarPro pipeline API rejected backend authentication." };
+      }
+
+      if (upstream.status === 404) {
+        return { ok: false, status: 404, error: "not_found", message: "Resource not found." };
+      }
+
+      return { ok: false, status: 502, error: "upstream_error", message: "Failed to fetch data from SolarPro pipeline API." };
+    }
+
+    console.error(`[MOBILE_PROXY] upstream ${pathname} auth exhausted: ${lastAuthFailureText?.slice(0, 200)}`);
+    return { ok: false, status: 502, error: "upstream_auth_failed", message: "SolarPro pipeline API rejected backend authentication." };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[MOBILE_PROXY] upstream ${method} ${pathname} fetch error: ${msg}`);
+    return { ok: false, status: 502, error: "upstream_unreachable", message: "SolarPro pipeline API is unreachable." };
+  }
+}
+
 /**
  * Proxy a request to SolarPro and forward the response.
  * Passes the authenticated user's email as X-Mobile-User-Email.
@@ -354,6 +436,34 @@ router.get("/clients", async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/mobile/projects/:projectId
+ *
+ * Returns full detail for a single project (including installation_type,
+ * system_type, and other fields not always present in the list endpoint).
+ * Proxied to SolarPro with user-email scoping.
+ */
+router.get("/projects/:projectId", async (req: Request, res: Response) => {
+  const userEmail = req.authUser?.email;
+  const { projectId } = req.params;
+
+  if (!userEmail) {
+    res.status(400).json({ error: "missing_user_email", message: "Authenticated user has no email in token." });
+    return;
+  }
+
+  if (!projectId?.trim()) {
+    res.status(400).json({ error: "invalid_project_id", message: "projectId path parameter is required." });
+    return;
+  }
+
+  const normalizedEmail = userEmail.trim().toLowerCase();
+  if (!validateConfig(res)) return;
+
+  console.log(`[MOBILE_SCOPE] GET /projects/${projectId} incomingEmail=${normalizedEmail}`);
+  await proxyToSolarPro(`/api/mobile/projects/${encodeURIComponent(projectId)}`, normalizedEmail, res);
+});
+
+/**
  * GET /api/mobile/clients/:clientId/projects
  *
  * Returns ONLY projects for the specified client IF it belongs to the
@@ -453,9 +563,9 @@ router.post("/address-validation", async (req: Request, res: Response) => {
     `incomingEmail=${normalizedEmail} source=mobile_api`,
   );
 
-  // 1) Attempt Google Address Validation first (highest fidelity for CAD/Permit)
+  // 1) Attempt Google Geocoding first (Geocoding API via address or reverse-geocoding via GPS)
   try {
-    const googleResult = await validateAddressWithGoogle(rawAddress, placeId);
+    const googleResult = await validateAddressWithGoogle(rawAddress, gps.latitude, gps.longitude, placeId);
     if (googleResult) {
       console.log(`[MOBILE_SCOPE] Address validated via Google Maps API for ${normalizedEmail}`);
       res.json(googleResult);
@@ -465,24 +575,41 @@ router.post("/address-validation", async (req: Request, res: Response) => {
     console.error(`[MOBILE_SCOPE] Google validation fallback trigger: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  // 2) Fallback to SolarPro proxy if Google is not configured or fails
-  await proxyToSolarPro(
+  // 2) Fall back to SolarPro's upstream mobile endpoint to preserve the existing
+  //    contract for clients that still expect backend proxy behavior.
+  const upstreamValidation = await fetchFromSolarPro(
     "/api/mobile/address-validation",
     normalizedEmail,
-    res,
     {
       method: "POST",
       body: {
         rawAddress,
-        gps: {
-          latitude: gps.latitude,
-          longitude: gps.longitude,
-          ...(Number.isFinite(gps.accuracy) ? { accuracy: gps.accuracy } : {}),
-        },
+        gps,
         ...(placeId ? { placeId } : {}),
       },
     },
   );
+
+  if (upstreamValidation.ok) {
+    console.log(`[MOBILE_SCOPE] Address validated via SolarPro upstream for ${normalizedEmail}`);
+    res.json(upstreamValidation.data);
+    return;
+  }
+
+  // 3) If both Google validation and SolarPro validation are unavailable, return
+  //    a local needs_review fallback so the mobile workflow remains usable.
+  res.json({
+    isValid: false,
+    formattedAddress: rawAddress,
+    granularity: "UNKNOWN",
+    gps: { latitude: gps.latitude, longitude: gps.longitude },
+    source: "fallback",
+    needsReview: true,
+    fallbackReason: "Address validation service is unavailable — please confirm the address manually.",
+    upstreamStatus: upstreamValidation.status,
+    upstreamError: upstreamValidation.error,
+  });
+  return;
 });
 
 /**

@@ -42,9 +42,6 @@ export type {
   ApiSurveyListResponse,
   ApiSyncResponse,
   ApiPhotoUploadResponse,
-  AddressValidationRequest,
-  AddressValidationGranularity,
-  AddressValidationResult,
 } from "./survey";
 
 // Value exports (constants are not types — cannot use `export type`)
