@@ -208,8 +208,17 @@ async function proxyToSolarPro(
   pathname: string,
   userEmail: string,
   res: Response,
+  requestInit?: {
+    method?: "GET" | "POST";
+    body?: unknown;
+  },
 ): Promise<void> {
   const solarProUrl = getSolarProUrl();
+  const method = requestInit?.method ?? "GET";
+  const serializedBody =
+    method === "POST" && typeof requestInit?.body !== "undefined"
+      ? JSON.stringify(requestInit.body)
+      : undefined;
 
   const authStrategies = getProxyAuthStrategies(userEmail);
   if (authStrategies.length === 0) {
@@ -233,8 +242,9 @@ async function proxyToSolarPro(
       };
 
       const upstream = await fetch(`${solarProUrl}${pathname}`, {
-        method: "GET",
+        method,
         headers,
+        body: serializedBody,
         signal: AbortSignal.timeout(8_000),
       });
 
@@ -287,13 +297,23 @@ async function proxyToSolarPro(
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[MOBILE_PROXY] upstream ${pathname} fetch error: ${msg}`);
+    console.error(`[MOBILE_PROXY] upstream ${method} ${pathname} fetch error: ${msg}`);
     res.status(502).json({
       error: "upstream_unreachable",
       message: "SolarPro pipeline API is unreachable.",
     });
   }
 }
+
+type AddressValidationBody = {
+  rawAddress: string;
+  gps: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+  };
+  placeId?: string;
+};
 
 // ---------------------------------------------------------------------------
 // Routes
@@ -369,6 +389,82 @@ router.get("/clients/:clientId/projects", async (req: Request, res: Response) =>
     `/api/mobile/clients/${encodeURIComponent(clientId)}/projects`,
     normalizedEmail,
     res,
+  );
+});
+
+/**
+ * POST /api/mobile/address-validation
+ *
+ * Proxies address + GPS payload to SolarPro for normalization/validation.
+ * GPS coordinates are mandatory to preserve capture-to-address verification.
+ */
+router.post("/address-validation", async (req: Request, res: Response) => {
+  const userEmail = req.authUser?.email;
+
+  if (!userEmail) {
+    res.status(400).json({
+      error: "missing_user_email",
+      message: "Authenticated user has no email in token.",
+    });
+    return;
+  }
+
+  const body = (req.body || {}) as Partial<AddressValidationBody>;
+  const rawAddress = String(body.rawAddress || "").trim();
+  const gps = body.gps as AddressValidationBody["gps"] | undefined;
+  const placeId = typeof body.placeId === "string" && body.placeId.trim()
+    ? body.placeId.trim()
+    : undefined;
+
+  if (!rawAddress) {
+    res.status(400).json({
+      error: "invalid_address",
+      message: "rawAddress is required.",
+    });
+    return;
+  }
+
+  if (!gps || !Number.isFinite(gps.latitude) || !Number.isFinite(gps.longitude)) {
+    res.status(400).json({
+      error: "invalid_gps",
+      message: "gps.latitude and gps.longitude are required numbers.",
+    });
+    return;
+  }
+
+  if (gps.latitude < -90 || gps.latitude > 90 || gps.longitude < -180 || gps.longitude > 180) {
+    res.status(400).json({
+      error: "invalid_gps_range",
+      message: "gps.latitude must be between -90..90 and gps.longitude between -180..180.",
+    });
+    return;
+  }
+
+  const normalizedEmail = userEmail.trim().toLowerCase();
+
+  if (!validateConfig(res)) return;
+
+  console.log(
+    `[MOBILE_SCOPE] POST /address-validation ` +
+    `incomingEmail=${normalizedEmail} source=mobile_api`,
+  );
+
+  await proxyToSolarPro(
+    "/api/mobile/address-validation",
+    normalizedEmail,
+    res,
+    {
+      method: "POST",
+      body: {
+        rawAddress,
+        gps: {
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          ...(Number.isFinite(gps.accuracy) ? { accuracy: gps.accuracy } : {}),
+        },
+        ...(placeId ? { placeId } : {}),
+      },
+    },
   );
 });
 

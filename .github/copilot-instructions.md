@@ -16,6 +16,7 @@
 - Never perform manual user password resets unless the user explicitly requests a reset.
 - For credential incidents, default to hash-sync-only remediation between website and app databases unless explicitly instructed otherwise.
 - Do not rotate exposed keys/secrets unless the user explicitly requests rotation.
+- Never add, remove, or modify environment variables (in `.env`, `render.yaml`, Render dashboard, Vercel dashboard, or any config file) without explicit user permission.
 - For UI tasks, the target is the public solar-pro.app landing page with the 'Download the App' button, not the authenticated app screen.
 - For Android Play Store releases, always target Closed Testing (`alpha` track), ensure `versionCode` is incremented above the current live/active version before submission, and assume Managed Publishing is OFF (send for review immediately; publish automatically after approval).
 
@@ -27,3 +28,22 @@
 
 ## Terminology
 - Use the term 'app' for this codebase and 'website' for Raymond's codebase when discussing issues.
+
+## Survey Pipeline & CAD-Ready Architecture
+- **Core Philosophy**: The app is a structured data capture engine for SolarPro's CAD/Permit/Engineering pipeline. Every photo and data point must be "Pipeline-Ready" to feed into SLD, BOM, and CAD automated workflows.
+- **Photo Metadata (The Golden Block)**: All captured photos MUST include the following metadata object:
+    - `projectId`, `surveyId`, `stepId`, `sectionId`, `photoSlotId`, `evidenceCategory`.
+    - `isRequired` (boolean), `captureOrder` (int), `timestamp` (ISO-8601).
+    - `gps` (lat/lng/alt), `heading` (direction/facing degrees).
+    - `notes`, `retakeReason` (if replaced), `qualityStatus`.
+    - `solarProRequirementId`, `solarProUsageMapping` (e.g., "SLD", "BOM", "Permit Elevation").
+- **Sequential Survey Flow Logic**:
+    1. **Project Arrival**: Site verification (Address, Access Path, Hazards, Arrival Time).
+    2. **Site Walkaround**: Full property elevations (Front/Back/Left/Right) and wide-shots for CAD site context.
+    3. **Utility Service**: Meter evidence, service entry, and riser/mast details for interconnection validation.
+    4. **Electrical Equipment**: Main panel, bus ratings, OCPD, and circuit directories for SLD/Engineering.
+    5. **Roof & Array**: Plane-by-plane analysis (Pitch, Azimuth, Obstructions, Material) for CAD layout precision.
+- **Enforcement**:
+    - Do not allow a user to skip "Required" photo slots without a validation override.
+    - Treat `solarProUsageMapping` as the source-of-truth for where data lands in the final planset.
+    - For Roof sections, always associate photos and data with a specific `planeId`.

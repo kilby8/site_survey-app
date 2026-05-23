@@ -75,6 +75,57 @@ export async function pickFromLibrary(): Promise<CapturedPhoto | null> {
 }
 
 // ----------------------------------------------------------------
+// Camera capture (multi-shot loop)
+// ----------------------------------------------------------------
+export async function captureMultipleFromCamera(
+  limit = 10,
+): Promise<CapturedPhoto[]> {
+  const normalizedLimit = Number.isFinite(limit) && limit > 0
+    ? Math.floor(limit)
+    : 10;
+
+  const captured: CapturedPhoto[] = [];
+  while (captured.length < normalizedLimit) {
+    const next = await captureFromCamera();
+    // User cancelled camera flow.
+    if (!next) break;
+    captured.push(next);
+  }
+
+  return captured;
+}
+
+// ----------------------------------------------------------------
+// Photo library picker (multi-select)
+// ----------------------------------------------------------------
+export async function pickMultipleFromLibrary(
+  limit = 20,
+): Promise<CapturedPhoto[]> {
+  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (status !== 'granted') {
+    throw new Error('Photo library permission denied. Please enable it in Settings.');
+  }
+
+  const normalizedLimit = Number.isFinite(limit) && limit > 0
+    ? Math.floor(limit)
+    : 20;
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    allowsEditing: false,
+    allowsMultipleSelection: true,
+    selectionLimit: normalizedLimit,
+    quality: 0.85,
+    exif: false,
+  });
+
+  if (result.canceled || !result.assets?.length) return [];
+
+  const photos = await Promise.all(result.assets.map((asset) => _copyToDocuments(asset)));
+  return photos;
+}
+
+// ----------------------------------------------------------------
 // Copy a picked/captured asset into the app's documents directory
 // ----------------------------------------------------------------
 async function _copyToDocuments(

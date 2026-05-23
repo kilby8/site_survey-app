@@ -383,6 +383,102 @@ describe("mobile clients pipeline proxy", () => {
     expect(capturedUrl).toContain("/api/mobile/clients/abc-123/projects");
   });
 
+  it("returns 400 when address-validation payload is missing rawAddress", async () => {
+    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
+    process.env.SOLARPRO_API_KEY = "test-service-key";
+
+    const res = await request(app)
+      .post("/api/mobile/address-validation")
+      .set("Authorization", authHeader)
+      .send({
+        gps: {
+          latitude: 32.7767,
+          longitude: -96.797,
+        },
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_address");
+  });
+
+  it("returns 400 when address-validation payload has invalid GPS", async () => {
+    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
+    process.env.SOLARPRO_API_KEY = "test-service-key";
+
+    const res = await request(app)
+      .post("/api/mobile/address-validation")
+      .set("Authorization", authHeader)
+      .send({
+        rawAddress: "123 Main St, Dallas, TX",
+        gps: {
+          latitude: 999,
+          longitude: -96.797,
+        },
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_gps_range");
+  });
+
+  it("proxies address-validation payload to upstream with POST and scoped headers", async () => {
+    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
+    process.env.SOLARPRO_API_KEY = "test-service-key";
+
+    let capturedUrl = "";
+    let capturedMethod = "";
+    let capturedEmail = "";
+    let capturedBody: Record<string, unknown> | null = null;
+
+    global.fetch = jest.fn().mockImplementation((url: string, opts: RequestInit) => {
+      capturedUrl = url;
+      capturedMethod = String(opts.method || "GET");
+      const headers = (opts.headers ?? {}) as Record<string, string>;
+      capturedEmail = headers["X-Mobile-User-Email"];
+      capturedBody = JSON.parse(String(opts.body || "{}"));
+
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          result: {
+            isValid: true,
+            formattedAddress: "123 MAIN ST, DALLAS, TX 75201",
+            granularity: "PREMISE",
+            gps: {
+              latitude: 32.7767,
+              longitude: -96.797,
+            },
+          },
+        }),
+      });
+    }) as unknown as typeof fetch;
+
+    const res = await request(app)
+      .post("/api/mobile/address-validation")
+      .set("Authorization", authHeader)
+      .send({
+        rawAddress: "123 Main St, Dallas, TX",
+        gps: {
+          latitude: 32.7767,
+          longitude: -96.797,
+          accuracy: 8,
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(capturedUrl).toContain("/api/mobile/address-validation");
+    expect(capturedMethod).toBe("POST");
+    expect(capturedEmail).toBe(TEST_EMAIL.toLowerCase());
+    expect(capturedBody).toMatchObject({
+      rawAddress: "123 Main St, Dallas, TX",
+      gps: {
+        latitude: 32.7767,
+        longitude: -96.797,
+        accuracy: 8,
+      },
+    });
+    expect(res.body.result?.isValid).toBe(true);
+  });
+
   // -------------------------------------------------------------------------
   // Auth required
   // -------------------------------------------------------------------------

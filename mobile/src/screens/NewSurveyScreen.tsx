@@ -63,6 +63,8 @@ import {
   type MobileClient,
   type MobileProject,
 } from "../api/client";
+import { validateAddressWithGps } from "../api/addressValidation";
+import { getPipelinePhotoProgress } from "../types/pipelineRequirements";
 
 
 
@@ -109,6 +111,13 @@ interface NewSurveyDraft {
   solarpro_org_id: string | null;
 
 }
+
+type AddressValidationState =
+  | "idle"
+  | "validating"
+  | "validated"
+  | "needs_review"
+  | "error";
 
 
 
@@ -210,6 +219,12 @@ export default function NewSurveyScreen() {
   const [clientModalVisible, setClientModalVisible] = useState(false);
   const [projectModalVisible, setProjectModalVisible] = useState(false);
 
+  const [addressValidationState, setAddressValidationState] =
+    useState<AddressValidationState>("idle");
+  const [addressValidationMessage, setAddressValidationMessage] = useState<string | null>(null);
+  const [lastValidatedAddress, setLastValidatedAddress] = useState<string>("");
+  const [lastValidatedGpsKey, setLastValidatedGpsKey] = useState<string>("");
+
   // Load clients once on mount
   useEffect(() => {
     let cancelled = false;
@@ -293,11 +308,97 @@ export default function NewSurveyScreen() {
     siteName.trim().length > 0 &&
     selectedProjectId !== null;
 
+  const hasAddressForValidation = siteAddress.trim().length > 0;
+  const hasGpsForValidation = Boolean(location.coordinates);
+  const canEvaluateAddressValidation = hasAddressForValidation && hasGpsForValidation;
+
+  const currentGpsKey = useMemo(() => {
+    if (!location.coordinates) return "";
+    const { latitude, longitude } = location.coordinates;
+    return `${latitude.toFixed(6)}:${longitude.toFixed(6)}`;
+  }, [location.coordinates]);
+
+  useEffect(() => {
+    const addressChanged = siteAddress.trim() !== lastValidatedAddress;
+    const gpsChanged = currentGpsKey !== lastValidatedGpsKey;
+    if ((addressChanged || gpsChanged) && addressValidationState !== "idle") {
+      setAddressValidationState("idle");
+      setAddressValidationMessage(null);
+    }
+  }, [
+    siteAddress,
+    currentGpsKey,
+    lastValidatedAddress,
+    lastValidatedGpsKey,
+    addressValidationState,
+  ]);
+
+  const runAddressValidation = useCallback(async () => {
+    const rawAddress = siteAddress.trim();
+    if (!rawAddress) {
+      setAddressValidationState("idle");
+      setAddressValidationMessage(null);
+      return;
+    }
+
+    if (!location.coordinates) {
+      setAddressValidationState("needs_review");
+      setAddressValidationMessage("Capture GPS first, then validate address.");
+      return;
+    }
+
+    setAddressValidationState("validating");
+    setAddressValidationMessage("Validating address against GPS…");
+
+    const gpsKey = `${location.coordinates.latitude.toFixed(6)}:${location.coordinates.longitude.toFixed(6)}`;
+
+    try {
+      const result = await validateAddressWithGps({
+        rawAddress,
+        gps: {
+          latitude: location.coordinates.latitude,
+          longitude: location.coordinates.longitude,
+          ...(Number.isFinite(location.coordinates.accuracy)
+            ? { accuracy: location.coordinates.accuracy }
+            : {}),
+        },
+      });
+
+      setLastValidatedAddress(rawAddress);
+      setLastValidatedGpsKey(gpsKey);
+
+      if (result.isValid) {
+        setAddressValidationState("validated");
+        setAddressValidationMessage(
+          `Validated (${result.granularity}). ${result.formattedAddress}`,
+        );
+        return;
+      }
+
+      setAddressValidationState("needs_review");
+      setAddressValidationMessage(
+        `Needs review (${result.granularity}). Confirm address and GPS are correct.`,
+      );
+    } catch (error) {
+      setLastValidatedAddress(rawAddress);
+      setLastValidatedGpsKey(gpsKey);
+      setAddressValidationState("error");
+      setAddressValidationMessage(
+        error instanceof Error
+          ? `Address validation failed: ${error.message}`
+          : "Address validation failed.",
+      );
+    }
+  }, [siteAddress, location.coordinates]);
 
 
-  const requiredPhotoSlots = 2;
 
-  const hasMinimumPhotos = photos.length >= requiredPhotoSlots;
+  const pipelinePhotoProgress = useMemo(
+    () => getPipelinePhotoProgress(photos.length),
+    [photos.length],
+  );
+  const requiredPhotoSlots = pipelinePhotoProgress.totalRequired;
+  const hasMinimumPhotos = pipelinePhotoProgress.completedRequired >= pipelinePhotoProgress.totalRequired;
 
 
 
@@ -580,189 +681,228 @@ export default function NewSurveyScreen() {
 
 
   function validateInputs(): boolean {
-
     if (!projectName.trim()) {
-
       Alert.alert("Validation Error", "Project name is required.");
-
       return false;
-
     }
 
     if (!inspectorName.trim()) {
-
       Alert.alert("Validation Error", "Inspector name is required.");
-
       return false;
-
     }
 
     if (!siteName.trim()) {
-
       Alert.alert("Validation Error", "Site name is required.");
-
       return false;
-
     }
 
     return true;
-
   }
 
+  function isAddressValidationRecommendedAtSubmit(): boolean {
+    return (
+      canEvaluateAddressValidation &&
+      addressValidationState !== "validated" &&
+      addressValidationState !== "validating"
+    );
+  }
 
+  function getSubmitValidationPromptMessage(): string {
+    if (addressValidationState === "needs_review") {
+      return "Address check suggests this may need review. Create survey anyway and validate later?";
+    }
+    if (addressValidationState === "error") {
+      return "Address validation failed. Create survey anyway and validate later?";
+    }
+    return "Address + GPS are present, but validation has not been run yet. Create survey anyway and validate later?";
+  }
 
-  async function submitSurvey() {
-
-    if (!validateInputs()) return;
-
-
-
-    if (!deviceId) {
-
-      Alert.alert(
-
-        "Device Error",
-
-        "Device identity is not ready yet. Please try again in a moment.",
-
-      );
-
+  function handleNextStep() {
+    if (currentStep !== 1) {
+      setCurrentStep((prev) => (prev + 1) as 1 | 2 | 3 | 4);
       return;
-
     }
 
+    if (addressValidationState === "validating") {
+      Alert.alert(
+        "Validation In Progress",
+        "Address validation is still running. Please wait a moment or continue once it finishes.",
+      );
+      return;
+    }
 
+    if (!canEvaluateAddressValidation) {
+      setCurrentStep(2);
+      return;
+    }
+
+    if (addressValidationState === "validated") {
+      setCurrentStep(2);
+      return;
+    }
+
+    const promptMessage =
+      addressValidationState === "needs_review"
+        ? "Address check suggests this may need review. Continue anyway and validate later?"
+        : addressValidationState === "error"
+          ? "Address validation failed. Continue anyway and validate later?"
+          : "Address + GPS are present, but validation has not been run yet. Continue anyway and validate later?";
+
+    Alert.alert(
+      "Address Validation Recommended",
+      promptMessage,
+      [
+        { text: "Stay Here", style: "cancel" },
+        {
+          text: "Continue",
+          style: "default",
+          onPress: () => setCurrentStep(2),
+        },
+      ],
+    );
+  }
+
+  async function executeSubmitSurvey() {
+    if (!validateInputs()) return;
+
+    if (!deviceId) {
+      Alert.alert(
+        "Device Error",
+        "Device identity is not ready yet. Please try again in a moment.",
+      );
+      return;
+    }
 
     setSubmitting(true);
-
     try {
-
       const now = new Date().toISOString();
 
-
-
       const checklistPhotos = checklist.flatMap((item) =>
-
         (item.photos ?? []).map((p) => ({
-
           file_path: p.uri,
-
           label: p.label?.trim() || `${item.label} Photo`,
-
           mime_type: p.mimeType,
-
           captured_at: now,
-
         })),
-
       );
 
-
-
       const payload: SurveyFormData = {
-
         project_name: projectName.trim(),
-
         project_id: projectId,
-
         category_id: categoryId,
-
         category_name: selectedCategoryName,
-
         inspector_name: inspectorName.trim(),
-
         site_name: siteName.trim(),
-
         site_address: siteAddress.trim(),
-
         latitude: location.coordinates?.latitude ?? null,
-
         longitude: location.coordinates?.longitude ?? null,
-
         gps_accuracy: location.coordinates?.accuracy ?? null,
-
         survey_date: now,
-
         notes: notes.trim(),
-
         status: "draft",
-
         device_id: deviceId,
-
         solarpro_user_id: solarproUserId,
-
         solarpro_project_id: solarproProjectId,
-
         solarpro_email: solarproEmail,
-
         solarpro_org_id: solarproOrgId,
-
         metadata: metadata ?? null,
-
         checklist: checklist.map((item, i) => ({
-
           label: item.label.trim() || `Checklist Item ${i + 1}`,
-
           status: item.status,
-
           notes: item.notes ?? "",
-
           sort_order: i,
-
         })),
-
         photos: [
-
           ...photos.map((p) => ({
-
             file_path: p.uri,
-
             label: p.label,
-
             mime_type: p.mimeType,
-
             captured_at: now,
-
           })),
-
           ...checklistPhotos,
-
         ],
-
       };
-
-
 
       const created = await createSurvey(payload, deviceId);
 
-
-
       if (draftFileUri) {
-
         await FileSystem.deleteAsync(draftFileUri, { idempotent: true });
-
       }
 
-
-
       Alert.alert("Success", "Survey saved locally and queued for sync.");
-
       router.push({ pathname: "/survey/[id]", params: { id: created.id } });
-
     } catch (error) {
-
       const message =
-
         error instanceof Error ? error.message : "Failed to create survey";
-
       Alert.alert("Error", message);
-
     } finally {
-
       setSubmitting(false);
+    }
+  }
 
+  async function submitSurvey() {
+    if (submitting) return;
+
+    if (pipelinePhotoProgress.missingSlots.length > 0) {
+      const preview = pipelinePhotoProgress.missingSlots
+        .slice(0, 3)
+        .map((slot) => `${slot.stepLabel}: ${slot.label}`)
+        .join("\n");
+      const extraCount = Math.max(0, pipelinePhotoProgress.missingSlots.length - 3);
+
+      Alert.alert(
+        "Required Photos Missing",
+        `${pipelinePhotoProgress.missingSlots.length} required evidence slot(s) are missing.\n\n${preview}${extraCount > 0 ? `\n+ ${extraCount} more` : ""}\n\nUse validation override to create survey anyway?`,
+        [
+          { text: "Stay Here", style: "cancel" },
+          {
+            text: "Use Override",
+            style: "destructive",
+            onPress: () => {
+              if (isAddressValidationRecommendedAtSubmit()) {
+                Alert.alert(
+                  "Address Validation Recommended",
+                  getSubmitValidationPromptMessage(),
+                  [
+                    { text: "Stay Here", style: "cancel" },
+                    {
+                      text: "Create Anyway",
+                      style: "default",
+                      onPress: () => {
+                        void executeSubmitSurvey();
+                      },
+                    },
+                  ],
+                );
+                return;
+              }
+              void executeSubmitSurvey();
+            },
+          },
+        ],
+      );
+      return;
     }
 
+    if (isAddressValidationRecommendedAtSubmit()) {
+      Alert.alert(
+        "Address Validation Recommended",
+        getSubmitValidationPromptMessage(),
+        [
+          { text: "Stay Here", style: "cancel" },
+          {
+            text: "Create Anyway",
+            style: "default",
+            onPress: () => {
+              void executeSubmitSurvey();
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    await executeSubmitSurvey();
   }
 
 
@@ -923,9 +1063,55 @@ export default function NewSurveyScreen() {
 
                   onChangeText={setSiteAddress}
 
+                  onBlur={() => {
+                    if (siteAddress.trim().length > 0) {
+                      void runAddressValidation();
+                    }
+                  }}
+
                   placeholderTextColor={colors.textMuted}
 
                 />
+
+                <TouchableOpacity
+                  style={[
+                    styles.validateAddressBtn,
+                    addressValidationState === "validating" && styles.validateAddressBtnDisabled,
+                  ]}
+                  onPress={() => {
+                    void runAddressValidation();
+                  }}
+                  disabled={addressValidationState === "validating"}
+                >
+                  {addressValidationState === "validating" ? (
+                    <ActivityIndicator color={colors.white} />
+                  ) : (
+                    <Text style={styles.validateAddressBtnText}>Validate Address with GPS</Text>
+                  )}
+                </TouchableOpacity>
+
+                {addressValidationMessage && (
+                  <View
+                    style={[
+                      styles.addressValidationBanner,
+                      addressValidationState === "validated" && styles.addressValidationBannerValid,
+                      addressValidationState === "needs_review" && styles.addressValidationBannerWarn,
+                      addressValidationState === "error" && styles.addressValidationBannerError,
+                    ]}
+                  >
+                    <Text style={styles.addressValidationText}>{addressValidationMessage}</Text>
+                  </View>
+                )}
+
+                {canEvaluateAddressValidation &&
+                  addressValidationState !== "validated" &&
+                  addressValidationState !== "validating" && (
+                    <View style={styles.infoHint}>
+                      <Text style={styles.infoHintText}>
+                        Address validation is recommended before continuing. You can still continue and validate later.
+                      </Text>
+                    </View>
+                  )}
 
               </View>
 
@@ -1091,12 +1277,28 @@ export default function NewSurveyScreen() {
 
                   <Text style={styles.warningText}>
 
-                    Add at least {requiredPhotoSlots} photos before final submission.
+                    Add all required evidence photos before final submission ({pipelinePhotoProgress.completedRequired}/{requiredPhotoSlots}).
 
                   </Text>
 
                 </View>
 
+              )}
+
+              {pipelinePhotoProgress.missingSlots.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.label}>Required Evidence Remaining</Text>
+                  {pipelinePhotoProgress.missingSlots.slice(0, 4).map((slot) => (
+                    <Text key={slot.id} style={styles.requiredSlotItem}>
+                      • {slot.stepLabel}: {slot.label}
+                    </Text>
+                  ))}
+                  {pipelinePhotoProgress.missingSlots.length > 4 && (
+                    <Text style={styles.requiredSlotMore}>
+                      + {pipelinePhotoProgress.missingSlots.length - 4} more required slot(s)
+                    </Text>
+                  )}
+                </View>
               )}
 
               <View style={styles.section}>
@@ -1177,6 +1379,22 @@ export default function NewSurveyScreen() {
 
               </View>
 
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewKey}>Required Photo Slots</Text>
+                <Text style={styles.reviewVal}>
+                  {pipelinePhotoProgress.completedRequired}/{pipelinePhotoProgress.totalRequired}
+                </Text>
+              </View>
+
+              {pipelinePhotoProgress.byStep.map((stepProgress) => (
+                <View key={stepProgress.stepId} style={styles.reviewRow}>
+                  <Text style={styles.reviewKey}>{stepProgress.stepLabel}</Text>
+                  <Text style={styles.reviewVal}>
+                    {stepProgress.completed}/{stepProgress.required}
+                  </Text>
+                </View>
+              ))}
+
 
 
               <TouchableOpacity style={styles.editStepBtn} onPress={() => setCurrentStep(1)}>
@@ -1245,7 +1463,7 @@ export default function NewSurveyScreen() {
 
                 ]}
 
-                onPress={() => setCurrentStep((prev) => (prev + 1) as 1 | 2 | 3 | 4)}
+                onPress={handleNextStep}
 
                 disabled={(currentStep === 1 && !canProceedStep1) || submitting}
 
@@ -1491,6 +1709,55 @@ const styles = StyleSheet.create({
 
   },
 
+  validateAddressBtn: {
+    marginTop: 10,
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+
+  validateAddressBtnDisabled: {
+    opacity: 0.7,
+  },
+
+  validateAddressBtnText: {
+    color: colors.white,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  addressValidationBanner: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.inputBg,
+    borderColor: colors.inputBorder,
+  },
+
+  addressValidationBannerValid: {
+    backgroundColor: colors.successBg,
+    borderColor: colors.successBorder,
+  },
+
+  addressValidationBannerWarn: {
+    backgroundColor: '#3A2F16',
+    borderColor: '#B98A22',
+  },
+
+  addressValidationBannerError: {
+    backgroundColor: colors.errorBg,
+    borderColor: colors.errorBorder,
+  },
+
+  addressValidationText: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
   textArea: {
 
     minHeight: 88,
@@ -1527,6 +1794,19 @@ const styles = StyleSheet.create({
 
     fontWeight: '600',
 
+  },
+
+  requiredSlotItem: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    marginTop: 4,
+  },
+
+  requiredSlotMore: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 8,
+    fontWeight: '600',
   },
 
   reviewRow: {

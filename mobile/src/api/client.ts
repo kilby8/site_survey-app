@@ -13,6 +13,8 @@ import type {
   SurveyFormData,
   ApiSyncResponse,
   ApiPhotoUploadResponse,
+  AddressValidationRequest,
+  AddressValidationResult,
 } from "../types";
 
 export interface AuthUser {
@@ -388,6 +390,47 @@ export async function fetchCategories(): Promise<ApiCategory[]> {
   });
   const data = await handleResponse<{ categories: ApiCategory[] }>(res);
   return data.categories;
+}
+
+// ----------------------------------------------------------------
+// Address validation
+// ----------------------------------------------------------------
+
+export interface AddressValidationOptions {
+  /**
+   * Default endpoint is a mobile-scoped API route.
+   * Override this during rollout if backend path changes.
+   */
+  path?: string;
+}
+
+/**
+ * POST address + GPS for validator normalization.
+ * Keeps GPS coordinates mandatory so we can compare captured point vs geocode result.
+ */
+export async function validateSurveyAddress(
+  input: AddressValidationRequest,
+  options?: AddressValidationOptions,
+): Promise<AddressValidationResult> {
+  const authHeaders = await getAuthHeaders();
+  const endpoint = options?.path?.trim() || "/api/mobile/address-validation";
+
+  const res = await fetchWithAuthRetry(
+    endpoint.startsWith("/") ? endpoint : `/${endpoint}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders },
+      body: JSON.stringify(input),
+    },
+    { timeoutMs: 8_000 },
+  );
+
+  // Support either { result } or direct object response shape.
+  const payload = await handleResponse<
+    AddressValidationResult | { result: AddressValidationResult }
+  >(res);
+  if ("result" in payload) return payload.result;
+  return payload;
 }
 
 // ----------------------------------------------------------------
