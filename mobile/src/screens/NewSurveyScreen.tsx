@@ -64,7 +64,6 @@ import {
   type MobileProject,
 } from "../api/client";
 import { validateAddressWithGps } from "../api/addressValidation";
-import { getPipelinePhotoProgress } from "../types/pipelineRequirements";
 
 
 
@@ -393,12 +392,29 @@ export default function NewSurveyScreen() {
 
 
 
-  const pipelinePhotoProgress = useMemo(
-    () => getPipelinePhotoProgress(photos.length),
-    [photos.length],
-  );
-  const requiredPhotoSlots = pipelinePhotoProgress.totalRequired;
-  const hasMinimumPhotos = pipelinePhotoProgress.completedRequired >= pipelinePhotoProgress.totalRequired;
+  const checklistPhotoCoverage = useMemo(() => {
+    const itemSummaries = checklist.map((item) => {
+      const photoCount = item.photos?.length ?? 0;
+      return {
+        label: item.label,
+        photoCount,
+        hasPhoto: photoCount > 0,
+      };
+    });
+
+    const itemsMissingPhotos = itemSummaries.filter((item) => !item.hasPhoto);
+    const itemsWithPhotos = itemSummaries.length - itemsMissingPhotos.length;
+
+    return {
+      totalItems: itemSummaries.length,
+      itemsWithPhotos,
+      itemsMissingPhotos,
+    };
+  }, [checklist]);
+
+  const hasMinimumPhotos =
+    checklistPhotoCoverage.totalItems > 0 &&
+    checklistPhotoCoverage.itemsMissingPhotos.length === 0;
 
 
 
@@ -843,16 +859,16 @@ export default function NewSurveyScreen() {
   async function submitSurvey() {
     if (submitting) return;
 
-    if (pipelinePhotoProgress.missingSlots.length > 0) {
-      const preview = pipelinePhotoProgress.missingSlots
+    if (checklistPhotoCoverage.itemsMissingPhotos.length > 0) {
+      const preview = checklistPhotoCoverage.itemsMissingPhotos
         .slice(0, 3)
-        .map((slot) => `${slot.stepLabel}: ${slot.label}`)
+        .map((item) => item.label)
         .join("\n");
-      const extraCount = Math.max(0, pipelinePhotoProgress.missingSlots.length - 3);
+      const extraCount = Math.max(0, checklistPhotoCoverage.itemsMissingPhotos.length - 3);
 
       Alert.alert(
         "Required Photos Missing",
-        `${pipelinePhotoProgress.missingSlots.length} required evidence slot(s) are missing.\n\n${preview}${extraCount > 0 ? `\n+ ${extraCount} more` : ""}\n\nUse validation override to create survey anyway?`,
+        `${checklistPhotoCoverage.itemsMissingPhotos.length} checklist line item(s) are missing photos.\n\n${preview}${extraCount > 0 ? `\n+ ${extraCount} more` : ""}\n\nUse validation override to create survey anyway?`,
         [
           { text: "Stay Here", style: "cancel" },
           {
@@ -1259,7 +1275,33 @@ export default function NewSurveyScreen() {
 
           {currentStep === 2 && (
 
-            <ChecklistEditor items={checklist} onChange={setChecklist} />
+            <>
+              <ChecklistEditor items={checklist} onChange={setChecklist} />
+
+              {!hasMinimumPhotos && (
+                <View style={styles.warningBanner}>
+                  <Text style={styles.warningText}>
+                    Add at least 1 photo per checklist line item ({checklistPhotoCoverage.itemsWithPhotos}/{checklistPhotoCoverage.totalItems}).
+                  </Text>
+                </View>
+              )}
+
+              {checklistPhotoCoverage.itemsMissingPhotos.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.label}>Line Items Missing Photos</Text>
+                  {checklistPhotoCoverage.itemsMissingPhotos.slice(0, 6).map((item, idx) => (
+                    <Text key={`${item.label}-${idx}`} style={styles.requiredSlotItem}>
+                      • {item.label}
+                    </Text>
+                  ))}
+                  {checklistPhotoCoverage.itemsMissingPhotos.length > 6 && (
+                    <Text style={styles.requiredSlotMore}>
+                      + {checklistPhotoCoverage.itemsMissingPhotos.length - 6} more line item(s)
+                    </Text>
+                  )}
+                </View>
+              )}
+            </>
 
           )}
 
@@ -1277,7 +1319,7 @@ export default function NewSurveyScreen() {
 
                   <Text style={styles.warningText}>
 
-                    Add all required evidence photos before final submission ({pipelinePhotoProgress.completedRequired}/{requiredPhotoSlots}).
+                    Line-item photo verification is incomplete ({checklistPhotoCoverage.itemsWithPhotos}/{checklistPhotoCoverage.totalItems}).
 
                   </Text>
 
@@ -1285,17 +1327,17 @@ export default function NewSurveyScreen() {
 
               )}
 
-              {pipelinePhotoProgress.missingSlots.length > 0 && (
+              {checklistPhotoCoverage.itemsMissingPhotos.length > 0 && (
                 <View style={styles.section}>
-                  <Text style={styles.label}>Required Evidence Remaining</Text>
-                  {pipelinePhotoProgress.missingSlots.slice(0, 4).map((slot) => (
-                    <Text key={slot.id} style={styles.requiredSlotItem}>
-                      • {slot.stepLabel}: {slot.label}
+                  <Text style={styles.label}>Line Items Missing Photos</Text>
+                  {checklistPhotoCoverage.itemsMissingPhotos.slice(0, 6).map((item) => (
+                    <Text key={item.label} style={styles.requiredSlotItem}>
+                      • {item.label}
                     </Text>
                   ))}
-                  {pipelinePhotoProgress.missingSlots.length > 4 && (
+                  {checklistPhotoCoverage.itemsMissingPhotos.length > 6 && (
                     <Text style={styles.requiredSlotMore}>
-                      + {pipelinePhotoProgress.missingSlots.length - 4} more required slot(s)
+                      + {checklistPhotoCoverage.itemsMissingPhotos.length - 6} more line item(s)
                     </Text>
                   )}
                 </View>
@@ -1380,20 +1422,22 @@ export default function NewSurveyScreen() {
               </View>
 
               <View style={styles.reviewRow}>
-                <Text style={styles.reviewKey}>Required Photo Slots</Text>
+                <Text style={styles.reviewKey}>Checklist Line Items With Photos</Text>
                 <Text style={styles.reviewVal}>
-                  {pipelinePhotoProgress.completedRequired}/{pipelinePhotoProgress.totalRequired}
+                  {checklistPhotoCoverage.itemsWithPhotos}/{checklistPhotoCoverage.totalItems}
                 </Text>
               </View>
 
-              {pipelinePhotoProgress.byStep.map((stepProgress) => (
-                <View key={stepProgress.stepId} style={styles.reviewRow}>
-                  <Text style={styles.reviewKey}>{stepProgress.stepLabel}</Text>
-                  <Text style={styles.reviewVal}>
-                    {stepProgress.completed}/{stepProgress.required}
-                  </Text>
+              {checklistPhotoCoverage.itemsMissingPhotos.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.label}>Still Missing</Text>
+                  {checklistPhotoCoverage.itemsMissingPhotos.slice(0, 6).map((item, idx) => (
+                    <Text key={`${item.label}-${idx}`} style={styles.requiredSlotItem}>
+                      • {item.label}
+                    </Text>
+                  ))}
                 </View>
-              ))}
+              )}
 
 
 
