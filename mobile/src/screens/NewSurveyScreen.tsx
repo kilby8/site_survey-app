@@ -1197,19 +1197,60 @@ export default function NewSurveyScreen() {
 
               />
 
-              <SolarMetadataForm
+               <SolarMetadataForm
 
-                categoryId={categoryId}
+                 categoryId={categoryId}
 
-                metadata={metadata}
+                 metadata={metadata}
 
-                onChange={setMetadata}
+                 onChange={setMetadata}
 
-              />
+               />
 
-            </>
+               {/* ── Installation Type (Project Type) ────────────────────── */}
+               <View style={styles.section}>
+                 <Text style={styles.label}>
+                   Project Type
+                   {instTypeSource === 'auto' && <Text style={styles.autoBadge}> · Auto-detected</Text>}
+                 </Text>
+                 <View style={styles.installTypeGrid}>
+                   {[
+                     { id: 'roof_mount', label: 'Roof Mount', icon: '🏠' },
+                     { id: 'ground_mount', label: 'Ground Mount', icon: '⛰️' },
+                     { id: 'solar_fencing', label: 'Solar Fencing', icon: '🚜' },
+                   ].map(option => (
+                     <TouchableOpacity
+                       key={option.id}
+                       style={[
+                         styles.installTypeCard,
+                         categoryId === option.id && styles.installTypeCardSelected,
+                       ]}
+                       onPress={() => {
+                         setCategoryId(option.id);
+                         setInstTypeSource('manual');
+                       }}
+                     >
+                       <Text style={styles.installTypeIcon}>{option.icon}</Text>
+                       <Text style={[
+                         styles.installTypeLabel,
+                         categoryId === option.id && styles.installTypeLabelSelected,
+                       ]}>
+                         {option.label}
+                       </Text>
+                     </TouchableOpacity>
+                   ))}
+                 </View>
+                 {instTypeSource === 'auto' && (
+                   <Text style={styles.installTypeHint}>
+                     Auto-detected from project data. Tap to override.
+                   </Text>
+                 )}
+               </View>
+               {/* ───────────────────────────────────────────────────────── */}
 
-          )}
+             </>
+
+           )}
 
 
 
@@ -2270,14 +2311,66 @@ const styles = StyleSheet.create({
 
   },
 
-  modalCloseText: {
+   modalCloseText: {
 
-    color: colors.primary,
+     color: colors.primary,
 
-    fontSize: 16,
+     fontSize: 16,
 
-    fontWeight: '700',
+     fontWeight: '700',
 
-  },
+   },
+
+   // ── Installation Type Selector (Step 1) ────────────────────────────
+   autoBadge: {
+     color: '#4ade80',
+     fontWeight: '700',
+     fontSize: 12,
+   },
+
+   installTypeGrid: {
+     flexDirection: 'row',
+     gap: 8,
+     marginBottom: 10,
+   },
+
+   installTypeCard: {
+     flex: 1,
+     borderWidth: 2,
+     borderColor: colors.inputBorder,
+     borderRadius: 10,
+     paddingVertical: 12,
+     paddingHorizontal: 8,
+     alignItems: 'center',
+     backgroundColor: colors.inputBg,
+   },
+
+   installTypeCardSelected: {
+     borderColor: colors.primary,
+     backgroundColor: '#10263f',
+   },
+
+   installTypeIcon: {
+     fontSize: 28,
+     marginBottom: 6,
+   },
+
+   installTypeLabel: {
+     color: colors.textSecondary,
+     fontSize: 12,
+     fontWeight: '700',
+     textAlign: 'center',
+   },
+
+   installTypeLabelSelected: {
+     color: colors.textPrimary,
+   },
+
+   installTypeHint: {
+     color: '#7eb5e8',
+     fontSize: 12,
+     fontWeight: '600',
+     marginTop: 8,
+   },
 
 });
