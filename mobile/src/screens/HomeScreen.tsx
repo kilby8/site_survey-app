@@ -207,25 +207,6 @@ export default function HomeScreen() {
             }
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.bugBtn, reportingBug && styles.bugBtnDisabled]}
-            onPress={() => {
-              openBugReport({
-                metadata: {
-                  screen: 'HomeScreen',
-                  totalSurveys: surveys.length,
-                  pendingSync: sync.pending,
-                  isOnline: sync.isOnline,
-                },
-              });
-            }}
-            disabled={reportingBug}
-          >
-            {reportingBug
-              ? <ActivityIndicator size="small" color={colors.white} />
-              : <Text style={styles.bugBtnText}>🐞 Report</Text>
-            }
-          </TouchableOpacity>
-          <TouchableOpacity
             style={[styles.clearUnsyncedBtn, (clearingUnsynced || sync.unsyncedCount === 0) && styles.clearUnsyncedBtnDisabled]}
             onPress={handleClearUnsynced}
             disabled={clearingUnsynced || sync.unsyncedCount === 0}
@@ -270,6 +251,27 @@ export default function HomeScreen() {
           />
         )}
       />
+
+      {/* Center-bottom bug report button */}
+      <TouchableOpacity
+        style={[styles.bugFab, reportingBug && styles.bugFabDisabled]}
+        onPress={() => {
+          openBugReport({
+            metadata: {
+              screen: 'HomeScreen',
+              totalSurveys: surveys.length,
+              pendingSync: sync.pending,
+              isOnline: sync.isOnline,
+            },
+          });
+        }}
+        disabled={reportingBug}
+      >
+        {reportingBug
+          ? <ActivityIndicator size="small" color={colors.white} />
+          : <Text style={styles.bugFabText}>🐞 Report</Text>
+        }
+      </TouchableOpacity>
 
       {/* Floating action button */}
       <TouchableOpacity
@@ -351,17 +353,6 @@ const styles = StyleSheet.create({
   },
   clearUnsyncedBtnDisabled: { opacity: 0.6 },
   clearUnsyncedBtnText: { color: colors.white, fontWeight: '700', fontSize: 13 },
-  bugBtn: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    minHeight: 38,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  bugBtnDisabled: { opacity: 0.6 },
-  bugBtnText: { color: colors.white, fontWeight: '700', fontSize: 13 },
   logoutBtn: {
     backgroundColor: colors.inputBg,
     borderColor: colors.inputBorder,
@@ -382,6 +373,26 @@ const styles = StyleSheet.create({
   emptyIcon:     { fontSize: 48, marginBottom: 16 },
   emptyTitle:    { fontSize: 20, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
   emptySubtitle: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 8 },
+  bugFab: {
+    position: 'absolute',
+    bottom: Platform.OS === 'android' ? 88 : 28,
+    left: '50%',
+    transform: [{ translateX: -58 }],
+    minWidth: 116,
+    minHeight: 44,
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  bugFabDisabled: { opacity: 0.6 },
+  bugFabText: { color: '#0B1220', fontWeight: '700', fontSize: 13 },
   fab: {
     position:        'absolute',
     bottom:           Platform.OS === 'android' ? 88 : 28,
