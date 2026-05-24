@@ -865,6 +865,7 @@ export default function NewSurveyScreen() {
           status: evaluateChecklistItemEvidence(item).status,
           notes: item.notes ?? "",
           sort_order: i,
+          ...(item.roofDetails ? { roof_details: item.roofDetails } : {}),
         })),
         photos: [
           ...photos.map((p) => ({
@@ -1184,6 +1185,72 @@ export default function NewSurveyScreen() {
               </Modal>
               {/* ─────���──────────────────────────────────────────── */}
 
+              {/* ── Solar Installation Type ──────────────────────── */}
+              {selectedProjectId !== null && (
+                <View style={styles.section}>
+                  <Text style={styles.label}>
+                    Solar Installation Type
+                    {instTypeSource === 'auto' && (
+                      <Text style={styles.autoDetectedBadge}> · Auto-detected</Text>
+                    )}
+                  </Text>
+
+                  {instTypeLoading ? (
+                    <View style={styles.instTypeLoading}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                      <Text style={styles.instTypeLoadingText}>Fetching from SolarPro…</Text>
+                    </View>
+                  ) : (
+                    <>
+                      {/* 3 type selection cards */}
+                      {(['roof_mount', 'ground_mount', 'solar_fencing'] as const).map((typeId) => {
+                        const meta = INSTALL_TYPE_META[typeId];
+                        const isSelected = categoryId === typeId;
+                        return (
+                          <TouchableOpacity
+                            key={typeId}
+                            style={[
+                              styles.instTypeCard,
+                              isSelected && {
+                                borderColor: meta.borderColor,
+                                backgroundColor: meta.color,
+                              },
+                            ]}
+                            onPress={() => {
+                              setCategoryId(typeId);
+                              setInstTypeSource('manual');
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.instTypeIcon}>{meta.icon}</Text>
+                            <View style={styles.instTypeCardBody}>
+                              <Text style={[styles.instTypeCardLabel, isSelected && { color: colors.textPrimary }]}>
+                                {meta.label}
+                              </Text>
+                              <Text style={styles.instTypeCardDesc}>{meta.description}</Text>
+                            </View>
+                            {isSelected && (
+                              <View style={[styles.instTypeCheckBadge, { backgroundColor: meta.borderColor }]}>
+                                <Text style={styles.instTypeCheckText}>✓</Text>
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+
+                      {instTypeSource === 'auto' && (
+                        <View style={styles.instTypeSourceHint}>
+                          <Text style={styles.instTypeSourceHintText}>
+                            ☁️ Installation type pulled from SolarPro project data. Tap a card above to change.
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  )}
+                </View>
+              )}
+              {/* ─────────────────────────────────────────────────── */}
+
               <GPSCapture
 
                 coordinates={location.coordinates}
@@ -1198,77 +1265,26 @@ export default function NewSurveyScreen() {
 
               />
 
-               <SolarMetadataForm
+              <SolarMetadataForm
 
-                 categoryId={categoryId}
+                categoryId={categoryId}
 
-                 metadata={metadata}
+                metadata={metadata}
 
-                 onChange={setMetadata}
+                onChange={setMetadata}
 
-               />
+              />
 
-               {/* ── Installation Type (Project Type) ────────────────────── */}
-               <View style={styles.section}>
-                 <Text style={styles.label}>
-                   Project Type
-                   {instTypeSource === 'auto' && <Text style={styles.autoBadge}> · Auto-detected</Text>}
-                 </Text>
-                 <View style={styles.installTypeGrid}>
-                   {[
-                     { id: 'roof_mount', label: 'Roof Mount', icon: '🏠' },
-                     { id: 'ground_mount', label: 'Ground Mount', icon: '⛰️' },
-                     { id: 'solar_fencing', label: 'Solar Fencing', icon: '🚜' },
-                   ].map(option => (
-                     <TouchableOpacity
-                       key={option.id}
-                       style={[
-                         styles.installTypeCard,
-                         categoryId === option.id && styles.installTypeCardSelected,
-                       ]}
-                       onPress={() => {
-                         setCategoryId(option.id);
-                         setInstTypeSource('manual');
-                       }}
-                     >
-                       <Text style={styles.installTypeIcon}>{option.icon}</Text>
-                       <Text style={[
-                         styles.installTypeLabel,
-                         categoryId === option.id && styles.installTypeLabelSelected,
-                       ]}>
-                         {option.label}
-                       </Text>
-                     </TouchableOpacity>
-                   ))}
-                 </View>
-                 {instTypeSource === 'auto' && (
-                   <Text style={styles.installTypeHint}>
-                     Auto-detected from project data. Tap to override.
-                   </Text>
-                 )}
-               </View>
-               {/* ───────────────────────────────────────────────────────── */}
+            </>
 
-             </>
-
-           )}
+          )}
 
 
 
           {currentStep === 2 && (
 
             <>
-              <ChecklistEditor
-                items={checklist}
-                onChange={setChecklist}
-                installationType={toInstallationTypeId(categoryId)}
-                installationTypeLoading={instTypeLoading}
-                installationTypeSource={instTypeSource}
-                onInstallationTypeChange={(nextType) => {
-                  setCategoryId(nextType);
-                  setInstTypeSource("manual");
-                }}
-              />
+              <ChecklistEditor items={checklist} onChange={setChecklist} />
 
               {!hasMinimumPhotos && (
                 <View style={styles.warningBanner}>
@@ -1448,14 +1464,7 @@ export default function NewSurveyScreen() {
                 </View>
               )}
 
-              {/* ── Generate Report Preview Button ────────────────────── */}
-              <TouchableOpacity
-                style={styles.reportPreviewBtn}
-                onPress={() => setReportPreviewVisible(true)}
-              >
-                <Text style={styles.reportPreviewBtnText}>📄 Preview SolarPro Report</Text>
-              </TouchableOpacity>
-              {/* ──────────────────────────────────────────────────────── */}
+
 
               <TouchableOpacity style={styles.editStepBtn} onPress={() => setCurrentStep(1)}>
 
@@ -1478,276 +1487,6 @@ export default function NewSurveyScreen() {
             </View>
 
           )}
-
-          {/* ── SolarPro Report Preview Modal ─────────────────────────── */}
-          <Modal
-            visible={reportPreviewVisible}
-            animationType="slide"
-            transparent={false}
-            onRequestClose={() => setReportPreviewVisible(false)}
-          >
-            <SafeAreaView style={styles.reportModalContainer}>
-              <View style={styles.reportModalHeader}>
-                <Text style={styles.reportModalTitle}>📋 SolarPro Report Preview</Text>
-                <TouchableOpacity onPress={() => setReportPreviewVisible(false)} hitSlop={10}>
-                  <Text style={styles.reportModalClose}>✕ Close</Text>
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView style={styles.reportModalScroll} contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: 16 }}>
-
-                {/* Header Block */}
-                <View style={styles.reportSection}>
-                  <View style={styles.reportSectionHeader}>
-                    <Text style={styles.reportSectionIcon}>🏢</Text>
-                    <Text style={styles.reportSectionTitle}>REPORT HEADER</Text>
-                  </View>
-                  <View style={styles.reportField}>
-                    <Text style={styles.reportFieldKey}>Project Name</Text>
-                    <Text style={styles.reportFieldVal}>{projectName || '—'}</Text>
-                  </View>
-                  <View style={styles.reportField}>
-                    <Text style={styles.reportFieldKey}>Site Address</Text>
-                    <Text style={styles.reportFieldVal}>{siteAddress || '—'}</Text>
-                  </View>
-                  <View style={styles.reportField}>
-                    <Text style={styles.reportFieldKey}>Inspector</Text>
-                    <Text style={styles.reportFieldVal}>{inspectorName || '—'}</Text>
-                  </View>
-                  <View style={styles.reportField}>
-                    <Text style={styles.reportFieldKey}>Survey Date</Text>
-                    <Text style={styles.reportFieldVal}>{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
-                  </View>
-                  <View style={styles.reportField}>
-                    <Text style={styles.reportFieldKey}>Installation Type</Text>
-                    <Text style={[styles.reportFieldVal, styles.reportFieldValHighlight]}>
-                      {categoryId === 'roof_mount' ? '🏠 Roof Mount' : categoryId === 'ground_mount' ? '⛰️ Ground Mount' : categoryId === 'solar_fencing' ? '🚜 Solar Fencing' : '—'}
-                    </Text>
-                  </View>
-                  {location.coordinates && (
-                    <View style={styles.reportField}>
-                      <Text style={styles.reportFieldKey}>GPS</Text>
-                      <Text style={styles.reportFieldVal}>
-                        {location.coordinates.latitude.toFixed(6)}, {location.coordinates.longitude.toFixed(6)}
-                        {location.coordinates.accuracy ? ` (±${Math.round(location.coordinates.accuracy)}m)` : ''}
-                      </Text>
-                    </View>
-                  )}
-                  <View style={styles.reportField}>
-                    <Text style={styles.reportFieldKey}>SolarPro Client</Text>
-                    <Text style={styles.reportFieldVal}>{selectedClientName || '—'}</Text>
-                  </View>
-                  <View style={styles.reportField}>
-                    <Text style={styles.reportFieldKey}>SolarPro Project ID</Text>
-                    <Text style={styles.reportFieldVal}>{selectedProjectId || solarproProjectId || '—'}</Text>
-                  </View>
-                </View>
-
-                {/* Survey Readiness */}
-                <View style={styles.reportSection}>
-                  <View style={styles.reportSectionHeader}>
-                    <Text style={styles.reportSectionIcon}>✅</Text>
-                    <Text style={styles.reportSectionTitle}>PIPELINE READINESS</Text>
-                  </View>
-                  <View style={styles.reportReadinessSummary}>
-                    <View style={[styles.reportReadinessBadge, hasMinimumPhotos ? styles.reportReadinessBadgePass : styles.reportReadinessBadgeFail]}>
-                      <Text style={styles.reportReadinessBadgeText}>
-                        {hasMinimumPhotos ? '✅ PIPELINE READY' : `⚠️ ${checklistPhotoCoverage.itemsMissingPhotos.length} ITEM(S) INCOMPLETE`}
-                      </Text>
-                    </View>
-                    <Text style={styles.reportReadinessSub}>
-                      {checklistPhotoCoverage.itemsWithPhotos}/{checklistPhotoCoverage.totalItems} checklist items with full photo evidence
-                    </Text>
-                  </View>
-                  <View style={styles.reportPipelineRow}>
-                    <Text style={styles.reportPipelineLabel}>SLD (Single Line Diagram)</Text>
-                    <Text style={[styles.reportPipelineStatus,
-                      checklistEvaluation.some(i => i.label === 'Electrical' && i.status === 'pass') ? styles.reportPipelineReady : styles.reportPipelineMissing
-                    ]}>
-                      {checklistEvaluation.some(i => i.label === 'Electrical' && i.status === 'pass') ? '✓ Data captured' : '✗ Needs electrical data'}
-                    </Text>
-                  </View>
-                  <View style={styles.reportPipelineRow}>
-                    <Text style={styles.reportPipelineLabel}>BOM (Bill of Materials)</Text>
-                    <Text style={[styles.reportPipelineStatus,
-                      checklistEvaluation.some(i => i.label.startsWith('Roof:') && i.status === 'pass') ? styles.reportPipelineReady : styles.reportPipelineMissing
-                    ]}>
-                      {checklistEvaluation.some(i => i.label.startsWith('Roof:') && i.status === 'pass') ? '✓ Roof data captured' : '✗ Needs roof data'}
-                    </Text>
-                  </View>
-                  <View style={styles.reportPipelineRow}>
-                    <Text style={styles.reportPipelineLabel}>CAD Site Layout</Text>
-                    <Text style={[styles.reportPipelineStatus,
-                      checklistEvaluation.some(i => i.label === 'Walk Around' && i.status === 'pass') ? styles.reportPipelineReady : styles.reportPipelineMissing
-                    ]}>
-                      {checklistEvaluation.some(i => i.label === 'Walk Around' && i.status === 'pass') ? '✓ Walk-around captured' : '✗ Needs walk-around'}
-                    </Text>
-                  </View>
-                  <View style={styles.reportPipelineRow}>
-                    <Text style={styles.reportPipelineLabel}>Permit Elevation</Text>
-                    <Text style={[styles.reportPipelineStatus,
-                      checklistEvaluation.some(i => i.label === 'Arrival: Address Verification' && i.status === 'pass') ? styles.reportPipelineReady : styles.reportPipelineMissing
-                    ]}>
-                      {checklistEvaluation.some(i => i.label === 'Arrival: Address Verification' && i.status === 'pass') ? '✓ Address verified' : '✗ Needs address verification'}
-                    </Text>
-                  </View>
-                  <View style={styles.reportPipelineRow}>
-                    <Text style={styles.reportPipelineLabel}>Interconnection Validation</Text>
-                    <Text style={[styles.reportPipelineStatus,
-                      checklistEvaluation.some(i => i.label === 'Utility: Service Entry' && i.status === 'pass') ? styles.reportPipelineReady : styles.reportPipelineMissing
-                    ]}>
-                      {checklistEvaluation.some(i => i.label === 'Utility: Service Entry' && i.status === 'pass') ? '✓ Service entry captured' : '✗ Needs service entry'}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Checklist Sections */}
-                {[
-                  { prefix: 'Arrival', icon: '📍', title: 'ARRIVAL & SITE VERIFICATION' },
-                  { prefix: 'Walk Around', icon: '🧭', title: 'WALK AROUND (CAD CONTEXT)' },
-                  { prefix: 'Utility', icon: '⚡', title: 'UTILITY SERVICE' },
-                  { prefix: 'Electrical', icon: '🔌', title: 'ELECTRICAL EQUIPMENT' },
-                  { prefix: 'Roof', icon: '🏠', title: 'ROOF & ARRAY ANALYSIS' },
-                ].map(({ prefix, icon, title }) => {
-                  const sectionItems = checklistEvaluation.filter(i =>
-                    prefix === 'Walk Around'
-                      ? i.label === 'Walk Around' || i.label === 'Walk Around: CAD Context Wide Shots'
-                      : prefix === 'Electrical'
-                      ? i.label === 'Electrical'
-                      : i.label.startsWith(prefix)
-                  );
-                  if (sectionItems.length === 0) return null;
-                  const sectionPass = sectionItems.every(i => i.status === 'pass');
-                  const totalPhotos = sectionItems.reduce((sum, i) => sum + i.capturedPhotoCount, 0);
-
-                  return (
-                    <View key={prefix} style={styles.reportSection}>
-                      <View style={styles.reportSectionHeader}>
-                        <Text style={styles.reportSectionIcon}>{icon}</Text>
-                        <Text style={styles.reportSectionTitle}>{title}</Text>
-                        <View style={[styles.reportSectionBadge, sectionPass ? styles.reportSectionBadgePass : styles.reportSectionBadgeFail]}>
-                          <Text style={styles.reportSectionBadgeText}>{sectionPass ? 'COMPLETE' : 'INCOMPLETE'}</Text>
-                        </View>
-                      </View>
-                      {sectionItems.map((item, i) => {
-                        const isPass = item.status === 'pass';
-                        // Get the raw checklist item to access slot labels
-                        const rawItem = checklist.find(c => c.label === item.label);
-                        const slots = rawItem?.photoSlots ?? [];
-                        const filledSlots = slots.filter(s => s.photo !== null);
-                        const videos = rawItem?.videos ?? [];
-                        return (
-                          <View key={i} style={styles.reportCheckItem}>
-                            <View style={styles.reportCheckItemHeader}>
-                              <Text style={[styles.reportCheckItemStatus, isPass ? styles.reportCheckItemStatusPass : styles.reportCheckItemStatusFail]}>
-                                {isPass ? '✓' : '✗'}
-                              </Text>
-                              <Text style={styles.reportCheckItemLabel}>{item.label}</Text>
-                            </View>
-                            {slots.length > 0 && (
-                              <View style={styles.reportSlotList}>
-                                {slots.map((slot) => (
-                                  <View key={slot.slotId} style={styles.reportSlotRow}>
-                                    <Text style={[styles.reportSlotDot, slot.photo !== null ? styles.reportSlotDotFilled : styles.reportSlotDotEmpty]}>
-                                      {slot.photo !== null ? '●' : '○'}
-                                    </Text>
-                                    <Text style={styles.reportSlotLabel}>{slot.label}</Text>
-                                    <Text style={[styles.reportSlotStatus, slot.photo !== null ? styles.reportSlotStatusFilled : styles.reportSlotStatusEmpty]}>
-                                      {slot.photo !== null ? 'Captured' : slot.isRequired ? 'MISSING' : 'Optional'}
-                                    </Text>
-                                  </View>
-                                ))}
-                              </View>
-                            )}
-                            {videos.length > 0 && (
-                              <View style={styles.reportSlotList}>
-                                {videos.map((v, vi) => (
-                                  <View key={vi} style={styles.reportSlotRow}>
-                                    <Text style={styles.reportSlotDotFilled}>🎥</Text>
-                                    <Text style={styles.reportSlotLabel}>{v.label || `Video ${vi + 1}`}</Text>
-                                    <Text style={styles.reportSlotStatusFilled}>
-                                      {v.durationMs ? `${Math.round(v.durationMs / 1000)}s` : 'Captured'}
-                                    </Text>
-                                  </View>
-                                ))}
-                              </View>
-                            )}
-                            {slots.length === 0 && videos.length === 0 && (
-                              <Text style={styles.reportCheckItemDetail}>
-                                {isPass ? `${item.capturedPhotoCount} photo(s) captured` : `Missing: ${item.missingPhotoCriteria.join(', ')}`}
-                              </Text>
-                            )}
-                            {item.notes?.trim() ? (
-                              <Text style={styles.reportCheckItemNotes}>📝 {item.notes}</Text>
-                            ) : null}
-                          </View>
-                        );
-                      })}
-                      <Text style={styles.reportSectionPhotoCount}>
-                        Total evidence for this section: {totalPhotos} photo{totalPhotos !== 1 ? 's' : ''}
-                      </Text>
-                    </View>
-                  );
-                })}
-
-                {/* Notes */}
-                {notes.trim() ? (
-                  <View style={styles.reportSection}>
-                    <View style={styles.reportSectionHeader}>
-                      <Text style={styles.reportSectionIcon}>📝</Text>
-                      <Text style={styles.reportSectionTitle}>INSPECTOR NOTES</Text>
-                    </View>
-                    <Text style={styles.reportNotesText}>{notes}</Text>
-                  </View>
-                ) : null}
-
-                {/* Photo Count Summary */}
-                <View style={styles.reportSection}>
-                  <View style={styles.reportSectionHeader}>
-                    <Text style={styles.reportSectionIcon}>📷</Text>
-                    <Text style={styles.reportSectionTitle}>PHOTO SUMMARY</Text>
-                  </View>
-                  <View style={styles.reportField}>
-                    <Text style={styles.reportFieldKey}>Overall Survey Photos</Text>
-                    <Text style={styles.reportFieldVal}>{photos.length}</Text>
-                  </View>
-                  <View style={styles.reportField}>
-                    <Text style={styles.reportFieldKey}>Checklist Evidence Photos</Text>
-                    <Text style={styles.reportFieldVal}>
-                      {checklist.reduce((sum, item) => {
-                        const slotPhotos = (item.photoSlots ?? []).filter(s => s.photo !== null).length;
-                        const freePhotos = item.photos?.length ?? 0;
-                        return sum + slotPhotos + freePhotos;
-                      }, 0)}
-                    </Text>
-                  </View>
-                  <View style={styles.reportField}>
-                    <Text style={styles.reportFieldKey}>CAD Videos (Walk Around)</Text>
-                    <Text style={styles.reportFieldVal}>
-                      {checklist.find(i => i.label === 'Walk Around: CAD Context Wide Shots')?.videos?.length ?? 0}
-                    </Text>
-                  </View>
-                  <View style={styles.reportField}>
-                    <Text style={styles.reportFieldKey}>Total Media Files</Text>
-                    <Text style={[styles.reportFieldVal, styles.reportFieldValHighlight]}>
-                      {photos.length + checklist.reduce((sum, item) => {
-                        const slotPhotos = (item.photoSlots ?? []).filter(s => s.photo !== null).length;
-                        const freePhotos = item.photos?.length ?? 0;
-                        const vids = item.videos?.length ?? 0;
-                        return sum + slotPhotos + freePhotos + vids;
-                      }, 0)}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.reportFooter}>
-                  This preview reflects the data that will be sent to SolarPro upon survey submission. Data is used for SLD, BOM, CAD, and Permit workflows.
-                </Text>
-
-              </ScrollView>
-            </SafeAreaView>
-          </Modal>
-          {/* ──────────────────────────────────────────────────────────── */}
 
 
 
@@ -2589,388 +2328,14 @@ const styles = StyleSheet.create({
 
   },
 
-   modalCloseText: {
+  modalCloseText: {
 
-     color: colors.primary,
+    color: colors.primary,
 
-     fontSize: 16,
+    fontSize: 16,
 
-     fontWeight: '700',
+    fontWeight: '700',
 
-   },
-
-   // ── Installation Type Selector (Step 1) ────────────────────────────
-   autoBadge: {
-     color: '#4ade80',
-     fontWeight: '700',
-     fontSize: 12,
-   },
-
-   installTypeGrid: {
-     flexDirection: 'row',
-     gap: 8,
-     marginBottom: 10,
-   },
-
-   installTypeCard: {
-     flex: 1,
-     borderWidth: 2,
-     borderColor: colors.inputBorder,
-     borderRadius: 10,
-     paddingVertical: 12,
-     paddingHorizontal: 8,
-     alignItems: 'center',
-     backgroundColor: colors.inputBg,
-   },
-
-   installTypeCardSelected: {
-     borderColor: colors.primary,
-     backgroundColor: '#10263f',
-   },
-
-   installTypeIcon: {
-     fontSize: 28,
-     marginBottom: 6,
-   },
-
-   installTypeLabel: {
-     color: colors.textSecondary,
-     fontSize: 12,
-     fontWeight: '700',
-     textAlign: 'center',
-   },
-
-   installTypeLabelSelected: {
-     color: colors.textPrimary,
-   },
-
-   installTypeHint: {
-     color: '#7eb5e8',
-     fontSize: 12,
-     fontWeight: '600',
-     marginTop: 8,
-   },
-
-   // ── Report Preview Button ──────────────────────────────────────────
-   reportPreviewBtn: {
-     backgroundColor: '#0e3054',
-     borderWidth: 1.5,
-     borderColor: '#2563eb',
-     borderRadius: 10,
-     paddingVertical: 14,
-     paddingHorizontal: 16,
-     alignItems: 'center',
-     marginBottom: 12,
-     marginTop: 4,
-   },
-
-   reportPreviewBtnText: {
-     color: '#93c5fd',
-     fontSize: 15,
-     fontWeight: '800',
-     letterSpacing: 0.3,
-   },
-
-   // ── Report Modal ───────────────────────────────────────────────────
-   reportModalContainer: {
-     flex: 1,
-     backgroundColor: '#050d1a',
-   },
-
-   reportModalHeader: {
-     flexDirection: 'row',
-     justifyContent: 'space-between',
-     alignItems: 'center',
-     paddingHorizontal: 16,
-     paddingVertical: 14,
-     borderBottomWidth: 1,
-     borderBottomColor: '#1e3a5f',
-     backgroundColor: '#081528',
-   },
-
-   reportModalTitle: {
-     fontSize: 17,
-     fontWeight: '800',
-     color: '#e2e8f0',
-   },
-
-   reportModalClose: {
-     color: '#60a5fa',
-     fontSize: 14,
-     fontWeight: '700',
-   },
-
-   reportModalScroll: {
-     flex: 1,
-   },
-
-   reportSection: {
-     backgroundColor: '#0d1f36',
-     borderWidth: 1,
-     borderColor: '#1e3a5f',
-     borderRadius: 10,
-     padding: 14,
-     marginBottom: 12,
-     marginTop: 8,
-   },
-
-   reportSectionHeader: {
-     flexDirection: 'row',
-     alignItems: 'center',
-     marginBottom: 10,
-     gap: 8,
-   },
-
-   reportSectionIcon: {
-     fontSize: 16,
-   },
-
-   reportSectionTitle: {
-     flex: 1,
-     fontSize: 12,
-     fontWeight: '800',
-     color: '#7eb5e8',
-     letterSpacing: 1,
-     textTransform: 'uppercase',
-   },
-
-   reportSectionBadge: {
-     paddingHorizontal: 8,
-     paddingVertical: 3,
-     borderRadius: 6,
-   },
-
-   reportSectionBadgePass: {
-     backgroundColor: 'rgba(74, 222, 128, 0.15)',
-     borderWidth: 1,
-     borderColor: '#166534',
-   },
-
-   reportSectionBadgeFail: {
-     backgroundColor: 'rgba(248, 113, 113, 0.15)',
-     borderWidth: 1,
-     borderColor: '#991b1b',
-   },
-
-   reportSectionBadgeText: {
-     fontSize: 9,
-     fontWeight: '800',
-     color: '#e2e8f0',
-     letterSpacing: 0.5,
-   },
-
-   reportField: {
-     flexDirection: 'row',
-     justifyContent: 'space-between',
-     alignItems: 'flex-start',
-     paddingVertical: 6,
-     borderBottomWidth: 1,
-     borderBottomColor: '#142035',
-   },
-
-   reportFieldKey: {
-     fontSize: 12,
-     fontWeight: '600',
-     color: '#64748b',
-     flex: 1,
-     paddingRight: 8,
-   },
-
-   reportFieldVal: {
-     fontSize: 13,
-     fontWeight: '700',
-     color: '#cbd5e1',
-     flex: 2,
-     textAlign: 'right',
-   },
-
-   reportFieldValHighlight: {
-     color: '#60a5fa',
-   },
-
-   reportReadinessSummary: {
-     alignItems: 'center',
-     paddingVertical: 8,
-     marginBottom: 10,
-   },
-
-   reportReadinessBadge: {
-     paddingHorizontal: 16,
-     paddingVertical: 8,
-     borderRadius: 20,
-     marginBottom: 6,
-   },
-
-   reportReadinessBadgePass: {
-     backgroundColor: 'rgba(74, 222, 128, 0.2)',
-     borderWidth: 1.5,
-     borderColor: '#16a34a',
-   },
-
-   reportReadinessBadgeFail: {
-     backgroundColor: 'rgba(250, 204, 21, 0.15)',
-     borderWidth: 1.5,
-     borderColor: '#b45309',
-   },
-
-   reportReadinessBadgeText: {
-     fontSize: 13,
-     fontWeight: '800',
-     color: '#e2e8f0',
-   },
-
-   reportReadinessSub: {
-     fontSize: 12,
-     color: '#64748b',
-     fontWeight: '600',
-   },
-
-   reportPipelineRow: {
-     flexDirection: 'row',
-     justifyContent: 'space-between',
-     alignItems: 'center',
-     paddingVertical: 5,
-     borderBottomWidth: 1,
-     borderBottomColor: '#142035',
-   },
-
-   reportPipelineLabel: {
-     fontSize: 12,
-     color: '#94a3b8',
-     fontWeight: '600',
-     flex: 1,
-   },
-
-   reportPipelineStatus: {
-     fontSize: 11,
-     fontWeight: '700',
-   },
-
-   reportPipelineReady: {
-     color: '#4ade80',
-   },
-
-   reportPipelineMissing: {
-     color: '#f87171',
-   },
-
-   reportCheckItem: {
-     marginBottom: 10,
-     paddingBottom: 10,
-     borderBottomWidth: 1,
-     borderBottomColor: '#142035',
-   },
-
-   reportCheckItemHeader: {
-     flexDirection: 'row',
-     alignItems: 'center',
-     gap: 8,
-     marginBottom: 4,
-   },
-
-   reportCheckItemStatus: {
-     fontSize: 16,
-     fontWeight: '800',
-     width: 22,
-   },
-
-   reportCheckItemStatusPass: {
-     color: '#4ade80',
-   },
-
-   reportCheckItemStatusFail: {
-     color: '#f87171',
-   },
-
-   reportCheckItemLabel: {
-     fontSize: 13,
-     fontWeight: '700',
-     color: '#cbd5e1',
-     flex: 1,
-   },
-
-   reportCheckItemDetail: {
-     fontSize: 11,
-     color: '#64748b',
-     marginLeft: 30,
-     fontWeight: '600',
-   },
-
-   reportCheckItemNotes: {
-     fontSize: 11,
-     color: '#7ea8d8',
-     marginLeft: 30,
-     marginTop: 4,
-     fontStyle: 'italic',
-   },
-
-   reportSlotList: {
-     marginLeft: 30,
-     marginTop: 4,
-     gap: 3,
-   },
-
-   reportSlotRow: {
-     flexDirection: 'row',
-     alignItems: 'center',
-     gap: 6,
-   },
-
-   reportSlotDot: {
-     fontSize: 12,
-     width: 16,
-   },
-
-   reportSlotDotFilled: {
-     color: '#4ade80',
-   },
-
-   reportSlotDotEmpty: {
-     color: '#64748b',
-   },
-
-   reportSlotLabel: {
-     fontSize: 11,
-     color: '#94a3b8',
-     flex: 1,
-     fontWeight: '600',
-   },
-
-   reportSlotStatus: {
-     fontSize: 10,
-     fontWeight: '700',
-   },
-
-   reportSlotStatusFilled: {
-     color: '#4ade80',
-   },
-
-   reportSlotStatusEmpty: {
-     color: '#f87171',
-   },
-
-   reportSectionPhotoCount: {
-     fontSize: 11,
-     color: '#475569',
-     fontWeight: '600',
-     marginTop: 6,
-     textAlign: 'right',
-   },
-
-   reportNotesText: {
-     fontSize: 13,
-     color: '#94a3b8',
-     lineHeight: 20,
-     fontStyle: 'italic',
-   },
-
-   reportFooter: {
-     fontSize: 11,
-     color: '#334155',
-     textAlign: 'center',
-     marginTop: 16,
-     lineHeight: 16,
-     fontWeight: '600',
-   },
+  },
 
 });
