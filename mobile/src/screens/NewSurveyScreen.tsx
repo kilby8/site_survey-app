@@ -1201,15 +1201,13 @@ export default function NewSurveyScreen() {
 
               />
 
-              <SolarMetadataForm
-
-                categoryId={categoryId}
-
-                metadata={metadata}
-
-                onChange={setMetadata}
-
-              />
+              {categoryId !== 'roof_mount' && (
+                <SolarMetadataForm
+                  categoryId={categoryId}
+                  metadata={metadata}
+                  onChange={setMetadata}
+                />
+              )}
 
             </>
 
