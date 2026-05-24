@@ -454,6 +454,20 @@ export async function uploadPhotos(
   let uploaded = 0;
   const uploadedPhotos: unknown[] = [];
 
+  // Helper to sanitize MIME type — allow valid image/video types only.
+  function sanitizeMimeType(mimeType: string | undefined): string {
+    if (!mimeType || typeof mimeType !== "string") return "application/octet-stream";
+    const trimmed = mimeType.trim();
+    // Only allow known media MIME types
+    if (trimmed.startsWith("image/") || trimmed.startsWith("video/")) {
+      const parts = trimmed.split("/");
+      if (parts.length === 2 && parts[1].length > 0) {
+        return trimmed;
+      }
+    }
+    return "application/octet-stream";
+  }
+
   for (let i = 0; i < photos.length; i += BATCH_SIZE) {
     const batch = photos.slice(i, i + BATCH_SIZE);
     const form = new FormData();
@@ -463,7 +477,7 @@ export async function uploadPhotos(
       // React Native FormData accepts an object with uri/type/name
       form.append("photos", {
         uri: photo.uri,
-        type: photo.mimeType ?? "image/jpeg",
+        type: sanitizeMimeType(photo.mimeType),
         name: photo.uri.split("/").pop() ?? "photo.jpg",
       } as unknown as Blob);
       labels.push(photo.label);

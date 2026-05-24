@@ -212,12 +212,12 @@ export function broadcastSurveyEvent(type: SseEventType, payload: unknown): void
 // ----------------------------------------------------------------
 // Multer â€” memory storage; storageClient handles final destination
 // ----------------------------------------------------------------
-// Only allow image MIME types
+// Allow image and video MIME types
 const imageFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
-  if (file.mimetype.startsWith("image/")) {
+  if (file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/")) {
     cb(null, true);
   } else {
-    cb(new Error("Only image files are allowed"));
+    cb(new Error("Only image and video files are allowed"));
   }
 };
 
@@ -2056,7 +2056,7 @@ router.put("/:id", async (req: Request, res: Response) => {
 /**
  * POST /api/surveys/:id/photos
  *
- * Accepts one or more image files as multipart/form-data.
+ * Accepts one or more media files (image/video) as multipart/form-data.
  * Field names: "photos" (multiple) or "photo" (single).
  * Optional body fields per file: label, captured_at
  */
@@ -2069,7 +2069,7 @@ router.post(
     ])(req, res, (err: unknown) => {
       if (err instanceof multer.MulterError) {
         if (err.code === "LIMIT_FILE_SIZE") {
-          res.status(413).json({ error: "Image exceeds 20MB limit" });
+          res.status(413).json({ error: "Media exceeds 20MB limit" });
           return;
         }
         res.status(400).json({ error: err.message });
@@ -2102,7 +2102,7 @@ router.post(
         ];
 
     if (!files || files.length === 0) {
-      res.status(400).json({ error: "No image files provided" });
+      res.status(400).json({ error: "No media files provided" });
       return;
     }
 
@@ -2153,7 +2153,7 @@ router.post(
           `INSERT INTO survey_photos
          (survey_id, filename, label, file_path, mime_type, captured_at, photo_data)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
+       RETURNING id, survey_id, filename, label, file_path, mime_type, captured_at, created_at`,
           [
             id,
             file.originalname,

@@ -55,11 +55,11 @@ if (!isS3Mode() && !fs.existsSync(UPLOADS_DIR)) {
 const upload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
+    if (file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/")) {
       cb(null, true);
       return;
     }
-    cb(new Error("Only image files are allowed"));
+    cb(new Error("Only image and video files are allowed"));
   },
   limits: {
     fileSize: 10 * 1024 * 1024,
