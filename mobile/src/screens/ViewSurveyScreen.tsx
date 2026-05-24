@@ -354,6 +354,14 @@ const PRIORITY_COLOR: Record<string, string> = {
   Low:    '#16a34a',
 };
 
+const PIPELINE_PHASES: Array<{ key: string; labels: string[] }> = [
+  { key: 'Arrival', labels: ['Arrival: Address Verification', 'Arrival: Attic Access', 'Arrival: Hazards Logged'] },
+  { key: 'Walkaround', labels: ['Walk Around', 'Walk Around: CAD Context Wide Shots'] },
+  { key: 'Utility', labels: ['Utility: Meter', 'Utility: Service Entry'] },
+  { key: 'Electrical', labels: ['Electrical'] },
+  { key: 'Roof', labels: ['Roof: Plane Pitch/Azimuth/Obstructions', 'Roof: Plane Material + Plane ID Association'] },
+];
+
 function ReportCard({
   survey,
   report,
@@ -390,13 +398,15 @@ function ReportCard({
     return acc;
   }, {});
 
-  const phaseStatus = [
-    { key: 'Arrival', labels: ['Arrival: Address Verification', 'Arrival: Attic Access', 'Arrival: Hazards Logged'] },
-    { key: 'Walkaround', labels: ['Walk Around', 'Walk Around: CAD Context Wide Shots'] },
-    { key: 'Utility', labels: ['Utility: Meter', 'Utility: Service Entry'] },
-    { key: 'Electrical', labels: ['Electrical'] },
-    { key: 'Roof', labels: ['Roof: Plane Pitch/Azimuth/Obstructions', 'Roof: Plane Material + Plane ID Association'] },
-  ].map((phase) => {
+  const [expandedPhases, setExpandedPhases] = useState<Record<string, boolean>>({
+    Arrival: true,
+    Walkaround: true,
+    Utility: true,
+    Electrical: true,
+    Roof: true,
+  });
+
+  const phaseStatus = PIPELINE_PHASES.map((phase) => {
     const items = survey.checklist.filter((item) => phase.labels.includes(item.label));
     const total = items.length;
     const pass = items.filter((item) => item.status === 'pass').length;
@@ -405,8 +415,22 @@ function ReportCard({
     return { ...phase, total, pass, fail, readiness };
   });
 
+  const togglePhase = (key: string) => {
+    setExpandedPhases((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   return (
     <View style={reportStyles.card}>
+      <View style={reportStyles.coverCard}>
+        <Text style={reportStyles.coverKicker}>SOLARPRO</Text>
+        <Text style={reportStyles.coverTitle}>Site Survey Design Report</Text>
+        <Text style={reportStyles.coverSub}>CAD / Permit / Engineering Ready Packet</Text>
+        <View style={reportStyles.coverMetaRow}>
+          <Text style={reportStyles.coverMeta}>Survey ID: {report.survey_id.slice(0, 8).toUpperCase()}</Text>
+          <Text style={reportStyles.coverMeta}>Category: {report.category ?? 'Unspecified'}</Text>
+        </View>
+      </View>
+
       {/* Header */}
       <View style={reportStyles.header}>
         <Text style={reportStyles.title}>📊 Comprehensive Design Report</Text>
@@ -493,18 +517,40 @@ function ReportCard({
       )}
 
       <View style={reportStyles.section}>
-        <Text style={reportStyles.sectionTitle}>Checklist Evidence Matrix</Text>
-        {survey.checklist.map((item) => {
-          const evidenceCount = mediaByLabel[item.label] ?? 0;
-          const statusColor = PRIORITY_COLOR[item.status === 'fail' ? 'High' : item.status === 'pending' ? 'Medium' : 'Low'] ?? '#6b7280';
+        <Text style={reportStyles.sectionTitle}>Checklist Evidence Matrix by Phase</Text>
+        {phaseStatus.map((phase) => {
+          const phaseItems = survey.checklist.filter((item) => phase.labels.includes(item.label));
+          if (phaseItems.length === 0) return null;
+
           return (
-            <View key={item.id} style={reportStyles.matrixRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={reportStyles.matrixLabel}>{item.label}</Text>
-                {!!item.notes && <Text style={reportStyles.matrixNotes}>{item.notes}</Text>}
-              </View>
-              <Text style={[reportStyles.matrixStatus, { color: statusColor }]}>{item.status.toUpperCase()}</Text>
-              <Text style={reportStyles.matrixEvidence}>{evidenceCount} media</Text>
+            <View key={phase.key} style={reportStyles.phaseCard}>
+              <TouchableOpacity style={reportStyles.phaseHeader} onPress={() => togglePhase(phase.key)}>
+                <Text style={reportStyles.phaseTitle}>{phase.key}</Text>
+                <View style={reportStyles.phaseHeaderRight}>
+                  <Text style={[
+                    reportStyles.pipelineBadge,
+                    phase.readiness === 'LIVE' ? reportStyles.pipelineLive : phase.readiness === 'PARTIAL' ? reportStyles.pipelinePartial : reportStyles.pipelineNotWired,
+                  ]}>
+                    {phase.readiness}
+                  </Text>
+                  <Text style={reportStyles.phaseChevron}>{expandedPhases[phase.key] ? '▾' : '▸'}</Text>
+                </View>
+              </TouchableOpacity>
+
+              {expandedPhases[phase.key] && phaseItems.map((item) => {
+                const evidenceCount = mediaByLabel[item.label] ?? 0;
+                const statusColor = PRIORITY_COLOR[item.status === 'fail' ? 'High' : item.status === 'pending' ? 'Medium' : 'Low'] ?? '#6b7280';
+                return (
+                  <View key={item.id} style={reportStyles.matrixRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={reportStyles.matrixLabel}>{item.label}</Text>
+                      {!!item.notes && <Text style={reportStyles.matrixNotes}>{item.notes}</Text>}
+                    </View>
+                    <Text style={[reportStyles.matrixStatus, { color: statusColor }]}>{item.status.toUpperCase()}</Text>
+                    <Text style={reportStyles.matrixEvidence}>{evidenceCount} media</Text>
+                  </View>
+                );
+              })}
             </View>
           );
         })}
@@ -694,6 +740,19 @@ const reportStyles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 12,
   },
+  coverCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: '#0f172a',
+    padding: 12,
+    marginBottom: 12,
+  },
+  coverKicker: { color: '#93c5fd', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  coverTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '800', marginTop: 4 },
+  coverSub: { color: '#cbd5e1', fontSize: 12, marginTop: 2 },
+  coverMetaRow: { marginTop: 10, gap: 2 },
+  coverMeta: { color: '#94a3b8', fontSize: 11, fontWeight: '600' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -769,6 +828,27 @@ const reportStyles = StyleSheet.create({
     borderBottomColor: colors.border,
     gap: 8,
   },
+  phaseCard: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    marginBottom: 8,
+    overflow: 'hidden',
+    backgroundColor: colors.card,
+  },
+  phaseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: colors.inputBg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  phaseTitle: { color: colors.textPrimary, fontWeight: '700', fontSize: 13 },
+  phaseHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  phaseChevron: { color: colors.textMuted, fontSize: 16, fontWeight: '700' },
   matrixLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '700' },
   matrixNotes: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
   matrixStatus: { width: 68, textAlign: 'right', fontSize: 11, fontWeight: '800' },
