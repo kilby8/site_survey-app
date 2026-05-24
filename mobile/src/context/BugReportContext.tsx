@@ -85,6 +85,9 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
         title: reportTitle,
         description: note.trim(),
         metadata: {
+          source: 'APP',
+          source_tag: 'APP',
+          origin: 'site-survey-app',
           route: pathname,
           appVersion: getAppVersionLabel(),
           deviceName: Device.modelName ?? null,

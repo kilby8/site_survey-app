@@ -2,6 +2,7 @@ import path from "path";
 import { Router, Request, Response } from "express";
 import multer from "multer";
 import nodemailer from "nodemailer";
+import jwt from "jsonwebtoken";
 import { pool } from "../database";
 import { uploadFile } from "../utils/storageClient";
 
@@ -38,6 +39,114 @@ function readBugReportMailerConfig() {
   const requireTls = (process.env.SMTP_USE_TLS || "true").trim().toLowerCase() === "true";
 
   return { host, port, user, pass, sender, requireTls };
+}
+
+function getSolarProUrl(): string {
+  return (process.env.SOLARPRO_API_URL ?? "").trim().replace(/\/$/, "");
+}
+
+function mintServiceJwt(userEmail: string): string | null {
+  const secret = (process.env.SOLARPRO_HANDOFF_SECRET ?? "").trim();
+  if (!secret || secret.length < 32) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  return jwt.sign(
+    {
+      email: userEmail.trim().toLowerCase(),
+      iat: now,
+      exp: now + 300,
+    },
+    secret,
+    { algorithm: "HS256", noTimestamp: true },
+  );
+}
+
+function getSolarProAuthCandidates(userEmail: string): string[] {
+  const candidates = [
+    (process.env.MOBILE_SERVICE_API_KEY ?? "").trim(),
+    (process.env.SOLARPRO_API_KEY ?? "").trim(),
+    (process.env.PARTNER_API_KEY ?? "").trim(),
+    mintServiceJwt(userEmail) ?? "",
+  ].filter((value): value is string => Boolean(value));
+
+  return Array.from(new Set(candidates));
+}
+
+async function forwardBugReportToSolarPro(payload: {
+  id: string;
+  reporterEmail: string;
+  title: string | null;
+  description: string | null;
+  screenshotPath: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}): Promise<boolean> {
+  const solarProUrl = getSolarProUrl();
+  if (!solarProUrl) return false;
+
+  const authCandidates = getSolarProAuthCandidates(payload.reporterEmail);
+  if (authCandidates.length === 0) return false;
+
+  const paths = ["/api/bug-reports", "/api/mobile/bug-reports"];
+  const upstreamBody = {
+    source: "APP",
+    source_tag: "APP",
+    bug_report_id: payload.id,
+    reporter_email: payload.reporterEmail,
+    title: payload.title,
+    description: payload.description,
+    screenshot_path: payload.screenshotPath,
+    created_at: payload.createdAt,
+    metadata: {
+      ...payload.metadata,
+      source: "APP",
+      source_tag: "APP",
+      origin: "site-survey-app",
+    },
+  };
+
+  for (const routePath of paths) {
+    for (const token of authCandidates) {
+      const headerSets: Array<Record<string, string>> = [
+        {
+          Authorization: `Bearer ${token}`,
+          "X-Mobile-User-Email": payload.reporterEmail,
+          "X-Source-System": "APP",
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        {
+          "x-api-key": token,
+          "X-Mobile-User-Email": payload.reporterEmail,
+          "X-Source-System": "APP",
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+      ];
+
+      for (const headers of headerSets) {
+        try {
+          const response = await fetch(`${solarProUrl}${routePath}`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(upstreamBody),
+            signal: AbortSignal.timeout(8_000),
+          });
+
+          if (response.ok) return true;
+
+          if (response.status === 404) {
+            // Endpoint may differ between SolarPro deployments; try the next path.
+            break;
+          }
+        } catch {
+          // Try the next auth strategy/path combination.
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 async function sendBugReportAdminEmail(payload: {
@@ -245,6 +354,12 @@ router.post("/", (req: Request, res: Response) => {
         }
       }
 
+      const metadataWithSourceTag = {
+        ...metadata,
+        source: "APP",
+        source_tag: "APP",
+      };
+
       const { rows } = await pool.query<{
         id: string;
         screenshot_path: string;
@@ -260,11 +375,13 @@ router.post("/", (req: Request, res: Response) => {
           title || null,
           description || null,
           screenshotPath,
-          JSON.stringify(metadata),
+          JSON.stringify(metadataWithSourceTag),
         ],
       );
 
       const created = rows[0];
+
+      const normalizedReporterEmail = cleanEmail(req.authUser?.email);
 
       await sendBugReportAdminEmail({
         id: created.id,
@@ -272,16 +389,30 @@ router.post("/", (req: Request, res: Response) => {
         title: title || null,
         description: description || null,
         screenshotPath: created.screenshot_path,
-        metadata,
+        metadata: metadataWithSourceTag,
         createdAt: created.created_at,
       }).catch((mailErr) => {
         console.error("Bug report admin email failed:", mailErr);
       });
 
+      const forwardedToSolarPro = normalizedReporterEmail
+        ? await forwardBugReportToSolarPro({
+            id: created.id,
+            reporterEmail: normalizedReporterEmail,
+            title: title || null,
+            description: description || null,
+            screenshotPath: created.screenshot_path,
+            metadata: metadataWithSourceTag,
+            createdAt: created.created_at,
+          })
+        : false;
+
       res.status(201).json({
         id: created.id,
         screenshot_path: created.screenshot_path,
         created_at: created.created_at,
+        source_tag: "APP",
+        solarpro_forwarded: forwardedToSolarPro,
       });
     } catch (error) {
       console.error("POST /api/bug-reports error:", error);
