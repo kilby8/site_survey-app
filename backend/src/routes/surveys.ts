@@ -1424,7 +1424,7 @@ router.get("/admin/surveys", async (req: Request, res: Response) => {
          s.created_at,
          s.updated_at,
          (SELECT COUNT(*)::int FROM checklist_items c WHERE c.survey_id = s.id) AS checklist_count,
-         (SELECT COUNT(*)::int FROM survey_photos p WHERE p.survey_id = s.id) AS photo_count
+         (SELECT COUNT(*)::int FROM survey_photos   p WHERE p.survey_id = s.id) AS photo_count
        FROM surveys s
        ${where}
        ORDER BY s.updated_at DESC
@@ -1489,6 +1489,7 @@ router.get("/", async (req: Request, res: Response) => {
          s.site_address,
          s.latitude,
          s.longitude,
+         s.gps_accuracy,
          s.survey_date,
          s.status,
          s.notes,
@@ -1796,16 +1797,18 @@ router.post("/", async (req: Request, res: Response) => {
     return;
   }
 
-  if (
-    !body.project_name?.trim() ||
-    !body.inspector_name?.trim() ||
-    !body.site_name?.trim()
-  ) {
+  if (!body.project_name?.trim() || !body.inspector_name?.trim()) {
     res.status(400).json({
-      error: "project_name, inspector_name, and site_name are required",
+      error: "project_name and inspector_name are required",
     });
     return;
   }
+
+  // site_name is legacy; derive it when the client no longer captures it explicitly.
+  const resolvedSiteName =
+    body.site_name?.trim() ||
+    body.site_address?.trim() ||
+    body.project_name.trim();
 
   const client = await pool.connect();
   try {
@@ -1840,7 +1843,7 @@ router.post("/", async (req: Request, res: Response) => {
       normalizedCategoryId,
       normalizedCategoryName,
       body.inspector_name.trim(),
-      body.site_name.trim(),
+      resolvedSiteName,
       body.site_address ?? null,
       coords?.lat ?? null, // $9  â€” latitude  column
       coords?.lon ?? null, // $10 â€” longitude column
