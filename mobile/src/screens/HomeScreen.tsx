@@ -186,7 +186,10 @@ export default function HomeScreen() {
       {/* Toolbar */}
       <View style={styles.toolbar}>
         <View style={styles.titleBlock}>
-          <Text style={styles.title}>Solar-Pro Site Survey</Text>
+          <Text style={styles.title}>
+            Solar-Pro Site Survey
+            <Text style={styles.hiddenTitleTag}> Phillippians 4:13</Text>
+          </Text>
           <Text style={styles.subtitle}>
             {surveys.length} total · {sync.unsyncedCount} unsynced
           </Text>
@@ -308,6 +311,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   title: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5, textAlign: 'center' },
+  hiddenTitleTag: {
+    fontSize: 6,
+    opacity: 0.08,
+    color: colors.textPrimary,
+  },
   subtitle: { marginTop: 2, fontSize: 12, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
   versionBadge: {
     marginTop: 6,
