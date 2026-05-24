@@ -553,6 +553,31 @@ export async function completeSurvey(surveyId: string): Promise<{
   return handleResponse<{ survey_id: string; status: string; event_id: string }>(res);
 }
 
+/**
+ * DELETE /api/surveys/:id
+ * Deletes a synced survey from the backend.
+ */
+export async function deleteRemoteSurvey(surveyId: string): Promise<void> {
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithAuthRetry(`/api/surveys/${surveyId}`, {
+    method: "DELETE",
+    headers: authHeaders,
+  });
+
+  if (res.ok) return;
+
+  let message = `HTTP ${res.status}`;
+  try {
+    const body = (await res.json()) as { error?: string; message?: string };
+    if (body.message) message = body.message;
+    else if (body.error) message = body.error;
+  } catch {
+    // ignore JSON parse issues for empty/HTML error responses
+  }
+
+  throw new Error(message);
+}
+
 // ----------------------------------------------------------------
 // Engineering Report
 // ----------------------------------------------------------------

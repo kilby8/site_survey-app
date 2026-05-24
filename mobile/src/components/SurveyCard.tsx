@@ -5,7 +5,7 @@
  * Shows project name, site, date, category, GPS indicator and sync badge.
  */
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import type { Survey } from '../types';
 import { solarProTheme } from '../theme/solarProTheme';
 
@@ -17,6 +17,9 @@ interface Props {
     photo_count?:     number;
   };
   onPress: () => void;
+  onDelete?: () => void;
+  deleteDisabled?: boolean;
+  deleting?: boolean;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -39,7 +42,7 @@ const SYNC_LABELS: Record<string, string> = {
   error:   '✗ Error',
 };
 
-export default function SurveyCard({ survey, onPress }: Props) {
+export default function SurveyCard({ survey, onPress, onDelete, deleteDisabled = false, deleting = false }: Props) {
   const date       = new Date(survey.survey_date).toLocaleDateString(undefined, {
     year: 'numeric', month: 'short', day: 'numeric',
   });
@@ -49,53 +52,67 @@ export default function SurveyCard({ survey, onPress }: Props) {
   const syncLabel   = SYNC_LABELS[survey.sync_status] ?? survey.sync_status;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
-      {/* Header row */}
-      <View style={styles.headerRow}>
-        <Text style={styles.projectName} numberOfLines={1}>
-          {survey.project_name}
-        </Text>
-        <View style={[styles.badge, { backgroundColor: statusColor }]}>
-          <Text style={styles.badgeText}>{survey.status}</Text>
+    <View style={styles.card}>
+      <TouchableOpacity style={styles.cardPressArea} onPress={onPress} activeOpacity={0.8}>
+        {/* Header row */}
+        <View style={styles.headerRow}>
+          <Text style={styles.projectName} numberOfLines={1}>
+            {survey.project_name}
+          </Text>
+          <View style={[styles.badge, { backgroundColor: statusColor }]}>
+            <Text style={styles.badgeText}>{survey.status}</Text>
+          </View>
         </View>
-      </View>
 
-      {/* Site name */}
-      <Text style={styles.siteName} numberOfLines={1}>
-        📍 {survey.site_name}
-      </Text>
-
-      {/* Address */}
-      {!!survey.site_address && (
-        <Text style={styles.address} numberOfLines={1}>
-          {survey.site_address}
+        {/* Site name */}
+        <Text style={styles.siteName} numberOfLines={1}>
+          📍 {survey.site_name}
         </Text>
+
+        {/* Address */}
+        {!!survey.site_address && (
+          <Text style={styles.address} numberOfLines={1}>
+            {survey.site_address}
+          </Text>
+        )}
+
+        {/* Meta row */}
+        <View style={styles.metaRow}>
+          <Text style={styles.meta}>👤 {survey.inspector_name}</Text>
+          <Text style={styles.meta}>📅 {date}</Text>
+        </View>
+
+        {/* Footer row */}
+        <View style={styles.footerRow}>
+          {hasGps && (
+            <Text style={styles.gpsTag}>🛰 GPS</Text>
+          )}
+          {typeof survey.checklist_count === 'number' && (
+            <Text style={styles.meta}>✅ {survey.checklist_count} items</Text>
+          )}
+          {typeof survey.photo_count === 'number' && survey.photo_count > 0 && (
+            <Text style={styles.meta}>📷 {survey.photo_count}</Text>
+          )}
+        </View>
+
+        {/* Sync status badge */}
+        <View style={[styles.syncBadge, { backgroundColor: syncColor }]}>
+          <Text style={styles.syncText}>{syncLabel}</Text>
+        </View>
+      </TouchableOpacity>
+
+      {!!onDelete && (
+        <TouchableOpacity
+          style={[styles.deleteButton, (deleteDisabled || deleting) && styles.deleteButtonDisabled]}
+          onPress={onDelete}
+          disabled={deleteDisabled || deleting}
+        >
+          {deleting
+            ? <ActivityIndicator size="small" color="#ffffff" />
+            : <Text style={styles.deleteButtonText}>🗑 Delete</Text>}
+        </TouchableOpacity>
       )}
-
-      {/* Meta row */}
-      <View style={styles.metaRow}>
-        <Text style={styles.meta}>👤 {survey.inspector_name}</Text>
-        <Text style={styles.meta}>📅 {date}</Text>
-      </View>
-
-      {/* Footer row */}
-      <View style={styles.footerRow}>
-        {hasGps && (
-          <Text style={styles.gpsTag}>🛰 GPS</Text>
-        )}
-        {typeof survey.checklist_count === 'number' && (
-          <Text style={styles.meta}>✅ {survey.checklist_count} items</Text>
-        )}
-        {typeof survey.photo_count === 'number' && survey.photo_count > 0 && (
-          <Text style={styles.meta}>📷 {survey.photo_count}</Text>
-        )}
-      </View>
-
-      {/* Sync status badge */}
-      <View style={[styles.syncBadge, { backgroundColor: syncColor }]}>
-        <Text style={styles.syncText}>{syncLabel}</Text>
-      </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -115,6 +132,9 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: colors.primary,
     position:        'relative',
+  },
+  cardPressArea: {
+    width: '100%',
   },
   headerRow: {
     flexDirection:   'row',
@@ -174,7 +194,7 @@ const styles = StyleSheet.create({
   syncBadge: {
     position:          'absolute',
     top:               12,
-    right:             60,
+    right:             12,
     paddingHorizontal:  7,
     paddingVertical:    2,
     borderRadius:       8,
@@ -183,5 +203,22 @@ const styles = StyleSheet.create({
     color:     '#ffffff',
     fontSize:  10,
     fontWeight:'700',
+  },
+  deleteButton: {
+    marginTop: 12,
+    alignSelf: 'flex-end',
+    backgroundColor: '#b91c1c',
+    borderRadius: 10,
+    minHeight: 34,
+    minWidth: 108,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteButtonDisabled: { opacity: 0.6 },
+  deleteButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

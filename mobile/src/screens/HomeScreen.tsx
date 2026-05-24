@@ -21,6 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import type { Survey } from '../types';
 import { getAllSurveys, deleteSurvey, deleteUnsyncedSurveys } from '../database/surveyDb';
+import { deleteRemoteSurvey } from '../api/client';
 import { useSyncManager } from '../hooks/useSyncManager';
 import SyncStatusBar       from '../components/SyncStatusBar';
 import SurveyCard          from '../components/SurveyCard';
@@ -30,16 +31,18 @@ import { useBugReport } from '../context/BugReportContext';
 import { solarProTheme }   from '../theme/solarProTheme';
 
 const { colors } = solarProTheme;
+type SurveyListItem = Omit<Survey, 'checklist' | 'photos'>;
 
 export default function HomeScreen() {
   const router = useRouter();
   const { ready: dbReady } = useAppBootstrap();
   const { signOut } = useAuth();
   const { openBugReport, reportingBug } = useBugReport();
-  const [surveys,      setSurveys]      = useState<Omit<Survey, 'checklist' | 'photos'>[]>([]);
+  const [surveys,      setSurveys]      = useState<SurveyListItem[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
   const [deleting,     setDeleting]     = useState(false);
+  const [deletingSurveyId, setDeletingSurveyId] = useState<string | null>(null);
   const [clearingUnsynced, setClearingUnsynced] = useState(false);
 
   const sync = useSyncManager(dbReady);
@@ -133,6 +136,49 @@ export default function HomeScreen() {
       ],
     );
   }, [clearingUnsynced, loadSurveys, sync]);
+
+  const handleDeleteSurvey = useCallback((survey: SurveyListItem) => {
+    if (deletingSurveyId) return;
+
+    const deletingSynced = survey.sync_status === 'synced';
+    const warning = deletingSynced
+      ? 'This survey is synced. It will be deleted from both app and server.'
+      : 'This will permanently delete this local survey.';
+
+    Alert.alert(
+      'Delete Survey',
+      warning,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingSurveyId(survey.id);
+            try {
+              if (deletingSynced) {
+                if (!sync.isOnline) {
+                  throw new Error('Connect to the internet to delete synced surveys.');
+                }
+                await deleteRemoteSurvey(survey.id);
+              }
+
+              await deleteSurvey(survey.id);
+              await loadSurveys();
+              await sync.refreshStatus();
+            } catch (err) {
+              Alert.alert(
+                'Delete Failed',
+                err instanceof Error ? err.message : 'Could not delete this survey.',
+              );
+            } finally {
+              setDeletingSurveyId(null);
+            }
+          },
+        },
+      ],
+    );
+  }, [deletingSurveyId, loadSurveys, sync]);
 
   const versionLabel = useMemo(() => {
     const installedVersion = nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'unknown';
@@ -262,6 +308,9 @@ export default function HomeScreen() {
           <SurveyCard
             survey={item}
             onPress={() => router.push({ pathname: '/survey/[id]', params: { id: item.id } })}
+            onDelete={() => handleDeleteSurvey(item)}
+            deleting={deletingSurveyId === item.id}
+            deleteDisabled={!!deletingSurveyId}
           />
         )}
       />
