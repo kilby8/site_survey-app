@@ -415,6 +415,18 @@ function ReportCard({
     return { ...phase, total, pass, fail, readiness };
   });
 
+  const hardBlockerCount = report.flags.filter((f) => f.priority === 'High').length;
+  const isCadReady = hardBlockerCount === 0 && cs.fail === 0 && cs.pending === 0;
+  const verdictLabel = isCadReady ? 'READY FOR CAD' : 'NEEDS REVISIT';
+  const verdictToneStyle = isCadReady ? reportStyles.verdictReady : reportStyles.verdictRevisit;
+  const verdictReasons = isCadReady
+    ? ['No High-priority design flags', 'Checklist has no FAIL or PENDING items', 'Pipeline phases show deployable readiness']
+    : [
+        hardBlockerCount > 0 ? `${hardBlockerCount} High-priority design flag(s) require engineering resolution` : null,
+        cs.fail > 0 ? `${cs.fail} checklist item(s) are marked FAIL` : null,
+        cs.pending > 0 ? `${cs.pending} checklist item(s) are still PENDING` : null,
+      ].filter((reason): reason is string => Boolean(reason));
+
   const togglePhase = (key: string) => {
     setExpandedPhases((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -453,6 +465,13 @@ function ReportCard({
         <Text style={[reportStyles.riskText, { color: riskColor }]}>
           Overall Risk: {report.overall_risk}
         </Text>
+      </View>
+
+      <View style={[reportStyles.verdictCard, verdictToneStyle]}>
+        <Text style={reportStyles.verdictLabel}>Final Verdict: {verdictLabel}</Text>
+        {verdictReasons.map((reason, idx) => (
+          <Text key={`${reason}-${idx}`} style={reportStyles.verdictReason}>• {reason}</Text>
+        ))}
       </View>
 
       <View style={reportStyles.section}>
@@ -574,6 +593,22 @@ function ReportCard({
       >
         <Text style={reportStyles.deleteBtnText}>🗑 Delete Report</Text>
       </TouchableOpacity>
+
+      <View style={reportStyles.approvalCard}>
+        <Text style={reportStyles.approvalTitle}>Approval & Sign-Off</Text>
+        <View style={reportStyles.approvalRow}>
+          <Text style={reportStyles.approvalLabel}>Inspector</Text>
+          <Text style={reportStyles.approvalValue}>{report.inspector_name}</Text>
+        </View>
+        <View style={reportStyles.approvalRow}>
+          <Text style={reportStyles.approvalLabel}>Generated</Text>
+          <Text style={reportStyles.approvalValue}>{generatedAt}</Text>
+        </View>
+        <View style={reportStyles.signatureLineWrap}>
+          <View style={reportStyles.signatureLine} />
+          <Text style={reportStyles.signatureCaption}>Design Reviewer Signature</Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -779,6 +814,31 @@ const reportStyles = StyleSheet.create({
     marginBottom: 10,
   },
   riskText: { fontSize: 13, fontWeight: '700' },
+  verdictCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 10,
+    marginBottom: 10,
+  },
+  verdictReady: {
+    borderColor: '#166534',
+    backgroundColor: '#052e16',
+  },
+  verdictRevisit: {
+    borderColor: '#991b1b',
+    backgroundColor: '#3f1d1d',
+  },
+  verdictLabel: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  verdictReason: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    lineHeight: 18,
+  },
   section: { marginTop: 8 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
   flagRow: {
@@ -874,4 +934,31 @@ const reportStyles = StyleSheet.create({
     alignItems: 'center',
   },
   deleteBtnText: { color: colors.errorText, fontWeight: '700', fontSize: 14 },
+  approvalCard: {
+    marginTop: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    backgroundColor: colors.inputBg,
+    padding: 12,
+  },
+  approvalTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '800', marginBottom: 8 },
+  approvalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  approvalLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
+  approvalValue: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  signatureLineWrap: {
+    marginTop: 14,
+  },
+  signatureLine: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.textMuted,
+    height: 20,
+    marginBottom: 6,
+  },
+  signatureCaption: { color: colors.textMuted, fontSize: 11 },
 });
