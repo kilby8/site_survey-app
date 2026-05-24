@@ -41,7 +41,6 @@ export default function HomeScreen() {
   const [surveys,      setSurveys]      = useState<SurveyListItem[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
-  const [deleting,     setDeleting]     = useState(false);
   const [deletingSurveyId, setDeletingSurveyId] = useState<string | null>(null);
   const [clearingUnsynced, setClearingUnsynced] = useState(false);
 
@@ -74,36 +73,6 @@ export default function HomeScreen() {
       loadSurveys();
     }, [loadSurveys])
   );
-
-  const handleDeleteAllSurveys = useCallback(() => {
-    if (surveys.length === 0 || deleting) return;
-
-    Alert.alert(
-      'Delete All Surveys',
-      `This will permanently delete ${surveys.length} local survey${surveys.length !== 1 ? 's' : ''}.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeleting(true);
-            try {
-              await Promise.all(surveys.map((s) => deleteSurvey(s.id)));
-              await loadSurveys();
-            } catch (err) {
-              Alert.alert(
-                'Delete Failed',
-                err instanceof Error ? err.message : 'Could not delete surveys.',
-              );
-            } finally {
-              setDeleting(false);
-            }
-          },
-        },
-      ],
-    );
-  }, [deleting, loadSurveys, surveys]);
 
   const handleClearUnsynced = useCallback(() => {
     if (sync.unsyncedCount === 0 || clearingUnsynced) return;
@@ -235,12 +204,6 @@ export default function HomeScreen() {
             }
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.mapBtn}
-            onPress={() => router.push('/map')}
-          >
-            <Text style={styles.mapBtnText}>🗺 Map</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={[styles.bugBtn, reportingBug && styles.bugBtnDisabled]}
             onPress={() => {
               openBugReport({
@@ -267,16 +230,6 @@ export default function HomeScreen() {
             {clearingUnsynced
               ? <ActivityIndicator size="small" color={colors.white} />
               : <Text style={styles.clearUnsyncedBtnText}>🧹 Clear Unsynced</Text>
-            }
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.deleteBtn, (deleting || surveys.length === 0) && styles.deleteBtnDisabled]}
-            onPress={handleDeleteAllSurveys}
-            disabled={deleting || surveys.length === 0}
-          >
-            {deleting
-              ? <ActivityIndicator size="small" color={colors.white} />
-              : <Text style={styles.deleteBtnText}>🗑 Delete</Text>
             }
           </TouchableOpacity>
           <TouchableOpacity style={styles.logoutBtn} onPress={() => { signOut().catch(console.error); }}>
@@ -367,17 +320,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     overflow: 'hidden',
   },
-  mapBtn: {
-    backgroundColor: colors.inputBg,
-    borderColor: colors.inputBorder,
-    borderWidth: 1,
-    borderRadius: 10,
-    minHeight: 38,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mapBtnText: { color: colors.textPrimary, fontWeight: '700', fontSize: 13 },
   resyncBtn: {
     backgroundColor: colors.primary,
     paddingHorizontal: 12,
@@ -389,15 +331,6 @@ const styles = StyleSheet.create({
   },
   resyncBtnDisabled: { opacity: 0.6 },
   resyncBtnText: { color: colors.white, fontWeight: '700', fontSize: 13 },
-  deleteBtn: {
-    backgroundColor: colors.errorText,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    minHeight: 38,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   clearUnsyncedBtn: {
     backgroundColor: '#b45309',
     paddingHorizontal: 12,
@@ -420,8 +353,6 @@ const styles = StyleSheet.create({
   },
   bugBtnDisabled: { opacity: 0.6 },
   bugBtnText: { color: colors.white, fontWeight: '700', fontSize: 13 },
-  deleteBtnDisabled: { opacity: 0.6 },
-  deleteBtnText: { color: colors.white, fontWeight: '700', fontSize: 13 },
   logoutBtn: {
     backgroundColor: colors.inputBg,
     borderColor: colors.inputBorder,
