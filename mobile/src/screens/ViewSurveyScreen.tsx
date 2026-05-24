@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import type { Survey } from '../types';
 import { getSurveyById } from '../database/surveyDb';
 import { syncPending, isOnline } from '../services/SyncManager';
@@ -107,16 +109,29 @@ export default function ViewSurveyScreen() {
     setMarkdownLoading(true);
     try {
       const md = await downloadReportMarkdown(surveyId);
-      // Share the Markdown text via the system share sheet
-      try {
-        const { Share } = await import('react-native');
-        await Share.share({
-          title:   `Engineering Report — ${survey?.project_name ?? surveyId}`,
-          message: md,
+      const safeProject = (survey?.project_name ?? 'project')
+        .replace(/[^a-zA-Z0-9-_]+/g, '_')
+        .slice(0, 40);
+      const filename = `design-report-${safeProject}-${surveyId.slice(0, 8)}.md`;
+      const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? ''}${filename}`;
+
+      if (!uri) {
+        Alert.alert('Report Ready', md.substring(0, 500) + '…');
+        return;
+      }
+
+      await FileSystem.writeAsStringAsync(uri, md, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'text/markdown',
+          dialogTitle: 'Export Design Report',
+          UTI: 'public.plain-text',
         });
-      } catch {
-        // Fallback: show in alert (truncated) so the user can at least read it
-        Alert.alert('Report Downloaded', md.substring(0, 500) + '…');
+      } else {
+        Alert.alert('Report Saved', `Saved report file:\n${uri}`);
       }
     } catch (err) {
       Alert.alert('Download Error', err instanceof Error ? err.message : String(err));
@@ -414,7 +429,7 @@ function ReportCard({
       >
         {markdownLoading
           ? <ActivityIndicator color={colors.background} size="small" />
-          : <Text style={reportStyles.downloadBtnText}>⬇ Share Markdown Report</Text>
+          : <Text style={reportStyles.downloadBtnText}>⬇ Export Design Report (.md)</Text>
         }
       </TouchableOpacity>
 
