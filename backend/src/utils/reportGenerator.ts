@@ -53,6 +53,7 @@ export interface EngineeringReport {
   checklist_summary: ChecklistSummary;
   recommendations:   string[];
   metadata:          Record<string, unknown> | null;
+  checklist_items:   ChecklistRow[];
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -305,6 +306,7 @@ export function generateReport(survey: SurveyInput): EngineeringReport {
     checklist_summary: checklistSummary,
     recommendations,
     metadata:          meta ? (meta as unknown as Record<string, unknown>) : null,
+    checklist_items:   checklist,
   };
 }
 
@@ -325,6 +327,57 @@ const FLAG_EMOJI: Record<FlagPriority, string> = {
   Low:    '🟢',
 };
 
+const PIPELINE_PHASES: Array<{ key: string; labels: string[] }> = [
+  { key: 'Arrival', labels: ['Arrival: Address Verification', 'Arrival: Attic Access', 'Arrival: Hazards Logged'] },
+  { key: 'Walkaround', labels: ['Walk Around', 'Walk Around: CAD Context Wide Shots'] },
+  { key: 'Utility', labels: ['Utility: Meter', 'Utility: Service Entry'] },
+  { key: 'Electrical', labels: ['Electrical'] },
+  { key: 'Roof', labels: ['Roof: Plane Pitch/Azimuth/Obstructions', 'Roof: Plane Material + Plane ID Association'] },
+];
+
+function computeVerdict(report: EngineeringReport): {
+  label: 'READY FOR CAD' | 'NEEDS REVISIT';
+  reasons: string[];
+} {
+  const highPriority = report.flags.filter((f) => f.priority === 'High').length;
+  const summary = report.checklist_summary;
+  const cadReady = highPriority === 0 && summary.fail === 0 && summary.pending === 0;
+
+  if (cadReady) {
+    return {
+      label: 'READY FOR CAD',
+      reasons: [
+        'No High-priority design flags detected.',
+        'Checklist has no FAIL or PENDING items.',
+        'Pipeline phases indicate deployable readiness.',
+      ],
+    };
+  }
+
+  const reasons: string[] = [];
+  if (highPriority > 0) reasons.push(`${highPriority} High-priority design flag(s) need engineering resolution.`);
+  if (summary.fail > 0) reasons.push(`${summary.fail} checklist item(s) are marked FAIL.`);
+  if (summary.pending > 0) reasons.push(`${summary.pending} checklist item(s) are still PENDING.`);
+
+  return { label: 'NEEDS REVISIT', reasons };
+}
+
+function computePhaseReadiness(report: EngineeringReport): Array<{
+  phase: string;
+  readiness: 'LIVE' | 'PARTIAL' | 'NOT WIRED';
+  pass: number;
+  total: number;
+}> {
+  return PIPELINE_PHASES.map((phase) => {
+    const items = report.checklist_items.filter((item) => phase.labels.includes(item.label));
+    const total = items.length;
+    const pass = items.filter((item) => item.status === 'pass').length;
+    const fail = items.filter((item) => item.status === 'fail').length;
+    const readiness = total === 0 ? 'NOT WIRED' : fail > 0 ? 'PARTIAL' : pass === total ? 'LIVE' : 'PARTIAL';
+    return { phase: phase.key, readiness, pass, total };
+  });
+}
+
 /**
  * toMarkdown
  *
@@ -340,8 +393,20 @@ export function toMarkdown(report: EngineeringReport): string {
     hour: '2-digit', minute: '2-digit',
   });
 
+  const verdict = computeVerdict(report);
+  const phases = computePhaseReadiness(report);
+  const summary = report.checklist_summary;
+
   const lines: string[] = [
     `# Engineering Assessment Report`,
+    `## Site Survey Design Report`,
+    `CAD / Permit / Engineering Ready Packet`,
+    ``,
+    `## Final Verdict: ${verdict.label}`,
+    ``,
+    ...verdict.reasons.map((reason) => `- ${reason}`),
+    ``,
+    `## Executive Summary`,
     ``,
     `| Field            | Value |`,
     `|------------------|-------|`,
@@ -355,6 +420,19 @@ export function toMarkdown(report: EngineeringReport): string {
     (report.latitude != null && report.longitude != null)
       ? `| **Coordinates**  | ${report.latitude.toFixed(6)}, ${report.longitude.toFixed(6)} |`
       : '',
+    ``,
+    `## Mission Control Pipeline Readiness`,
+    ``,
+    `| Phase | Status | Pass/Total |`,
+    `|-------|--------|------------|`,
+    ...phases.map((phase) => `| ${phase.phase} | ${phase.readiness} | ${phase.pass}/${phase.total} |`),
+    ``,
+    `## Evidence Summary`,
+    ``,
+    `- Checklist items: ${summary.total}`,
+    `- Flags detected: ${report.flags.length}`,
+    `- Pass/Fail/Pending/N-A: ${summary.pass}/${summary.fail}/${summary.pending}/${summary.na}`,
+    `- Note: media counts are shown in-app; markdown export includes checklist-derived evidence only.`,
     ``,
     `## Overall Risk: ${RISK_EMOJI[report.overall_risk]} ${report.overall_risk}`,
     ``,
@@ -401,6 +479,17 @@ export function toMarkdown(report: EngineeringReport): string {
     lines.push(``);
   }
 
+  if (report.checklist_items.length > 0) {
+    lines.push(`## Checklist Evidence Matrix`);
+    lines.push(``);
+    lines.push(`| Line Item | Status | Notes |`);
+    lines.push(`|-----------|--------|-------|`);
+    for (const item of report.checklist_items) {
+      lines.push(`| ${item.label} | ${String(item.status).toUpperCase()} | ${item.notes?.trim() || '—'} |`);
+    }
+    lines.push(``);
+  }
+
   // Installation specs
   if (report.metadata) {
     lines.push(`## 🔧 Installation Specifications`);
@@ -415,6 +504,13 @@ export function toMarkdown(report: EngineeringReport): string {
     }
     lines.push(``);
   }
+
+  lines.push(`## Approval & Sign-Off`);
+  lines.push(``);
+  lines.push(`- Inspector: ${report.inspector_name}`);
+  lines.push(`- Report generated: ${generated}`);
+  lines.push(`- Design reviewer signature: __________________________`);
+  lines.push(``);
 
   lines.push(`---`);
   lines.push(`*Generated automatically by the Site Survey App*`);
