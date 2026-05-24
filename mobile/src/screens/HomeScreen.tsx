@@ -186,7 +186,7 @@ export default function HomeScreen() {
       {/* Toolbar */}
       <View style={styles.toolbar}>
         <View style={styles.titleBlock}>
-          <Text style={styles.title}>Site Surveys</Text>
+          <Text style={styles.title}>Solar-Pro Site Survey</Text>
           <Text style={styles.subtitle}>
             {surveys.length} total · {sync.unsyncedCount} unsynced
           </Text>
@@ -299,6 +299,7 @@ const styles = StyleSheet.create({
   },
   titleBlock: {
     width: '100%',
+    alignItems: 'center',
   },
   toolbarActions: {
     flexDirection: 'row',
@@ -306,11 +307,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
-  title: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
-  subtitle: { marginTop: 2, fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  title: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5, textAlign: 'center' },
+  subtitle: { marginTop: 2, fontSize: 12, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
   versionBadge: {
     marginTop: 6,
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
