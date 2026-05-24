@@ -189,7 +189,12 @@ export function BugReportFloatingButton() {
   const { openBugReport, reportingBug } = useBugReport();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const bottomOffset = (pathname === '/' ? 162 : 84) + insets.bottom;
+
+  if (pathname === '/' || pathname === '/login') {
+    return null;
+  }
+
+  const bottomOffset = 20 + insets.bottom;
 
   return (
     <TouchableOpacity
@@ -214,11 +219,12 @@ export function BugReportFloatingButton() {
 const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
-    right: 16,
+    left: '50%',
+    transform: [{ translateX: -34 }],
     backgroundColor: colors.primary,
     borderRadius: 24,
     minHeight: 46,
-    minWidth: 46,
+    minWidth: 68,
     paddingHorizontal: 12,
     paddingVertical: 10,
     alignItems: 'center',
@@ -313,4 +319,3 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
-

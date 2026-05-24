@@ -27,7 +27,6 @@ import SyncStatusBar       from '../components/SyncStatusBar';
 import SurveyCard          from '../components/SurveyCard';
 import { useAppBootstrap } from '../context/AppBootstrapContext';
 import { useAuth }         from '../context/AuthContext';
-import { useBugReport } from '../context/BugReportContext';
 import { solarProTheme }   from '../theme/solarProTheme';
 
 const { colors } = solarProTheme;
@@ -37,7 +36,6 @@ export default function HomeScreen() {
   const router = useRouter();
   const { ready: dbReady } = useAppBootstrap();
   const { signOut } = useAuth();
-  const { openBugReport, reportingBug } = useBugReport();
   const [surveys,      setSurveys]      = useState<SurveyListItem[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
@@ -252,27 +250,6 @@ export default function HomeScreen() {
         )}
       />
 
-      {/* Center-bottom bug report button */}
-      <TouchableOpacity
-        style={[styles.bugFab, reportingBug && styles.bugFabDisabled]}
-        onPress={() => {
-          openBugReport({
-            metadata: {
-              screen: 'HomeScreen',
-              totalSurveys: surveys.length,
-              pendingSync: sync.pending,
-              isOnline: sync.isOnline,
-            },
-          });
-        }}
-        disabled={reportingBug}
-      >
-        {reportingBug
-          ? <ActivityIndicator size="small" color={colors.white} />
-          : <Text style={styles.bugFabText}>🐞 Report</Text>
-        }
-      </TouchableOpacity>
-
       {/* Floating action button */}
       <TouchableOpacity
         style={styles.fab}
@@ -373,26 +350,6 @@ const styles = StyleSheet.create({
   emptyIcon:     { fontSize: 48, marginBottom: 16 },
   emptyTitle:    { fontSize: 20, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
   emptySubtitle: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 8 },
-  bugFab: {
-    position: 'absolute',
-    bottom: Platform.OS === 'android' ? 88 : 28,
-    left: '50%',
-    transform: [{ translateX: -58 }],
-    minWidth: 116,
-    minHeight: 44,
-    borderRadius: 22,
-    paddingHorizontal: 14,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.24,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  bugFabDisabled: { opacity: 0.6 },
-  bugFabText: { color: '#0B1220', fontWeight: '700', fontSize: 13 },
   fab: {
     position:        'absolute',
     bottom:           Platform.OS === 'android' ? 88 : 28,

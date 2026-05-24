@@ -50,6 +50,7 @@ export default function SurveyCard({ survey, onPress, onDelete, deleteDisabled =
   const statusColor = STATUS_COLORS[survey.status]  ?? colors.textMuted;
   const syncColor   = SYNC_COLORS[survey.sync_status] ?? colors.textMuted;
   const syncLabel   = SYNC_LABELS[survey.sync_status] ?? survey.sync_status;
+  const showStatusBadge = !(survey.sync_status === 'synced' && survey.status === 'draft');
 
   return (
     <View style={styles.card}>
@@ -59,9 +60,11 @@ export default function SurveyCard({ survey, onPress, onDelete, deleteDisabled =
           <Text style={styles.projectName} numberOfLines={1}>
             {survey.project_name}
           </Text>
-          <View style={[styles.badge, { backgroundColor: statusColor }]}>
-            <Text style={styles.badgeText}>{survey.status}</Text>
-          </View>
+          {showStatusBadge && (
+            <View style={[styles.badge, { backgroundColor: statusColor }]}>
+              <Text style={styles.badgeText}>{survey.status}</Text>
+            </View>
+          )}
         </View>
 
         {/* Site name */}
@@ -192,12 +195,11 @@ const styles = StyleSheet.create({
     color:    '#22c55e',
   },
   syncBadge: {
-    position:          'absolute',
-    top:               12,
-    right:             12,
-    paddingHorizontal:  7,
-    paddingVertical:    2,
-    borderRadius:       8,
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
   syncText: {
     color:     '#ffffff',
