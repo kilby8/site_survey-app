@@ -325,6 +325,7 @@ export default function ViewSurveyScreen() {
 
         {report && reportExpanded && (
           <ReportCard
+            survey={survey}
             report={report}
             markdownLoading={markdownLoading}
             onDownload={handleDownloadMarkdown}
@@ -354,12 +355,14 @@ const PRIORITY_COLOR: Record<string, string> = {
 };
 
 function ReportCard({
+  survey,
   report,
   markdownLoading,
   onDownload,
   onDismiss,
   onDelete,
 }: {
+  survey:          Survey;
   report:          EngineeringReport;
   markdownLoading: boolean;
   onDownload:      () => void;
@@ -368,15 +371,57 @@ function ReportCard({
 }) {
   const riskColor = RISK_COLOR[report.overall_risk] ?? '#6b7280';
   const cs = report.checklist_summary;
+  const generatedAt = new Date(report.generated_at).toLocaleString();
+  const surveyDate = new Date(report.survey_date).toLocaleDateString();
+
+  const mediaSummary = survey.photos.reduce(
+    (acc, photo) => {
+      if (photo.mime_type?.startsWith('video/')) acc.video += 1;
+      else acc.image += 1;
+      return acc;
+    },
+    { image: 0, video: 0 },
+  );
+
+  const mediaByLabel = survey.photos.reduce<Record<string, number>>((acc, photo) => {
+    const key = photo.label?.trim();
+    if (!key) return acc;
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const phaseStatus = [
+    { key: 'Arrival', labels: ['Arrival: Address Verification', 'Arrival: Attic Access', 'Arrival: Hazards Logged'] },
+    { key: 'Walkaround', labels: ['Walk Around', 'Walk Around: CAD Context Wide Shots'] },
+    { key: 'Utility', labels: ['Utility: Meter', 'Utility: Service Entry'] },
+    { key: 'Electrical', labels: ['Electrical'] },
+    { key: 'Roof', labels: ['Roof: Plane Pitch/Azimuth/Obstructions', 'Roof: Plane Material + Plane ID Association'] },
+  ].map((phase) => {
+    const items = survey.checklist.filter((item) => phase.labels.includes(item.label));
+    const total = items.length;
+    const pass = items.filter((item) => item.status === 'pass').length;
+    const fail = items.filter((item) => item.status === 'fail').length;
+    const readiness = total === 0 ? 'NOT WIRED' : fail > 0 ? 'PARTIAL' : pass === total ? 'LIVE' : 'PARTIAL';
+    return { ...phase, total, pass, fail, readiness };
+  });
 
   return (
     <View style={reportStyles.card}>
       {/* Header */}
       <View style={reportStyles.header}>
-        <Text style={reportStyles.title}>📊 Engineering Assessment</Text>
+        <Text style={reportStyles.title}>📊 Comprehensive Design Report</Text>
         <TouchableOpacity onPress={onDismiss}>
           <Text style={reportStyles.dismiss}>✕</Text>
         </TouchableOpacity>
+      </View>
+
+      <View style={reportStyles.metaCard}>
+        <Text style={reportStyles.metaTitle}>Executive Summary</Text>
+        <Text style={reportStyles.metaText}>Project: {report.project_name}</Text>
+        <Text style={reportStyles.metaText}>Inspector: {report.inspector_name}</Text>
+        <Text style={reportStyles.metaText}>Survey Date: {surveyDate}</Text>
+        <Text style={reportStyles.metaText}>Generated: {generatedAt}</Text>
+        {!!report.site_address && <Text style={reportStyles.metaText}>Address: {report.site_address}</Text>}
       </View>
 
       {/* Overall risk badge */}
@@ -384,6 +429,32 @@ function ReportCard({
         <Text style={[reportStyles.riskText, { color: riskColor }]}>
           Overall Risk: {report.overall_risk}
         </Text>
+      </View>
+
+      <View style={reportStyles.section}>
+        <Text style={reportStyles.sectionTitle}>Mission Control Pipeline Readiness</Text>
+        {phaseStatus.map((phase) => (
+          <View key={phase.key} style={reportStyles.pipelineRow}>
+            <Text style={reportStyles.pipelineLabel}>{phase.key}</Text>
+            <Text style={[
+              reportStyles.pipelineBadge,
+              phase.readiness === 'LIVE' ? reportStyles.pipelineLive : phase.readiness === 'PARTIAL' ? reportStyles.pipelinePartial : reportStyles.pipelineNotWired,
+            ]}>
+              {phase.readiness}
+            </Text>
+            <Text style={reportStyles.pipelineDetail}>{phase.pass}/{phase.total} pass</Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={reportStyles.section}>
+        <Text style={reportStyles.sectionTitle}>Evidence Summary</Text>
+        <View style={reportStyles.summaryRow}>
+          <SummaryCell label="Images" count={mediaSummary.image} color="#2563eb" />
+          <SummaryCell label="Videos" count={mediaSummary.video} color="#9333ea" />
+          <SummaryCell label="Flags" count={report.flags.length} color={riskColor} />
+          <SummaryCell label="Checklist" count={cs.total} color="#0f766e" />
+        </View>
       </View>
 
       {/* Flags */}
@@ -420,6 +491,24 @@ function ReportCard({
           <SummaryCell label="N/A"     count={cs.na}      color="#6b7280" />
         </View>
       )}
+
+      <View style={reportStyles.section}>
+        <Text style={reportStyles.sectionTitle}>Checklist Evidence Matrix</Text>
+        {survey.checklist.map((item) => {
+          const evidenceCount = mediaByLabel[item.label] ?? 0;
+          const statusColor = PRIORITY_COLOR[item.status === 'fail' ? 'High' : item.status === 'pending' ? 'Medium' : 'Low'] ?? '#6b7280';
+          return (
+            <View key={item.id} style={reportStyles.matrixRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={reportStyles.matrixLabel}>{item.label}</Text>
+                {!!item.notes && <Text style={reportStyles.matrixNotes}>{item.notes}</Text>}
+              </View>
+              <Text style={[reportStyles.matrixStatus, { color: statusColor }]}>{item.status.toUpperCase()}</Text>
+              <Text style={reportStyles.matrixEvidence}>{evidenceCount} media</Text>
+            </View>
+          );
+        })}
+      </View>
 
       {/* Download Markdown */}
       <TouchableOpacity
@@ -613,6 +702,16 @@ const reportStyles = StyleSheet.create({
   },
   title: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
   dismiss: { fontSize: 18, color: colors.textMuted, fontWeight: '700' },
+  metaCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    backgroundColor: colors.inputBg,
+    padding: 10,
+    marginBottom: 10,
+  },
+  metaTitle: { fontSize: 13, fontWeight: '800', color: colors.textPrimary, marginBottom: 4 },
+  metaText: { fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
   riskBadge: {
     borderRadius: 10,
     borderWidth: 1,
@@ -632,6 +731,27 @@ const reportStyles = StyleSheet.create({
   flagMessage: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
   noFlags: { fontSize: 13, color: '#16a34a', fontWeight: '600', marginTop: 8 },
   rec: { fontSize: 13, color: colors.textSecondary, lineHeight: 18, marginBottom: 4 },
+  pipelineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  pipelineLabel: { flex: 1, fontSize: 13, color: colors.textSecondary, fontWeight: '700' },
+  pipelineBadge: {
+    fontSize: 10,
+    fontWeight: '800',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  pipelineLive: { backgroundColor: '#14532d', color: '#86efac' },
+  pipelinePartial: { backgroundColor: '#78350f', color: '#fde68a' },
+  pipelineNotWired: { backgroundColor: '#374151', color: '#d1d5db' },
+  pipelineDetail: { fontSize: 11, color: colors.textMuted, width: 70, textAlign: 'right' },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -641,6 +761,18 @@ const reportStyles = StyleSheet.create({
   summaryCell: { flex: 1, alignItems: 'center' },
   summaryCount: { fontSize: 18, fontWeight: '800' },
   summaryLabel: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  matrixRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 8,
+  },
+  matrixLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '700' },
+  matrixNotes: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  matrixStatus: { width: 68, textAlign: 'right', fontSize: 11, fontWeight: '800' },
+  matrixEvidence: { width: 62, textAlign: 'right', fontSize: 11, color: colors.textMuted },
   downloadBtn: {
     marginTop: 8,
     borderRadius: 10,
