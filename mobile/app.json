@@ -44,7 +44,7 @@
       "versionCode": 27,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0B2545"
+        "backgroundColor": "#081318"
       }
     },
     "web": {
