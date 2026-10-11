@@ -24,9 +24,9 @@ import { loadPhotos, loadSurvey, removePhoto, updatePhoto } from "../repo";
 
 // expo-camera zoom is a fraction of each phone's maximum, so label by intent.
 const ZOOMS = [
-  { label: "Wide", value: 0 },
-  { label: "Closer", value: 0.12 },
-  { label: "Far", value: 0.35 },
+  { label: "1×", value: 0 },
+  { label: "Zoom +", value: 0.12 },
+  { label: "Zoom ++", value: 0.35 },
 ];
 
 type Result = { photo: CapturedPhoto; blurry: boolean } | null;
@@ -56,7 +56,8 @@ export function GuidedCameraScreen({
   const [showGuide, setShowGuide] = React.useState(true);
   const [shotCount, setShotCount] = React.useState(0);
   const [keepOpen, setKeepOpen] = React.useState(false);
-  const retakeOf = React.useRef<{ photoId: string; reason: string } | null>(null);
+  // The flagged photo a retake replaces. It stays saved until the new shot is.
+  const retakeOf = React.useRef<{ photo: CapturedPhoto; reason: string } | null>(null);
 
   // Keep position and compass live while the camera is open, so a shot never
   // waits on a GPS fix.
@@ -125,6 +126,7 @@ export function GuidedCameraScreen({
   const goNext = (latest: CapturedPhoto[]) => {
     const next = nextNeededShot(doc, latest, found.step.id, { slotId: target.slot.id, planeId: target.planeId });
     setResult(null);
+    retakeOf.current = null;
     if (next) {
       setTarget(next);
       setZoom(0);
@@ -143,10 +145,20 @@ export function GuidedCameraScreen({
       const live = fixRef.current.gps || fixRef.current.heading !== null ? fixRef.current : await currentFix();
       const filed = await fileAsset(
         { uri: pic.uri, width: pic.width, height: pic.height },
-        { surveyId, slotId: target.slot.id, planeId: target.planeId, retakeOf: retakeOf.current },
+        {
+          surveyId,
+          slotId: target.slot.id,
+          planeId: target.planeId,
+          retakeOf: retakeOf.current ? { photoId: retakeOf.current.photo.id, reason: retakeOf.current.reason } : null,
+        },
         photos,
         { gps: exif.gps ?? live.gps, heading: live.heading },
       );
+      // Replacement saved: now the flagged original can go.
+      if (retakeOf.current) {
+        await removePhoto(retakeOf.current.photo).catch(() => undefined);
+        retakeOf.current = null;
+      }
       const latest = await loadPhotos(surveyId);
       setPhotos(latest);
       setShotCount((n) => n + 1);
@@ -156,7 +168,6 @@ export function GuidedCameraScreen({
       );
       // Sharp single-photo slot: move straight on.
       if (!filed.blurry && max === 1) setTimeout(() => goNext(latest), 650);
-      retakeOf.current = null;
     } catch (e) {
       setResult(null);
       Alert.alert("Photo not saved", `${e instanceof Error ? e.message : String(e)}\n\nTry again.`);
@@ -168,9 +179,9 @@ export function GuidedCameraScreen({
   const retake = async () => {
     if (result) {
       // The next shot replaces this one and must not be compared with it.
-      retakeOf.current = { photoId: result.photo.id, reason: (result.photo.qualityFlags ?? ["blurry"]).join(", ") };
-      await removePhoto(result.photo);
-      setPhotos(await loadPhotos(surveyId));
+      // Kept on disk until the replacement saves, so a failed or abandoned
+      // retake never loses the only photo of this slot.
+      retakeOf.current = { photo: result.photo, reason: (result.photo.qualityFlags ?? ["blurry"]).join(", ") };
     }
     setResult(null);
   };

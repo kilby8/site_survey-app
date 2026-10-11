@@ -126,18 +126,25 @@ export function MarkupEditor({
   const w = displayWidth;
   const h = displayWidth / aspect;
   const [marks, setMarksState] = React.useState<Mark[]>(initial);
-  // Every change is undoable, including "clear all".
+  // Every change is undoable, including "clear all". The current marks are
+  // mirrored in a ref so history is recorded outside the state updater
+  // (updaters may run twice in strict mode and must stay pure).
+  const current = React.useRef<Mark[]>(initial);
   const history = React.useRef<Mark[][]>([]);
   const setMarks = React.useCallback((next: Mark[] | ((m: Mark[]) => Mark[])) => {
-    setMarksState((cur) => {
-      const value = typeof next === "function" ? next(cur) : next;
-      history.current.push(cur);
-      return value;
-    });
+    const cur = current.current;
+    const value = typeof next === "function" ? next(cur) : next;
+    if (value === cur) return;
+    history.current.push(cur);
+    current.current = value;
+    setMarksState(value);
   }, []);
   const undo = () => {
     const prev = history.current.pop();
-    if (prev) setMarksState(prev);
+    if (prev) {
+      current.current = prev;
+      setMarksState(prev);
+    }
   };
   const [draft, setDraft] = React.useState<Mark | null>(null);
   const [tool, setTool] = React.useState<Tool>("arrow");

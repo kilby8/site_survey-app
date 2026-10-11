@@ -108,8 +108,15 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
   const readiness = surveyReadiness(doc, ed.photos);
   // Meter number read from the meter close-up (on-device text recognition).
   const meterHint = (() => {
-    const p = ed.photos.find((x) => x.slotId === "utility_meter_close" && x.detectedText);
-    return p?.detectedText ? likelyNumber(p.detectedText) : null;
+    // Most recent close-up first (a retake supersedes an earlier read).
+    const reads = ed.photos
+      .filter((x) => x.slotId === "utility_meter_close" && x.qualityStatus !== "rejected" && x.detectedText)
+      .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+    for (const p of reads) {
+      const n = likelyNumber(p.detectedText ?? "");
+      if (n) return n;
+    }
+    return null;
   })();
   const overridden = new Set(doc.overrides.map((o) => o.key));
   const locked = ed.survey.status === "submitted";

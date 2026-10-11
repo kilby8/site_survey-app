@@ -87,6 +87,8 @@ export interface CapturedPhoto {
   detectedText?: string | null;
   /** On-device image labels with confidence. */
   labels?: { text: string; confidence: number }[] | null;
+  /** Whether the on-device content check ran (false: not available on this phone). null: unknown (older photo). */
+  contentChecked?: boolean | null;
   /** Editable markup vectors (MarkupEditor marks); the rendered copy is annotatedRelPath. */
   markup?: unknown[] | null;
   uploadState: UploadState;

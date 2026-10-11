@@ -5,6 +5,7 @@
  * Uses pool.query from the shared database module throughout.
  * Location is stored as GEOGRAPHY(POINT, 4326) via PostGIS.
  */
+import { createHash } from "crypto";
 import path from "path";
 import { Router, Request, Response } from "express";
 import multer from "multer";
@@ -46,6 +47,9 @@ async function ensureSurveySoftDeleteColumn(): Promise<void> {
         // When the survey's content (fields or photos) last changed — not touched by
         // /complete — so a survey edited after delivery can notify SolarPro again.
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS content_updated_at TIMESTAMPTZ`);
+        // Hash of the last saved survey body, so a retried POST of the same
+        // content doesn't count as an edit (and doesn't re-notify SolarPro).
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS content_hash TEXT`);
         await pool.query(`ALTER TABLE survey_photos ADD COLUMN IF NOT EXISTS photo_data BYTEA`);
         // v2 app: per-photo Golden Block + idempotent uploads keyed by the device's photo id.
         await pool.query(`ALTER TABLE survey_photos ADD COLUMN IF NOT EXISTS client_photo_id TEXT`);
@@ -1958,7 +1962,19 @@ router.post("/", async (req: Request, res: Response) => {
     if (body.checklist?.length)
       await upsertChecklist(client, newId, body.checklist);
     if (body.photos?.length) await upsertPhotos(client, newId, body.photos);
-    await client.query(`UPDATE surveys SET content_updated_at = NOW() WHERE id = $1`, [newId]);
+    // Only a real change moves content_updated_at: a client retrying a POST
+    // whose response was lost sends identical content and must not look
+    // like an edit after delivery.
+    const contentHash = surveyContentHash(body, (req.body as { client_photo_ids?: unknown }).client_photo_ids);
+    await client.query(
+      `UPDATE surveys
+          SET content_updated_at = CASE
+                WHEN content_hash IS DISTINCT FROM $2 OR content_updated_at IS NULL THEN NOW()
+                ELSE content_updated_at END,
+              content_hash = $2
+        WHERE id = $1`,
+      [newId, contentHash],
+    );
 
     // v2 app: the list of photos the survey has now. Photos it uploaded
     // earlier that are no longer listed (deleted, retaken, re-marked-up)
@@ -2298,6 +2314,25 @@ router.post(
   },
 );
 
+
+/** Stable hash of what a survey POST says (not status/device), for edit detection. */
+function surveyContentHash(body: ReturnType<typeof normalizeSurveyInput>, clientPhotoIds: unknown): string {
+  const stable = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(stable);
+    if (v && typeof v === "object") {
+      return Object.keys(v as Record<string, unknown>)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, k) => {
+          acc[k] = stable((v as Record<string, unknown>)[k]);
+          return acc;
+        }, {});
+    }
+    return v ?? null;
+  };
+  const { id: _id, status: _status, device_id: _device, ...content } = body as unknown as Record<string, unknown>;
+  const ids = Array.isArray(clientPhotoIds) ? [...clientPhotoIds].map(String).sort() : null;
+  return createHash("sha256").update(JSON.stringify(stable({ content, client_photo_ids: ids }))).digest("hex");
+}
 
 export { ensureSurveySoftDeleteColumn };
 export default router;

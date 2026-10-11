@@ -1305,6 +1305,12 @@ describe("POST /api/surveys/:id/complete", () => {
     const same = await request(app).post(`/api/surveys/${id}/complete`).set("Authorization", authHeader).send({});
     expect(same.body.event_id).toBe(first.body.event_id);
 
+    // A retried POST of identical content (lost response) is not an edit.
+    const resent = await request(app).post("/api/surveys").set("Authorization", authHeader).send({ ...body, id });
+    expect(resent.status).toBe(201);
+    const retried = await request(app).post(`/api/surveys/${id}/complete`).set("Authorization", authHeader).send({});
+    expect(retried.body.event_id).toBe(first.body.event_id);
+
     // Reopened on the phone and re-sent with a change.
     await request(app).post("/api/surveys").set("Authorization", authHeader).send({ ...body, id, notes: "Added sub panel" });
     const edited = await request(app).post(`/api/surveys/${id}/complete`).set("Authorization", authHeader).send({});

@@ -68,6 +68,7 @@ interface PhotoRowV2 {
   markup_json: string | null;
   detected_text: string | null;
   labels_json: string | null;
+  content_checked: number | null;
   upload_state: string | null;
   server_photo_id: string | null;
 }
@@ -136,6 +137,7 @@ function rowToPhoto(r: PhotoRowV2): CapturedPhoto {
     markup: r.markup_json ? (JSON.parse(r.markup_json) as unknown[]) : null,
     detectedText: r.detected_text,
     labels: r.labels_json ? (JSON.parse(r.labels_json) as CapturedPhoto["labels"]) : null,
+    contentChecked: r.content_checked === null || r.content_checked === undefined ? null : r.content_checked === 1,
     uploadState: r.upload_state === "uploaded" ? "uploaded" : "local",
     serverPhotoId: r.server_photo_id,
   };
@@ -245,8 +247,8 @@ export async function insertPhoto(p: CapturedPhoto): Promise<void> {
         rel_path, annotated_rel_path, step_id, section_id, slot_id, plane_id, required,
         capture_order, gps_lat, gps_lng, gps_alt, heading, notes, retake_reason,
         quality_status, blur_score, upload_state, server_photo_id, quality_flags, ahash,
-        detected_text, labels_json)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        detected_text, labels_json, content_checked)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       p.id, p.surveyId, p.relPath, p.slotId, p.mimeType, p.capturedAt, new Date().toISOString(),
       p.relPath, p.annotatedRelPath, p.stepId, p.sectionId, p.slotId, p.planeId, p.required ? 1 : 0,
@@ -254,6 +256,7 @@ export async function insertPhoto(p: CapturedPhoto): Promise<void> {
       p.notes, p.retakeReason, p.qualityStatus, p.blurScore, p.uploadState, p.serverPhotoId,
       (p.qualityFlags ?? []).join(","), p.ahash ?? null,
       p.detectedText ?? null, p.labels ? JSON.stringify(p.labels) : null,
+      p.contentChecked === null || p.contentChecked === undefined ? null : p.contentChecked ? 1 : 0,
     ],
   );
   await touch(p.surveyId);

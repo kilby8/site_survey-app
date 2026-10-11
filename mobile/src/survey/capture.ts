@@ -111,6 +111,21 @@ export async function analyzeImage(uri: string): Promise<ImageAnalysis | null> {
   }
 }
 
+const CONTENT_EDGE = 1280;
+
+/** A 1280 px copy for the content check. null: use the original. */
+async function contentCopy(uri: string): Promise<string | null> {
+  try {
+    const out = await ImageManipulator.manipulateAsync(uri, [{ resize: { width: CONTENT_EDGE } }], {
+      compress: 0.9,
+      format: ImageManipulator.SaveFormat.JPEG,
+    });
+    return out.uri;
+  } catch {
+    return null;
+  }
+}
+
 /** What fileAsset needs from a camera/library image. */
 export interface RawImage {
   uri: string;
@@ -149,7 +164,18 @@ export async function fileAsset(
   const id = newId();
   const capturedAt = takenAt ?? new Date().toISOString();
   const [where, relPath] = await Promise.all([fix ?? currentFix(), storeImage(asset, id)]);
-  const analysis = await analyzeImage(absPath(relPath));
+  // Quality analysis and the content check run side by side; ML Kit reads a
+  // 1280 px copy (enough for meter digits, ~4× fewer pixels than the upload).
+  const [analysis, content] = await Promise.all([
+    analyzeImage(absPath(relPath)),
+    contentCopy(absPath(relPath)).then(async (uri) => {
+      try {
+        return await checkContent(target.slotId, uri ?? absPath(relPath));
+      } finally {
+        if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined);
+      }
+    }),
+  ]);
   // Duplicate check: not against the photo being retaken, and not against the
   // same slot on another roof plane (shingle close-ups look alike by nature).
   const comparable = existing.filter(
@@ -158,7 +184,6 @@ export async function fileAsset(
       p.id !== target.retakeOf?.photoId &&
       !(p.slotId === target.slotId && (p.planeId ?? null) !== target.planeId),
   );
-  const content = await checkContent(target.slotId, absPath(relPath));
   const flags = [...qualityFlags(analysis, comparable), ...content.flags];
   const blurScore = analysis?.sharpness ?? null;
   // "blurry" here means "needs the surveyor's decision" (any quality flag).
@@ -187,6 +212,7 @@ export async function fileAsset(
     ahash: analysis?.ahash ?? null,
     detectedText: content.text || null,
     labels: content.labels,
+    contentChecked: content.checked,
     uploadState: "local",
     serverPhotoId: null,
   };

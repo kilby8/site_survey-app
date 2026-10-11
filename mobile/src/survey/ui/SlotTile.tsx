@@ -151,7 +151,7 @@ const s = StyleSheet.create({
   countText: { color: color.text, fontWeight: "800", fontSize: 13 },
   chip: { position: "absolute", left: 6, top: 6, width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
   strip: { flexDirection: "row", flexWrap: "wrap", gap: 4, paddingHorizontal: space.sm, paddingTop: space.sm },
-  mini: { width: 44, height: 44, borderRadius: 6, overflow: "hidden", borderWidth: 2, borderColor: color.border },
+  mini: { width: 48, height: 48, borderRadius: 6, overflow: "hidden", borderWidth: 2, borderColor: color.border },
   foot: { flexDirection: "row", alignItems: "flex-start", gap: 6, paddingLeft: space.sm, paddingTop: space.xs, minHeight: 48 },
   label: { flex: 1, color: color.text, fontSize: 16, fontWeight: "800", lineHeight: 21, paddingTop: 2 },
   optional: { color: color.textMuted, fontWeight: "600" },

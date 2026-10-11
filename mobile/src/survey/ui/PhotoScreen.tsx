@@ -160,6 +160,11 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
                 {photo.detectedText ? (
                   <MetaRow icon="scan-outline" label="Text read" value={photo.detectedText.replace(/\s+/g, " ").slice(0, 160)} />
                 ) : null}
+                {photo.contentChecked === false ? (
+                  <MetaRow icon="eye-off-outline" label="Content check" value="Not available on this phone (sharpness, light and duplicates still checked)" />
+                ) : photo.contentChecked ? (
+                  <MetaRow icon="eye-outline" label="Content check" value={(photo.qualityFlags ?? []).some((f) => f === "no_text" || f === "off_subject") ? "Flagged — see above" : "Passed"} />
+                ) : null}
                 {photo.retakeReason ? <MetaRow icon="refresh" label="Retake of" value={photo.retakeReason} /> : null}
               </View>
 
