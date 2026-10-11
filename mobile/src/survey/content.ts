@@ -30,7 +30,8 @@ export const OFF_SUBJECT = new Set([
 ]);
 /** Screens: off-subject except on meter/electrical slots (digital meters, inverter displays). */
 export const SCREEN_LABELS = new Set(["Screenshot", "Web page", "Television", "Computer", "Mobile phone"]);
-const DISPLAY_OK_STEPS = ["utility_", "elec_"];
+/** Slot prefixes where a screen is a legitimate subject (digital meters, inverter displays, a pitch app). */
+const DISPLAY_OK_STEPS = ["utility_", "elec_", "roof_pitch"];
 
 const BUILT = ["Building", "Roof", "Wall", "Brick", "Tile", "Metal", "Infrastructure", "Construction"];
 const LAND = ["Field", "Soil", "Prairie", "Plant", "Flora", "Forest", "Garden", "Farm", "Ranch", "Rock", "Sand", "Road"];
@@ -54,7 +55,7 @@ export const EXPECTED: { prefix: string; labels: string[] }[] = [
  * Slots where "is the subject there?" isn't asked: text slots (the text
  * check is the real test) and close-ups the general model labels poorly.
  */
-const NO_SUBJECT_CHECK = new Set([...Object.keys(TEXT_SLOTS), "roof_attic", "roof_structure", "elec_grounding"]);
+const NO_SUBJECT_CHECK = new Set([...Object.keys(TEXT_SLOTS), "roof_pitch", "roof_attic", "roof_structure", "elec_grounding"]);
 
 export const OFF_SUBJECT_CONFIDENCE = 0.75;
 export const EXPECTED_CONFIDENCE = 0.5;

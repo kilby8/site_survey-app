@@ -2133,6 +2133,59 @@ router.put("/:id", async (req: Request, res: Response) => {
 // ================================================================
 
 /**
+ * PATCH /api/surveys/:id/photos/by-client/:clientPhotoId
+ *
+ * v2 app: update an already-uploaded photo's label and Golden Block (a note
+ * or keep-reason edited later) without re-sending the image. 404 when the
+ * server has no photo with that client id, so the app falls back to a full
+ * upload. Only a real change counts as an edit of the survey.
+ */
+router.patch("/:id/photos/by-client/:clientPhotoId", async (req: Request, res: Response) => {
+  await ensureSurveySoftDeleteColumn();
+  if (!requireUuidParam(req, res, "id")) return;
+  const { id, clientPhotoId } = req.params;
+  const body = (req.body ?? {}) as { label?: unknown; meta?: unknown };
+  const label = typeof body.label === "string" ? body.label : null;
+  const meta = body.meta && typeof body.meta === "object" && !Array.isArray(body.meta) ? body.meta : null;
+  if (!clientPhotoId || clientPhotoId.length > 100 || (label === null && meta === null)) {
+    respondValidationError(res, "label or meta is required", "meta");
+    return;
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ id: string }>(
+      `SELECT id FROM survey_photos WHERE survey_id = $1 AND client_photo_id = $2`,
+      [id, clientPhotoId],
+    );
+    if (!rows.length) {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Photo not found" });
+      return;
+    }
+    const { rowCount } = await client.query(
+      `UPDATE survey_photos
+          SET label = COALESCE($2, label), meta = COALESCE($3::jsonb, meta)
+        WHERE id = $1
+          AND (label IS DISTINCT FROM COALESCE($2, label) OR meta IS DISTINCT FROM COALESCE($3::jsonb, meta))`,
+      [rows[0].id, label, meta ? JSON.stringify(meta) : null],
+    );
+    const changed = (rowCount ?? 0) > 0;
+    if (changed) {
+      await client.query(`UPDATE surveys SET content_updated_at = NOW() WHERE id = $1`, [id]);
+    }
+    await client.query("COMMIT");
+    res.json({ id: rows[0].id, changed });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("PATCH photo meta error:", err);
+    res.status(500).json({ error: "Failed to update photo" });
+  } finally {
+    client.release();
+  }
+});
+
+/**
  * POST /api/surveys/:id/photos
  *
  * Accepts one or more media files (image/video) as multipart/form-data.

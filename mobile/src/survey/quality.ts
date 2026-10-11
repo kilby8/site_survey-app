@@ -193,7 +193,7 @@ export function flagMessage(flags: string[], slotId?: string): string {
     duplicate: "looks the same as another photo in this survey",
     no_text: `has no readable ${need ? need.what : "text"}`,
     off_subject: "doesn't look like a site photo",
-    wrong_subject: `doesn't seem to show the ${slotLabel ? slotLabel.toLowerCase() : "subject this slot needs"}`,
+    wrong_subject: slotLabel ? `doesn't look like a “${slotLabel}” shot` : "doesn't seem to show what this slot needs",
   };
   const said = flags.map((f) => parts[f]).filter(Boolean);
   if (!said.length) return "";

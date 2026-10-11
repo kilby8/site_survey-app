@@ -633,6 +633,49 @@ describe("POST /api/surveys/:id/photos", () => {
     expect((await stamp()).getTime()).toBeGreaterThan(before.getTime());
   });
 
+  it("updates a photo's metadata by client id without the image", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({ project_name: "Meta Patch", inspector_name: "Tester", site_name: "Patch" });
+    createdIds.push(create.body.id);
+    const surveyId = create.body.id as string;
+    await request(app)
+      .post(`/api/surveys/${surveyId}/photos`)
+      .set("Authorization", authHeader)
+      .field("labels", JSON.stringify(["Utility · Meter close-up"]))
+      .field("client_ids", JSON.stringify(["meta-photo-1"]))
+      .field("metas", JSON.stringify([{ photoSlotId: "utility_meter_close", notes: "" }]))
+      .attach("photos", Buffer.from("fake-image"), { filename: "m.jpg", contentType: "image/jpeg" });
+    await pool.query(`UPDATE surveys SET content_updated_at = NOW() - INTERVAL '5 minutes' WHERE id = $1`, [surveyId]);
+    const stamp = async () =>
+      ((await pool.query(`SELECT content_updated_at FROM surveys WHERE id = $1`, [surveyId])).rows[0].content_updated_at as Date).getTime();
+    const before = await stamp();
+    const patch = (meta: object) =>
+      request(app)
+        .patch(`/api/surveys/${surveyId}/photos/by-client/meta-photo-1`)
+        .set("Authorization", authHeader)
+        .send({ label: "Utility · Meter close-up", meta });
+
+    const same = await patch({ photoSlotId: "utility_meter_close", notes: "" });
+    expect(same.status).toBe(200);
+    expect(same.body.changed).toBe(false);
+    expect(await stamp()).toBe(before);
+
+    const edited = await patch({ photoSlotId: "utility_meter_close", notes: "Seal broken" });
+    expect(edited.body.changed).toBe(true);
+    expect(await stamp()).toBeGreaterThan(before);
+    const full = await getAuth(`/api/surveys/${surveyId}`);
+    expect(full.body.photos).toHaveLength(1);
+    expect(full.body.photos[0].meta.notes).toBe("Seal broken");
+
+    const missing = await request(app)
+      .patch(`/api/surveys/${surveyId}/photos/by-client/never-uploaded`)
+      .set("Authorization", authHeader)
+      .send({ meta: { notes: "x" } });
+    expect(missing.status).toBe(404);
+  });
+
   it("drops v2 photos the survey no longer lists and refreshes metadata on re-send", async () => {
     const create = await request(app)
       .post("/api/surveys")

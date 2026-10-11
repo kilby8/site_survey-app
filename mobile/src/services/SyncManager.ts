@@ -31,6 +31,7 @@ import {
   warmUpApi,
   postSurveyV2,
   uploadSurveyPhotoV2,
+  updateSurveyPhotoMetaV2,
   completeSurveyV2,
 } from '../api/client';
 import { getAccessToken, getCachedUser, SessionExpiredError } from '../api/session';
@@ -248,6 +249,7 @@ const _v2Deps: SyncDeps = {
   fileUri: repo.absPath,
   postSurvey: postSurveyV2,
   uploadPhoto: uploadSurveyPhotoV2,
+  updatePhotoMeta: updateSurveyPhotoMetaV2,
   complete: completeSurveyV2,
   markSyncing: async (id) => {
     const claimed = await repo.markSyncing(id);

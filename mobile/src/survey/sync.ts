@@ -33,12 +33,15 @@ export interface SyncDeps {
     surveyId: string,
     photo: { uri: string; mimeType: string; label: string; clientId: string; capturedAt: string; meta: Record<string, unknown> },
   ) => Promise<{ id: string | null }>;
+  /** Metadata-only update of an uploaded photo; null if the server lacks it. */
+  updatePhotoMeta?: (surveyId: string, clientId: string, label: string, meta: Record<string, unknown>) => Promise<{ id: string } | null>;
   complete: (surveyId: string) => Promise<unknown>;
   /** Claim the survey for upload. False if it was reopened or is already being sent. */
   markSyncing: (id: string) => Promise<boolean>;
   /** Still submitted (not reopened for editing since the claim)? */
   stillSubmitted: (id: string) => Promise<boolean>;
-  markPhotoUploaded: (photoId: string, serverId: string | null) => Promise<void>;
+  /** Mark uploaded only if the photo still matches what was sent (an edit made meanwhile stays pending). */
+  markPhotoUploaded: (photoId: string, serverId: string | null, sent: CapturedPhoto) => Promise<void>;
   markSynced: (id: string) => Promise<void>;
   markSyncError: (id: string, message: string, attempts: number, nextRetryAt: string | null) => Promise<void>;
   isSessionExpired: (error: unknown) => error is SessionExpiredError;
@@ -93,6 +96,20 @@ export async function syncSurveyV2(survey: StoredSurvey, deps: SyncDeps): Promis
         continue;
       }
       const meta = goldenBlock(photo, survey.doc);
+      // Uploaded before and only its details changed (note, keep reason):
+      // send the metadata, not the 1–2 MB image again.
+      if (photo.serverPhotoId && deps.updatePhotoMeta) {
+        const updated = await deps.updatePhotoMeta(survey.id, photo.id, label, meta);
+        if (updated) {
+          if (photo.annotatedRelPath) {
+            await deps.updatePhotoMeta(survey.id, markupClientId(photo), `${label} (marked up)`, { ...meta, markupOf: photo.id });
+          }
+          await deps.markPhotoUploaded(photo.id, updated.id, photo);
+          done++;
+          deps.onProgress?.(survey.id, done, photos.length);
+          continue;
+        }
+      }
       const original = await deps.uploadPhoto(survey.id, {
         uri: deps.fileUri(photo.relPath),
         mimeType: photo.mimeType,
@@ -112,7 +129,7 @@ export async function syncSurveyV2(survey: StoredSurvey, deps: SyncDeps): Promis
           meta: { ...meta, markupOf: photo.id },
         });
       }
-      await deps.markPhotoUploaded(photo.id, original.id);
+      await deps.markPhotoUploaded(photo.id, original.id, photo);
       done++;
       deps.onProgress?.(survey.id, done, photos.length);
     }

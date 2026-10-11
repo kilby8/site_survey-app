@@ -388,10 +388,24 @@ export async function markPosted(id: string): Promise<void> {
   await getDb().runAsync("UPDATE surveys SET server_posted = 1 WHERE id = ?", [id]);
 }
 
-export async function markPhotoUploaded(photoId: string, serverPhotoId: string | null): Promise<void> {
+/**
+ * Mark a photo uploaded — only if it still matches what was sent. An edit made
+ * while the upload was in flight (survey reopened mid-sync) keeps the photo
+ * pending, so the edit goes up next time instead of being lost.
+ */
+export async function markPhotoUploaded(photoId: string, serverPhotoId: string | null, sent?: CapturedPhoto): Promise<void> {
+  if (!sent) {
+    await getDb().runAsync("UPDATE survey_photos SET upload_state = 'uploaded', server_photo_id = ? WHERE id = ?", [serverPhotoId, photoId]);
+    return;
+  }
   await getDb().runAsync(
-    "UPDATE survey_photos SET upload_state = 'uploaded', server_photo_id = ? WHERE id = ?",
-    [serverPhotoId, photoId],
+    `UPDATE survey_photos SET upload_state = 'uploaded', server_photo_id = ?
+      WHERE id = ?
+        AND COALESCE(notes, '') = ?
+        AND COALESCE(quality_status, 'accepted') = ?
+        AND retake_reason IS ?
+        AND annotated_rel_path IS ?`,
+    [serverPhotoId, photoId, sent.notes ?? "", sent.qualityStatus, sent.retakeReason, sent.annotatedRelPath],
   );
 }
 

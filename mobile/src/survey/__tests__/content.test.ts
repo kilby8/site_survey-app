@@ -67,6 +67,15 @@ describe("content check", () => {
     expect(contentFlags("ground_area", "", [{ text: "Field", confidence: 0.7 }])).toEqual([]);
   });
 
+  it("accepts a phone showing a pitch app on the pitch-gauge slot", () => {
+    expect(
+      contentFlags("roof_pitch", "", [
+        { text: "Mobile phone", confidence: 0.9 },
+        { text: "Screenshot", confidence: 0.8 },
+      ]),
+    ).toEqual([]);
+  });
+
   it("doesn't ask the subject question when it can't be answered", () => {
     // No labels (labeller didn't run or saw nothing confident).
     expect(contentFlags("roof_plane_wide", "", [])).toEqual([]);

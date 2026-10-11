@@ -892,6 +892,29 @@ export async function uploadSurveyPhotoV2(
   return { id: row?.id ?? null, duplicate: Boolean(row?.duplicate) };
 }
 
+/**
+ * Update an uploaded photo's label and Golden Block without re-sending the
+ * image. null when the server doesn't have it (caller does a full upload).
+ */
+export async function updateSurveyPhotoMetaV2(
+  surveyId: string,
+  clientId: string,
+  label: string,
+  meta: Record<string, unknown>,
+): Promise<{ id: string } | null> {
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithAuthRetry(
+    `/api/surveys/${surveyId}/photos/by-client/${encodeURIComponent(clientId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeaders },
+      body: JSON.stringify({ label, meta }),
+    },
+  );
+  if (res.status === 404) return null;
+  return handleResponse<{ id: string }>(res);
+}
+
 export async function completeSurveyV2(surveyId: string): Promise<{ event_id: string }> {
   const authHeaders = await getAuthHeaders();
   const res = await fetchWithAuthRetry(

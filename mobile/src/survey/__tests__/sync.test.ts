@@ -71,6 +71,30 @@ describe("syncSurveyV2", () => {
     expect(uploaded).toEqual(["b", "c"]);
   });
 
+  it("sends only the metadata for an uploaded photo whose note changed", async () => {
+    const edited = photo("a", { serverPhotoId: "srv-a", notes: "Seal broken" });
+    const { d, calls, uploaded } = deps([edited], {
+      updatePhotoMeta: async (_s, clientId, _l, meta) => {
+        calls.push(`meta:${clientId}:${String(meta.notes)}`);
+        return { id: "srv-a" };
+      },
+    });
+    await expect(syncSurveyV2(survey(), d)).resolves.toBe("synced");
+    expect(calls).toEqual(["syncing", "post", "meta:a:Seal broken", "complete", "synced"]);
+    expect(uploaded).toEqual(["a"]);
+  });
+
+  it("falls back to a full upload when the server doesn't have the photo", async () => {
+    const { d, calls } = deps([photo("a", { serverPhotoId: "srv-a" })], {
+      updatePhotoMeta: async (_s, clientId) => {
+        calls.push(`meta:${clientId}`);
+        return null;
+      },
+    });
+    await expect(syncSurveyV2(survey(), d)).resolves.toBe("synced");
+    expect(calls).toEqual(["syncing", "post", "meta:a", "upload:a", "complete", "synced"]);
+  });
+
   it("uploads a marked-up copy as its own photo", async () => {
     const { d, calls } = deps([photo("a", { annotatedRelPath: "survey-photos-v2/a-markup-1.jpg" })]);
     await syncSurveyV2(survey(), d);
