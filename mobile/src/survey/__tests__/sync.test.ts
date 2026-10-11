@@ -95,6 +95,28 @@ describe("syncSurveyV2", () => {
     expect(calls).toEqual(["syncing", "post", "meta:a", "upload:a", "complete", "synced"]);
   });
 
+  it("stops without marking anything when the survey is re-submitted mid-upload", async () => {
+    // Pass works on submit "g1"; while photo a uploads, the tech reopens,
+    // adds the attic photo and submits again ("g2").
+    let current = "g1";
+    const marked: string[] = [];
+    const { d, calls } = deps([photo("a"), photo("b")], {
+      markSyncing: async (_id, gen) => { calls.push(`claim:${gen}`); return gen === current; },
+      stillSubmitted: async (_id, gen) => gen === current,
+      uploadPhoto: async (_s, p) => {
+        calls.push(`upload:${p.clientId}`);
+        current = "g2";
+        return { id: `srv-${p.clientId}` };
+      },
+      markSynced: async (_id, gen) => { marked.push(`synced:${gen}`); },
+      markSyncError: async (_id, _m, _a, _n, gen) => { marked.push(`error:${gen}`); },
+    });
+    await expect(syncSurveyV2({ ...survey(), submittedAt: "g1" }, d)).resolves.toBe("skipped");
+    expect(calls).toEqual(["claim:g1", "post", "upload:a"]);
+    expect(calls).not.toContain("complete");
+    expect(marked).toEqual([]);
+  });
+
   it("uploads a marked-up copy as its own photo", async () => {
     const { d, calls } = deps([photo("a", { annotatedRelPath: "survey-photos-v2/a-markup-1.jpg" })]);
     await syncSurveyV2(survey(), d);

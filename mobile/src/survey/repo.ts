@@ -318,12 +318,15 @@ async function touch(surveyId: string): Promise<void> {
 
 export async function submitSurvey(id: string): Promise<void> {
   const now = new Date().toISOString();
+  const prev = await getDb().getFirstAsync<{ submitted_at: string | null }>("SELECT submitted_at FROM surveys WHERE id = ?", [id]);
+  // submitted_at is also the upload generation, so a re-submit must change it.
+  const stamp = prev?.submitted_at && prev.submitted_at >= now ? new Date(Date.parse(prev.submitted_at) + 1).toISOString() : now;
   await getDb().runAsync(
     `UPDATE surveys
         SET status = 'submitted', sync_status = 'pending', sync_error = NULL, sync_attempts = 0,
             next_retry_at = NULL, current_step = 'review', submitted_at = ?, updated_at = ?
       WHERE id = ?`,
-    [now, now, id],
+    [stamp, now, id],
   );
 }
 
@@ -370,18 +373,26 @@ export async function surveysDueForSync(
 }
 
 /** Claim a survey for upload; false if it was reopened or another pass has it. */
-export async function markSyncing(id: string): Promise<boolean> {
+// Each submit stamps a new submitted_at; an upload pass works on one submit
+// ("generation"). If the survey is reopened and submitted again while a pass
+// is running, the old pass sees a different generation, stops, and leaves the
+// new submit for the next pass — it never marks newer work as uploaded.
+
+export async function markSyncing(id: string, generation: string | null): Promise<boolean> {
   const res = await getDb().runAsync(
     `UPDATE surveys SET sync_status = 'syncing', updated_at = ?
-      WHERE id = ? AND status = 'submitted' AND sync_status IN ('pending', 'error')`,
-    [new Date().toISOString(), id],
+      WHERE id = ? AND status = 'submitted' AND sync_status IN ('pending', 'error') AND submitted_at IS ?`,
+    [new Date().toISOString(), id, generation],
   );
   return (res.changes ?? 0) > 0;
 }
 
-export async function isStillSubmitted(id: string): Promise<boolean> {
-  const row = await getDb().getFirstAsync<{ status: string }>("SELECT status FROM surveys WHERE id = ?", [id]);
-  return row?.status === "submitted";
+export async function isStillSubmitted(id: string, generation: string | null): Promise<boolean> {
+  const row = await getDb().getFirstAsync<{ status: string; submitted_at: string | null }>(
+    "SELECT status, submitted_at FROM surveys WHERE id = ?",
+    [id],
+  );
+  return row?.status === "submitted" && row.submitted_at === generation;
 }
 
 export async function markPosted(id: string): Promise<void> {
@@ -409,20 +420,26 @@ export async function markPhotoUploaded(photoId: string, serverPhotoId: string |
   );
 }
 
-export async function markSynced(id: string): Promise<void> {
+export async function markSynced(id: string, generation: string | null): Promise<void> {
   await getDb().runAsync(
     `UPDATE surveys SET sync_status = 'synced', sync_error = NULL, next_retry_at = NULL, updated_at = ?
-      WHERE id = ? AND status = 'submitted'`,
-    [new Date().toISOString(), id],
+      WHERE id = ? AND status = 'submitted' AND submitted_at IS ?`,
+    [new Date().toISOString(), id, generation],
   );
 }
 
-export async function markSyncError(id: string, message: string, attempts: number, nextRetryAt: string | null): Promise<void> {
+export async function markSyncError(
+  id: string,
+  message: string,
+  attempts: number,
+  nextRetryAt: string | null,
+  generation: string | null,
+): Promise<void> {
   await getDb().runAsync(
     `UPDATE surveys
         SET sync_status = 'error', sync_error = ?, sync_attempts = ?, next_retry_at = ?, updated_at = ?
-      WHERE id = ? AND status = 'submitted'`,
-    [message, attempts, nextRetryAt, new Date().toISOString(), id],
+      WHERE id = ? AND status = 'submitted' AND submitted_at IS ?`,
+    [message, attempts, nextRetryAt, new Date().toISOString(), id, generation],
   );
 }
 

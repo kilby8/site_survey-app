@@ -37,13 +37,13 @@ export interface SyncDeps {
   updatePhotoMeta?: (surveyId: string, clientId: string, label: string, meta: Record<string, unknown>) => Promise<{ id: string } | null>;
   complete: (surveyId: string) => Promise<unknown>;
   /** Claim the survey for upload. False if it was reopened or is already being sent. */
-  markSyncing: (id: string) => Promise<boolean>;
+  markSyncing: (id: string, generation: string | null) => Promise<boolean>;
   /** Still submitted (not reopened for editing since the claim)? */
-  stillSubmitted: (id: string) => Promise<boolean>;
+  stillSubmitted: (id: string, generation: string | null) => Promise<boolean>;
   /** Mark uploaded only if the photo still matches what was sent (an edit made meanwhile stays pending). */
   markPhotoUploaded: (photoId: string, serverId: string | null, sent: CapturedPhoto) => Promise<void>;
-  markSynced: (id: string) => Promise<void>;
-  markSyncError: (id: string, message: string, attempts: number, nextRetryAt: string | null) => Promise<void>;
+  markSynced: (id: string, generation: string | null) => Promise<void>;
+  markSyncError: (id: string, message: string, attempts: number, nextRetryAt: string | null, generation: string | null) => Promise<void>;
   isSessionExpired: (error: unknown) => error is SessionExpiredError;
   now: () => Date;
   onProgress?: (surveyId: string, done: number, total: number) => void;
@@ -66,7 +66,9 @@ export function friendlySyncError(error: unknown): string {
 class Reopened extends Error {}
 
 export async function syncSurveyV2(survey: StoredSurvey, deps: SyncDeps): Promise<SyncOutcome> {
-  if (!(await deps.markSyncing(survey.id))) return "skipped";
+  // This pass uploads exactly this submit; a newer submit makes it stop.
+  const gen = survey.submittedAt;
+  if (!(await deps.markSyncing(survey.id, gen))) return "skipped";
   try {
     // Photos in items the surveyor later hid (e.g. answered "No sub panel")
     // or rejected stay on the phone and are not sent.
@@ -89,7 +91,7 @@ export async function syncSurveyV2(survey: StoredSurvey, deps: SyncDeps): Promis
     deps.onProgress?.(survey.id, done, photos.length);
 
     for (const photo of pending) {
-      if (!(await deps.stillSubmitted(survey.id))) throw new Reopened();
+      if (!(await deps.stillSubmitted(survey.id, gen))) throw new Reopened();
       const label = photoLabel(photo);
       if (!(await deps.fileExists(photo.relPath))) {
         missing.push(label);
@@ -102,7 +104,19 @@ export async function syncSurveyV2(survey: StoredSurvey, deps: SyncDeps): Promis
         const updated = await deps.updatePhotoMeta(survey.id, photo.id, label, meta);
         if (updated) {
           if (photo.annotatedRelPath) {
-            await deps.updatePhotoMeta(survey.id, markupClientId(photo), `${label} (marked up)`, { ...meta, markupOf: photo.id });
+            const copyMeta = { ...meta, markupOf: photo.id };
+            const copy = await deps.updatePhotoMeta(survey.id, markupClientId(photo), `${label} (marked up)`, copyMeta);
+            // Server lost the marked-up copy: send it again in full.
+            if (!copy && (await deps.fileExists(photo.annotatedRelPath))) {
+              await deps.uploadPhoto(survey.id, {
+                uri: deps.fileUri(photo.annotatedRelPath),
+                mimeType: "image/jpeg",
+                label: `${label} (marked up)`,
+                clientId: markupClientId(photo),
+                capturedAt: photo.capturedAt,
+                meta: copyMeta,
+              });
+            }
           }
           await deps.markPhotoUploaded(photo.id, updated.id, photo);
           done++;
@@ -139,18 +153,18 @@ export async function syncSurveyV2(survey: StoredSurvey, deps: SyncDeps): Promis
     }
 
     // Don't tell SolarPro it's complete if it was reopened mid-upload.
-    if (!(await deps.stillSubmitted(survey.id))) throw new Reopened();
+    if (!(await deps.stillSubmitted(survey.id, gen))) throw new Reopened();
     await deps.complete(survey.id);
-    await deps.markSynced(survey.id);
+    await deps.markSynced(survey.id, gen);
     return "synced";
   } catch (error) {
     if (error instanceof Reopened) return "skipped";
     if (deps.isSessionExpired(error)) {
-      await deps.markSyncError(survey.id, "Sign in again to finish uploading.", survey.syncAttempts, WAIT_FOR_LOGIN);
+      await deps.markSyncError(survey.id, "Sign in again to finish uploading.", survey.syncAttempts, WAIT_FOR_LOGIN, gen);
       return "needs_login";
     }
     const attempts = survey.syncAttempts + 1;
-    await deps.markSyncError(survey.id, friendlySyncError(error), attempts, nextRetryAt(attempts, deps.now()));
+    await deps.markSyncError(survey.id, friendlySyncError(error), attempts, nextRetryAt(attempts, deps.now()), gen);
     return "error";
   }
 }

@@ -251,8 +251,8 @@ const _v2Deps: SyncDeps = {
   uploadPhoto: uploadSurveyPhotoV2,
   updatePhotoMeta: updateSurveyPhotoMetaV2,
   complete: completeSurveyV2,
-  markSyncing: async (id) => {
-    const claimed = await repo.markSyncing(id);
+  markSyncing: async (id, generation) => {
+    const claimed = await repo.markSyncing(id, generation);
     _notifyCallbacks();
     return claimed;
   },
