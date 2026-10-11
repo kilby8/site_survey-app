@@ -7,11 +7,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
+import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import React from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Button, IconButton } from "../../ui/components";
+import { Button, IconButton, ReasonSheet } from "../../ui/components";
 import { FramingGuide } from "../../ui/FramingGuide";
 import { color, radius, space } from "../../ui/theme";
 import { findSlot } from "../blueprint";
@@ -21,10 +22,11 @@ import { nextNeededShot, photosForSlot, stepShots, type ShotTarget } from "../pr
 import { flagMessage } from "../quality";
 import { loadPhotos, loadSurvey, removePhoto, updatePhoto } from "../repo";
 
+// expo-camera zoom is a fraction of each phone's maximum, so label by intent.
 const ZOOMS = [
-  { label: "1×", value: 0 },
-  { label: "2×", value: 0.15 },
-  { label: "4×", value: 0.4 },
+  { label: "Wide", value: 0 },
+  { label: "Closer", value: 0.12 },
+  { label: "Far", value: 0.35 },
 ];
 
 type Result = { photo: CapturedPhoto; blurry: boolean } | null;
@@ -53,6 +55,35 @@ export function GuidedCameraScreen({
   const [ready, setReady] = React.useState(false);
   const [showGuide, setShowGuide] = React.useState(true);
   const [shotCount, setShotCount] = React.useState(0);
+  const [keepOpen, setKeepOpen] = React.useState(false);
+  const retakeOf = React.useRef<{ photoId: string; reason: string } | null>(null);
+
+  // Keep position and compass live while the camera is open, so a shot never
+  // waits on a GPS fix.
+  const fixRef = React.useRef<{ gps: CapturedPhoto["gps"]; heading: number | null }>({ gps: null, heading: null });
+  React.useEffect(() => {
+    const subs: { remove: () => void }[] = [];
+    void (async () => {
+      try {
+        const perm = await Location.requestForegroundPermissionsAsync();
+        if (!perm.granted) return;
+        subs.push(
+          await Location.watchPositionAsync({ accuracy: Location.Accuracy.High, timeInterval: 2000, distanceInterval: 1 }, (pos) => {
+            fixRef.current.gps = { lat: pos.coords.latitude, lng: pos.coords.longitude, alt: pos.coords.altitude ?? null };
+          }),
+        );
+        subs.push(
+          await Location.watchHeadingAsync((h) => {
+            const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+            if (deg >= 0) fixRef.current.heading = Math.round(deg) % 360;
+          }),
+        );
+      } catch {
+        // location is optional
+      }
+    })();
+    return () => subs.forEach((sub) => sub.remove());
+  }, []);
 
   React.useEffect(() => {
     void (async () => {
@@ -109,10 +140,10 @@ export function GuidedCameraScreen({
     try {
       const pic = await camera.current.takePictureAsync({ quality: 1, exif: true, shutterSound: true });
       const exif = readExif(pic.exif as Record<string, unknown> | undefined);
-      const live = await currentFix();
+      const live = fixRef.current.gps || fixRef.current.heading !== null ? fixRef.current : await currentFix();
       const filed = await fileAsset(
         { uri: pic.uri, width: pic.width, height: pic.height },
-        { surveyId, slotId: target.slot.id, planeId: target.planeId },
+        { surveyId, slotId: target.slot.id, planeId: target.planeId, retakeOf: retakeOf.current },
         photos,
         { gps: exif.gps ?? live.gps, heading: live.heading },
       );
@@ -125,8 +156,10 @@ export function GuidedCameraScreen({
       );
       // Sharp single-photo slot: move straight on.
       if (!filed.blurry && max === 1) setTimeout(() => goNext(latest), 650);
-    } catch {
+      retakeOf.current = null;
+    } catch (e) {
       setResult(null);
+      Alert.alert("Photo not saved", `${e instanceof Error ? e.message : String(e)}\n\nTry again.`);
     } finally {
       setBusy(false);
     }
@@ -134,16 +167,18 @@ export function GuidedCameraScreen({
 
   const retake = async () => {
     if (result) {
+      // The next shot replaces this one and must not be compared with it.
+      retakeOf.current = { photoId: result.photo.id, reason: (result.photo.qualityFlags ?? ["blurry"]).join(", ") };
       await removePhoto(result.photo);
       setPhotos(await loadPhotos(surveyId));
     }
     setResult(null);
   };
 
-  const keepBlurry = async () => {
+  const keepFlagged = async (reason: string) => {
     if (!result) return;
-    // Kept as flagged; Review asks for the reason before submit.
-    await updatePhoto(result.photo.id, { qualityStatus: "pending_review" });
+    setKeepOpen(false);
+    await updatePhoto(result.photo.id, { qualityStatus: "pending_review", notes: reason });
     goNext(await loadPhotos(surveyId));
   };
 
@@ -161,7 +196,8 @@ export function GuidedCameraScreen({
 
       {showGuide && !result ? (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, s.center]}>
-          <View style={{ opacity: 0.55 }}>
+          {/* A dim panel behind the lines keeps the guide readable on bright scenes. */}
+          <View style={{ backgroundColor: "rgba(0,0,0,0.28)", borderRadius: radius.lg, padding: space.sm }}>
             <FramingGuide id={target.slot.guide} size={300} />
           </View>
         </View>
@@ -195,7 +231,7 @@ export function GuidedCameraScreen({
           <Ionicons name={result.blurry ? "eye-off" : "checkmark-circle"} size={28} color={result.blurry ? color.onAmber : "#04210F"} />
           <Text style={[s.resultText, { color: result.blurry ? color.onAmber : "#04210F" }]}>
             {result.blurry
-              ? `${flagMessage(result.photo.qualityFlags ?? ["blurry"])} Retake while you’re here?`
+              ? `${flagMessage(result.photo.qualityFlags ?? ["blurry"], result.photo.slotId)} Retake while you’re here?`
               : `Saved: ${target.slot.label}`}
           </Text>
         </View>
@@ -204,7 +240,7 @@ export function GuidedCameraScreen({
       <View style={[s.bottom, { paddingBottom: insets.bottom + space.md }]}>
         {result?.blurry ? (
           <View style={s.row}>
-            <Button label="Keep" kind="secondary" onPress={() => void keepBlurry()} style={{ flex: 1 }} />
+            <Button label="Keep…" kind="secondary" onPress={() => setKeepOpen(true)} style={{ flex: 1 }} />
             <Button label="Retake" icon="camera-reverse" onPress={() => void retake()} style={{ flex: 1.4 }} />
           </View>
         ) : (
@@ -259,6 +295,15 @@ export function GuidedCameraScreen({
           </>
         )}
       </View>
+      <ReasonSheet
+        visible={keepOpen}
+        title="Keep this photo"
+        prompt="Why keep it as is? This note goes to the design team with the photo."
+        suggestions={["Best possible in this light", "Label is still readable", "No label on this equipment", "Different angle on purpose"]}
+        confirmLabel="Keep photo"
+        onCancel={() => setKeepOpen(false)}
+        onConfirm={(r) => void keepFlagged(r)}
+      />
     </View>
   );
 }

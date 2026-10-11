@@ -83,6 +83,10 @@ export interface CapturedPhoto {
   qualityFlags?: string[];
   /** Perceptual hash used to spot the same shot taken twice. */
   ahash?: string | null;
+  /** Text read from the photo on the phone (meter numbers, labels). */
+  detectedText?: string | null;
+  /** On-device image labels with confidence. */
+  labels?: { text: string; confidence: number }[] | null;
   /** Editable markup vectors (MarkupEditor marks); the rendered copy is annotatedRelPath. */
   markup?: unknown[] | null;
   uploadState: UploadState;

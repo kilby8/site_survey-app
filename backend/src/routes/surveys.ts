@@ -43,6 +43,9 @@ async function ensureSurveySoftDeleteColumn(): Promise<void> {
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_email TEXT`);
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_org_id TEXT`);
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS inspector_email TEXT`);
+        // When the survey's content (fields or photos) last changed — not touched by
+        // /complete — so a survey edited after delivery can notify SolarPro again.
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS content_updated_at TIMESTAMPTZ`);
         await pool.query(`ALTER TABLE survey_photos ADD COLUMN IF NOT EXISTS photo_data BYTEA`);
         // v2 app: per-photo Golden Block + idempotent uploads keyed by the device's photo id.
         await pool.query(`ALTER TABLE survey_photos ADD COLUMN IF NOT EXISTS client_photo_id TEXT`);
@@ -1196,16 +1199,27 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
 
     const { rows: existingDeliveryRows } = await pool.query<{
       event_id: string;
+      status: string;
+      edited_since: boolean;
     }>(
-      `SELECT event_id::text AS event_id
-         FROM webhook_deliveries
-        WHERE survey_id = $1 AND event_type = 'survey.completed'
-        ORDER BY created_at ASC
+      `SELECT d.event_id::text AS event_id, d.status,
+              COALESCE(s.content_updated_at > d.created_at, false) AS edited_since
+         FROM webhook_deliveries d
+         JOIN surveys s ON s.id = d.survey_id
+        WHERE d.survey_id = $1 AND d.event_type = 'survey.completed'
+        ORDER BY d.created_at DESC
         LIMIT 1`,
       [surveyId],
     );
 
-    if (existingDeliveryRows.length > 0) {
+    // Delivered, then the survey was edited (reopened on the device): send a
+    // new event so SolarPro picks up the changes.
+    const editedAfterDelivery =
+      existingDeliveryRows.length > 0 &&
+      existingDeliveryRows[0].status === "delivered" &&
+      existingDeliveryRows[0].edited_since;
+
+    if (existingDeliveryRows.length > 0 && !editedAfterDelivery) {
       const { rows: surveyRows } = await pool.query<{ status: string }>(
         `SELECT status
            FROM surveys
@@ -1814,7 +1828,10 @@ function normalizeSurveyInput(raw: Record<string, unknown>): SurveyInput & { id?
  * inspectorName, dateTime, gpsCoordinates, photos[].dataUrl etc.).
  */
 router.post("/", async (req: Request, res: Response) => {
+  // Make sure newer columns (content_updated_at, client_photo_id) exist.
+  await ensureSurveySoftDeleteColumn();
   const body = normalizeSurveyInput(req.body as Record<string, unknown>);
+  const droppedFiles: string[] = [];
 
   if (body.id && !isValidUuid(body.id)) {
     respondValidationError(res, "id must be a valid UUID", "id");
@@ -1941,6 +1958,7 @@ router.post("/", async (req: Request, res: Response) => {
     if (body.checklist?.length)
       await upsertChecklist(client, newId, body.checklist);
     if (body.photos?.length) await upsertPhotos(client, newId, body.photos);
+    await client.query(`UPDATE surveys SET content_updated_at = NOW() WHERE id = $1`, [newId]);
 
     // v2 app: the list of photos the survey has now. Photos it uploaded
     // earlier that are no longer listed (deleted, retaken, re-marked-up)
@@ -1948,15 +1966,22 @@ router.post("/", async (req: Request, res: Response) => {
     const rawIds = (req.body as { client_photo_ids?: unknown }).client_photo_ids;
     if (Array.isArray(rawIds)) {
       const keep = rawIds.filter((v): v is string => typeof v === "string" && v.length > 0 && v.length <= 100);
-      await client.query(
+      const { rows: dropped } = await client.query<{ file_path: string | null }>(
         `DELETE FROM survey_photos
           WHERE survey_id = $1 AND client_photo_id IS NOT NULL
-            AND NOT (client_photo_id = ANY($2::text[]))`,
+            AND NOT (client_photo_id = ANY($2::text[]))
+          RETURNING file_path`,
         [newId, keep],
       );
+      droppedFiles.push(...dropped.map((r) => r.file_path).filter((f): f is string => !!f));
     }
 
     await client.query("COMMIT");
+
+    // Remove the stored files of dropped photos (best effort, after commit).
+    for (const filePath of droppedFiles) {
+      deleteFile(filePath).catch((e) => console.warn("Failed to delete dropped photo file:", e));
+    }
 
     const full = await fetchSurveyFull(newId);
     broadcastSurveyEvent("survey.created", full);
@@ -2249,6 +2274,9 @@ router.post(
         inserted.push(photoRows[0]);
       }
 
+      if (inserted.some((p) => !(p as { duplicate?: boolean }).duplicate)) {
+        await client.query(`UPDATE surveys SET content_updated_at = NOW() WHERE id = $1`, [id]);
+      }
       await client.query("COMMIT");
       res.status(201).json({ uploaded: inserted.length, photos: inserted });
     } catch (err) {

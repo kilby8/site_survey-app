@@ -104,6 +104,8 @@ export const PHOTOS_OPTIONAL_COLUMNS = [
   { name: 'quality_flags', sqlType: 'TEXT' },
   { name: 'ahash', sqlType: 'TEXT' },
   { name: 'markup_json', sqlType: 'TEXT' },
+  { name: 'detected_text', sqlType: 'TEXT' },
+  { name: 'labels_json', sqlType: 'TEXT' },
   { name: 'upload_state', sqlType: "TEXT DEFAULT 'local'" },
   { name: 'server_photo_id', sqlType: 'TEXT' },
 ] as const;

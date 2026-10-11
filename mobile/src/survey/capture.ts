@@ -16,6 +16,7 @@ import type { SurveyStepId } from "../types/pipeline";
 import { findSlot } from "./blueprint";
 import type { CapturedPhoto } from "./model";
 import { nextCaptureOrder } from "./progress";
+import { checkContent } from "./content";
 import { analyzeJpegBase64, BLUR_SAMPLE_WIDTH, qualityFlags, type ImageAnalysis } from "./quality";
 import { absPath, insertPhoto, newId, PHOTO_DIR } from "./repo";
 
@@ -149,7 +150,16 @@ export async function fileAsset(
   const capturedAt = takenAt ?? new Date().toISOString();
   const [where, relPath] = await Promise.all([fix ?? currentFix(), storeImage(asset, id)]);
   const analysis = await analyzeImage(absPath(relPath));
-  const flags = qualityFlags(analysis, existing.filter((p) => p.qualityStatus !== "rejected"));
+  // Duplicate check: not against the photo being retaken, and not against the
+  // same slot on another roof plane (shingle close-ups look alike by nature).
+  const comparable = existing.filter(
+    (p) =>
+      p.qualityStatus !== "rejected" &&
+      p.id !== target.retakeOf?.photoId &&
+      !(p.slotId === target.slotId && (p.planeId ?? null) !== target.planeId),
+  );
+  const content = await checkContent(target.slotId, absPath(relPath));
+  const flags = [...qualityFlags(analysis, comparable), ...content.flags];
   const blurScore = analysis?.sharpness ?? null;
   // "blurry" here means "needs the surveyor's decision" (any quality flag).
   const blurry = flags.length > 0;
@@ -175,6 +185,8 @@ export async function fileAsset(
     blurScore,
     qualityFlags: flags,
     ahash: analysis?.ahash ?? null,
+    detectedText: content.text || null,
+    labels: content.labels,
     uploadState: "local",
     serverPhotoId: null,
   };

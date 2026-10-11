@@ -19,6 +19,7 @@ import { color, radius, space } from "../../ui/theme";
 import { STEPS, type SlotDef } from "../blueprint";
 import { photoLabel } from "../payload";
 import { flagMessage } from "../quality";
+import { likelyNumber } from "../content";
 import { currentFix, pickFromLibrary, recoverPendingCapture, takePhoto } from "../capture";
 import { fieldKey, slotKey, type CapturedPhoto } from "../model";
 import { photosForSlot, sectionInstances, surveyReadiness, type RequiredItem } from "../progress";
@@ -105,6 +106,11 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
 
   const doc = ed.doc;
   const readiness = surveyReadiness(doc, ed.photos);
+  // Meter number read from the meter close-up (on-device text recognition).
+  const meterHint = (() => {
+    const p = ed.photos.find((x) => x.slotId === "utility_meter_close" && x.detectedText);
+    return p?.detectedText ? likelyNumber(p.detectedText) : null;
+  })();
   const overridden = new Set(doc.overrides.map((o) => o.key));
   const locked = ed.survey.status === "submitted";
 
@@ -284,6 +290,19 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
                       style={focusKey === key ? s.focused : undefined}
                     >
                       <FieldInput field={f} value={inst.answers[f.id]} onChange={(v) => ed.setAnswer(f.id, v, inst.planeId)} />
+                      {f.id === "meter_number" && !inst.answers.meter_number && meterHint ? (
+                        <Pressable
+                          onPress={() => ed.setAnswer("meter_number", meterHint)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Use meter number ${meterHint} read from the photo`}
+                          style={s.hintChip}
+                        >
+                          <Ionicons name="scan-outline" size={18} color={color.amber} />
+                          <T variant="small">
+                            Read from photo: <T variant="small" style={{ fontWeight: "800" }}>{meterHint}</T> — tap to use
+                          </T>
+                        </Pressable>
+                      ) : null}
                     </View>
                   );
                 })}
@@ -576,7 +595,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
       <Sheet visible={!!blurry && !blurReasonOpen} onClose={() => setBlurry(null)} title="Check this photo">
         {blurry ? (
           <View style={{ gap: space.md }}>
-            <T>{flagMessage(blurry.qualityFlags ?? ["blurry"])}</T>
+            <T>{flagMessage(blurry.qualityFlags ?? ["blurry"], blurry.slotId)}</T>
             <T dim>
               Designers need to read labels and edges. Retake it now while you’re here, or keep it and say why.
             </T>
@@ -642,6 +661,19 @@ const s = StyleSheet.create({
   reviewHead: { flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: 48 },
   reviewJump: { flex: 1, flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: 48 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+  hintChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    minHeight: 48,
+    marginTop: -space.sm,
+    marginBottom: space.md,
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: color.amber,
+    borderStyle: "dashed",
+  },
   cell: { flexBasis: "47%", flexGrow: 1 },
   focused: { borderRadius: radius.md, borderWidth: 3, borderColor: color.amber, padding: space.sm, margin: -space.sm },
   reviewRow: {

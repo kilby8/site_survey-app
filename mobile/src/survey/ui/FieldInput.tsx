@@ -132,8 +132,12 @@ function PitchInput({
   const options = field.options ?? [];
   const idx = typeof value === "string" ? options.indexOf(value) : -1;
   const step = (d: number) => {
-    const base = idx < 0 ? options.indexOf("6/12") : idx;
-    const next = Math.max(0, Math.min(options.length - 1, base + d));
+    // First press with nothing set lands on the most common pitch, 6/12.
+    if (idx < 0) {
+      onChange(options.includes("6/12") ? "6/12" : options[0]);
+      return;
+    }
+    const next = Math.max(0, Math.min(options.length - 1, idx + d));
     onChange(options[next]);
   };
   return (

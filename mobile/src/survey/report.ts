@@ -23,8 +23,8 @@ const esc = (v: unknown) =>
 
 async function thumbDataUri(photo: CapturedPhoto): Promise<string | null> {
   try {
-    const out = await ImageManipulator.manipulateAsync(absPath(photo.annotatedRelPath ?? photo.relPath), [{ resize: { width: 900 } }], {
-      compress: 0.7,
+    const out = await ImageManipulator.manipulateAsync(absPath(photo.annotatedRelPath ?? photo.relPath), [{ resize: { width: 640 } }], {
+      compress: 0.6,
       format: ImageManipulator.SaveFormat.JPEG,
       base64: true,
     });

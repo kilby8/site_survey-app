@@ -1289,6 +1289,32 @@ describe("POST /api/surveys/:id/complete", () => {
     expect(rows[0].attempt_count).toBeLessThanOrEqual(1);
   });
 
+  it("sends a new event only when the survey changed after it was delivered", async () => {
+    const body = { project_name: "Edit After Delivery", inspector_name: "Tech", site_name: "EAD" };
+    const create = await request(app).post("/api/surveys").set("Authorization", authHeader).send(body);
+    createdIds.push(create.body.id);
+    const id = create.body.id as string;
+
+    const first = await request(app).post(`/api/surveys/${id}/complete`).set("Authorization", authHeader).send({});
+    await pool.query(
+      `UPDATE webhook_deliveries SET status = 'delivered', created_at = NOW() - INTERVAL '1 minute' WHERE survey_id = $1`,
+      [id],
+    );
+    await pool.query(`UPDATE surveys SET content_updated_at = NOW() - INTERVAL '2 minutes' WHERE id = $1`, [id]);
+
+    const same = await request(app).post(`/api/surveys/${id}/complete`).set("Authorization", authHeader).send({});
+    expect(same.body.event_id).toBe(first.body.event_id);
+
+    // Reopened on the phone and re-sent with a change.
+    await request(app).post("/api/surveys").set("Authorization", authHeader).send({ ...body, id, notes: "Added sub panel" });
+    const edited = await request(app).post(`/api/surveys/${id}/complete`).set("Authorization", authHeader).send({});
+    expect(edited.status).toBe(200);
+    expect(edited.body.event_id).not.toBe(first.body.event_id);
+
+    const again = await request(app).post(`/api/surveys/${id}/complete`).set("Authorization", authHeader).send({});
+    expect(again.body.event_id).toBe(edited.body.event_id);
+  });
+
   it("returns 422 for invalid UUID id", async () => {
     const res = await request(app)
       .post("/api/surveys/not-a-uuid/complete")

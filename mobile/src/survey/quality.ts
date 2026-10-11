@@ -7,6 +7,7 @@
 // ============================================================
 
 import { decode as decodeJpeg } from "jpeg-js";
+import { TEXT_SLOTS } from "./content";
 
 export const BLUR_SAMPLE_WIDTH = 480;
 /** Below this the photo is flagged as blurry. Calibrated on 480 px thumbnails of
@@ -141,7 +142,7 @@ export function hammingHex(a: string, b: string): number {
 }
 
 /** Two photos this close (of 64 bits) are the same shot taken twice. */
-export const DUPLICATE_DISTANCE = 4;
+export const DUPLICATE_DISTANCE = 3;
 
 export function analyzeJpegBase64(b64: string): ImageAnalysis {
   const img = decodeJpeg(base64ToBytes(b64), { useTArray: true, formatAsRGBA: true });
@@ -166,12 +167,15 @@ export function qualityFlags(
   return flags;
 }
 
-export function flagMessage(flags: string[]): string {
+export function flagMessage(flags: string[], slotId?: string): string {
+  const need = slotId ? TEXT_SLOTS[slotId] : undefined;
   const parts: Record<string, string> = {
     blurry: "looks blurry",
     dark: "is too dark",
     bright: "is washed out",
     duplicate: "looks the same as another photo in this survey",
+    no_text: `has no readable ${need ? need.what : "text"}`,
+    off_subject: "doesn't look like a site photo",
   };
   const said = flags.map((f) => parts[f]).filter(Boolean);
   if (!said.length) return "";

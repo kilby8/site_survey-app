@@ -125,7 +125,20 @@ export function MarkupEditor({
 }) {
   const w = displayWidth;
   const h = displayWidth / aspect;
-  const [marks, setMarks] = React.useState<Mark[]>(initial);
+  const [marks, setMarksState] = React.useState<Mark[]>(initial);
+  // Every change is undoable, including "clear all".
+  const history = React.useRef<Mark[][]>([]);
+  const setMarks = React.useCallback((next: Mark[] | ((m: Mark[]) => Mark[])) => {
+    setMarksState((cur) => {
+      const value = typeof next === "function" ? next(cur) : next;
+      history.current.push(cur);
+      return value;
+    });
+  }, []);
+  const undo = () => {
+    const prev = history.current.pop();
+    if (prev) setMarksState(prev);
+  };
   const [draft, setDraft] = React.useState<Mark | null>(null);
   const [tool, setTool] = React.useState<Tool>("arrow");
   const [ink, setInk] = React.useState(INKS[0]);
@@ -225,19 +238,25 @@ export function MarkupEditor({
       </View>
 
       {render ? (
-        <View
-          ref={shot}
-          collapsable={false}
-          pointerEvents="none"
-          style={{ position: "absolute", left: -100000, top: 0, width: render.wDp, height: render.hDp, backgroundColor: "#000" }}
-        >
-          <Image
-            source={{ uri }}
-            style={{ width: render.wDp, height: render.hDp }}
-            resizeMode="cover"
-            onLoad={() => loaded.current?.()}
-          />
-          <MarksLayer marks={marks} w={render.wDp} h={render.hDp} />
+        // Rendered on screen (Android may not draw views outside the window),
+        // under an opaque "Saving" cover.
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
+          <View
+            ref={shot}
+            collapsable={false}
+            style={{ position: "absolute", left: 0, top: 0, width: render.wDp, height: render.hDp, backgroundColor: "#000" }}
+          >
+            <Image
+              source={{ uri }}
+              style={{ width: render.wDp, height: render.hDp }}
+              resizeMode="cover"
+              onLoad={() => loaded.current?.()}
+            />
+            <MarksLayer marks={marks} w={render.wDp} h={render.hDp} />
+          </View>
+          <View style={[StyleSheet.absoluteFill, s.cover]}>
+            <T variant="title">Saving markup…</T>
+          </View>
         </View>
       ) : null}
 
@@ -286,7 +305,7 @@ export function MarkupEditor({
             />
           ))}
           <View style={{ flex: 1 }} />
-          <IconButton icon="arrow-undo" label="Undo" onPress={() => setMarks((m) => m.slice(0, -1))} />
+          <IconButton icon="arrow-undo" label="Undo" onPress={undo} />
           <IconButton icon="trash-outline" label="Clear all marks" onPress={() => setMarks([])} tint={color.red} />
         </View>
 
@@ -348,4 +367,5 @@ const s = StyleSheet.create({
   toolText: { color: color.text, fontWeight: "800", fontSize: 16 },
   swatch: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: color.border },
   swatchOn: { borderColor: color.text, borderWidth: 3 },
+  cover: { backgroundColor: color.bg, alignItems: "center", justifyContent: "center" },
 });

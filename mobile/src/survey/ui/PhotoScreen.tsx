@@ -157,6 +157,9 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
                   value={photo.blurScore === null ? "Not measured" : `${Math.round(photo.blurScore)} (blurry below ${BLUR_THRESHOLD})`}
                 />
                 <MetaRow icon="resize-outline" label="Size" value={`${size.w} × ${size.h}`} />
+                {photo.detectedText ? (
+                  <MetaRow icon="scan-outline" label="Text read" value={photo.detectedText.replace(/\s+/g, " ").slice(0, 160)} />
+                ) : null}
                 {photo.retakeReason ? <MetaRow icon="refresh" label="Retake of" value={photo.retakeReason} /> : null}
               </View>
 

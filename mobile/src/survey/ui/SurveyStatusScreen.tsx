@@ -112,7 +112,7 @@ export function SurveyStatusScreen({ surveyId }: { surveyId: string }) {
           {survey.syncStatus === "error" || survey.syncStatus === "pending" ? (
             <Button label="Retry upload now" icon="refresh" onPress={() => void syncPending({ force: true })} disabled={!isOnline()} />
           ) : null}
-          {survey.syncStatus === "error" || survey.syncStatus === "pending" ? (
+          {survey.status === "submitted" && survey.syncStatus !== "synced" ? (
             <Button
               label="Reopen to edit"
               icon="create-outline"
