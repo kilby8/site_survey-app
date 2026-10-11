@@ -24,9 +24,9 @@ import { loadPhotos, loadSurvey, removePhoto, updatePhoto } from "../repo";
 
 // expo-camera zoom is a fraction of each phone's maximum, so label by intent.
 const ZOOMS = [
-  { label: "1×", value: 0 },
-  { label: "Zoom +", value: 0.12 },
-  { label: "Zoom ++", value: 0.35 },
+  { label: "1×", spoken: "No zoom", value: 0 },
+  { label: "Zoom +", spoken: "Zoom in a little", value: 0.12 },
+  { label: "Zoom ++", spoken: "Zoom in more", value: 0.35 },
 ];
 
 type Result = { photo: CapturedPhoto; blurry: boolean } | null;
@@ -262,7 +262,7 @@ export function GuidedCameraScreen({
                   key={z.label}
                   onPress={() => setZoom(z.value)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Zoom ${z.label}`}
+                  accessibilityLabel={z.spoken}
                   accessibilityState={{ selected: zoom === z.value }}
                   style={[s.zoom, zoom === z.value && s.zoomOn]}
                 >
