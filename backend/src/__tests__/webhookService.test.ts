@@ -32,7 +32,7 @@ describe("webhookService non-retriable delivery behavior", () => {
         return { rows: [] };
       }
 
-      if (text.includes("FROM webhook_deliveries") && text.includes("WHERE status = 'pending'")) {
+      if (text.includes("UPDATE webhook_deliveries d") && text.includes("SET status = 'sending'")) {
         return {
           rows: [
             {
@@ -107,6 +107,23 @@ describe("webhookService non-retriable delivery behavior", () => {
 
     expect(updates).toContain("pending");
     expect(updates).not.toContain("failed");
+  });
+
+  it("claims rows with SKIP LOCKED so the worker and /complete never double-send", async () => {
+    const { queryMock } = await runCase(200);
+    const claim = queryMock.mock.calls
+      .map((call) => String(call[0]).replace(/\s+/g, " "))
+      .find((text) => text.includes("SET status = 'sending'"));
+
+    expect(claim).toBeDefined();
+    expect(claim).toContain("FOR UPDATE SKIP LOCKED");
+  });
+
+  it("sends with a timeout signal", async () => {
+    await runCase(200);
+    const init = (global.fetch as jest.Mock).mock.calls[0][1] as RequestInit;
+
+    expect(init.signal).toBeDefined();
   });
 });
 
@@ -203,3 +220,41 @@ describe("enqueueSurveyCompleteWebhook — F-06 ownership fields", () => {
   });
 });
 
+
+describe("requeueFailedSurveyWebhook", () => {
+  afterEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+  });
+
+  async function load(rowCount: number) {
+    const queryMock = jest.fn(async (): Promise<{ rows: unknown[]; rowCount: number }> => ({
+      rows: [],
+      rowCount,
+    }));
+    jest.doMock("../database", () => ({ pool: { query: queryMock } }));
+    const { requeueFailedSurveyWebhook } = await import("../services/webhookService");
+    return { requeueFailedSurveyWebhook, queryMock };
+  }
+
+  it("resets only failed survey.completed rows, keeping the event_id", async () => {
+    const { requeueFailedSurveyWebhook, queryMock } = await load(1);
+
+    await expect(requeueFailedSurveyWebhook("survey-1", "tech@example.com")).resolves.toBe(true);
+
+    const [sql, params] = queryMock.mock.calls
+      .map((call) => call as unknown as [string, unknown[]])
+      .find(([text]) => String(text).includes("UPDATE webhook_deliveries"))!;
+    const text = sql.replace(/\s+/g, " ");
+    expect(text).toContain("status = 'failed'");
+    expect(text).toContain("SET status = 'pending'");
+    expect(text).not.toContain("event_id =");
+    expect(params).toEqual(["survey-1", "tech@example.com"]);
+  });
+
+  it("returns false when nothing was failed", async () => {
+    const { requeueFailedSurveyWebhook } = await load(0);
+
+    await expect(requeueFailedSurveyWebhook("survey-1", null)).resolves.toBe(false);
+  });
+});

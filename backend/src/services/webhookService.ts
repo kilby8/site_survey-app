@@ -41,6 +41,9 @@ interface WebhookDeliveryRow {
 }
 
 const RETRY_MINUTES = [1, 5, 30, 120, 720];
+const WEBHOOK_TIMEOUT_MS = 15_000;
+// A row left in 'sending' (process died mid-delivery) is picked up again after this.
+const STALE_SENDING_MINUTES = 10;
 let tableReady: Promise<void> | null = null;
 let surveySyncColumnReady: Promise<void> | null = null;
 
@@ -262,6 +265,9 @@ async function deliverOne(row: WebhookDeliveryRow): Promise<void> {
         "X-Survey-Event-Id": row.event_id,
       },
       body: payloadText,
+      // Without a timeout a hung SolarPro request blocks /complete and the
+      // worker indefinitely; a timeout is treated like any network error.
+      signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
     });
 
     // ── SOLARPRO_WEBHOOK_SEND ──────────────────────────────────────────────
@@ -356,27 +362,67 @@ async function deliverOne(row: WebhookDeliveryRow): Promise<void> {
 export async function processWebhookQueue(limit = 25): Promise<void> {
   await ensureWebhookDeliveriesTable();
 
+  // Claim rows atomically so the background worker and the inline call from
+  // /complete never send the same delivery twice at the same time.
   const { rows } = await pool.query<WebhookDeliveryRow>(
-    `SELECT
-       id,
-       survey_id,
-       event_type,
-       event_id,
-       payload::text AS payload,
-       status,
-       attempt_count,
-       next_attempt_at::text AS next_attempt_at,
-       last_error
-     FROM webhook_deliveries
-     WHERE status = 'pending' AND next_attempt_at <= NOW()
-     ORDER BY next_attempt_at ASC
-     LIMIT $1`,
-    [limit],
+    `UPDATE webhook_deliveries d
+        SET status = 'sending',
+            updated_at = NOW()
+      WHERE d.id IN (
+              SELECT id
+                FROM webhook_deliveries
+               WHERE (status = 'pending' AND next_attempt_at <= NOW())
+                  OR (status = 'sending' AND updated_at < NOW() - make_interval(mins => $2))
+               ORDER BY next_attempt_at ASC
+               LIMIT $1
+               FOR UPDATE SKIP LOCKED
+            )
+      RETURNING
+        d.id,
+        d.survey_id,
+        d.event_type,
+        d.event_id,
+        d.payload::text AS payload,
+        d.status,
+        d.attempt_count,
+        d.next_attempt_at::text AS next_attempt_at,
+        d.last_error`,
+    [limit, STALE_SENDING_MINUTES],
   );
 
   for (const row of rows) {
     await deliverOne(row);
   }
+}
+
+/**
+ * Put a failed survey.completed delivery back in the queue (same event_id).
+ * Owner fields that were missing when the row was first built are filled in
+ * from `ownerEmail` so the resend can be routed to the right SolarPro user.
+ * Returns true when a failed row was requeued.
+ */
+export async function requeueFailedSurveyWebhook(
+  surveyId: string,
+  ownerEmail: string | null,
+): Promise<boolean> {
+  await ensureWebhookDeliveriesTable();
+  const { rowCount } = await pool.query(
+    `UPDATE webhook_deliveries
+        SET status = 'pending',
+            attempt_count = 0,
+            last_error = NULL,
+            next_attempt_at = NOW(),
+            updated_at = NOW(),
+            payload = payload || jsonb_strip_nulls(jsonb_build_object(
+              'solarpro_email',  COALESCE(payload->>'solarpro_email',  $2::text),
+              'inspector_email', COALESCE(payload->>'inspector_email', $2::text)
+            ))
+      WHERE survey_id = $1
+        AND event_type = 'survey.completed'
+        AND status = 'failed'`,
+    [surveyId, ownerEmail],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 let workerHandle: NodeJS.Timeout | null = null;

@@ -1142,6 +1142,85 @@ describe("POST /api/surveys/:id/complete", () => {
     expect(second.body.event_id).toBe(first.body.event_id);
   });
 
+  it("stamps the signed-in surveyor's email so SolarPro can route ownership", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({ project_name: "Owner Stamp", inspector_name: "Typed Name", site_name: "Stamp Site" });
+    expect(create.status).toBe(201);
+    createdIds.push(create.body.id);
+
+    const done = await request(app)
+      .post(`/api/surveys/${create.body.id}/complete`)
+      .set("Authorization", authHeader)
+      .send({});
+    expect(done.status).toBe(200);
+
+    const { rows } = await pool.query(
+      `SELECT s.solarpro_email, s.inspector_email, d.payload
+         FROM surveys s JOIN webhook_deliveries d ON d.survey_id = s.id
+        WHERE s.id = $1`,
+      [create.body.id],
+    );
+    expect(rows[0].solarpro_email).toBe(testUserEmail.toLowerCase());
+    expect(rows[0].inspector_email).toBe(testUserEmail.toLowerCase());
+    expect(rows[0].payload.solarpro_email).toBe(testUserEmail.toLowerCase());
+  });
+
+  it("keeps a device-supplied SolarPro email instead of overwriting it", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({
+        project_name: "Owner Keep",
+        inspector_name: "Typed Name",
+        site_name: "Keep Site",
+        solarpro_email: "handoff-owner@example.com",
+      });
+    expect(create.status).toBe(201);
+    createdIds.push(create.body.id);
+
+    await request(app).post(`/api/surveys/${create.body.id}/complete`).set("Authorization", authHeader).send({});
+
+    const { rows } = await pool.query(`SELECT solarpro_email FROM surveys WHERE id = $1`, [create.body.id]);
+    expect(rows[0].solarpro_email).toBe("handoff-owner@example.com");
+  });
+
+  it("requeues a failed delivery with the same event id when completed again", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({ project_name: "Requeue", inspector_name: "Typed Name", site_name: "Requeue Site" });
+    expect(create.status).toBe(201);
+    createdIds.push(create.body.id);
+
+    const first = await request(app)
+      .post(`/api/surveys/${create.body.id}/complete`)
+      .set("Authorization", authHeader)
+      .send({});
+    await pool.query(
+      `UPDATE webhook_deliveries SET status = 'failed', attempt_count = 5,
+              next_attempt_at = NOW() + INTERVAL '1 day'
+        WHERE survey_id = $1`,
+      [create.body.id],
+    );
+
+    const again = await request(app)
+      .post(`/api/surveys/${create.body.id}/complete`)
+      .set("Authorization", authHeader)
+      .send({});
+    expect(again.status).toBe(200);
+    expect(again.body.event_id).toBe(first.body.event_id);
+
+    const { rows } = await pool.query(
+      `SELECT status, attempt_count FROM webhook_deliveries WHERE survey_id = $1`,
+      [create.body.id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).not.toBe("failed");
+    expect(rows[0].attempt_count).toBeLessThanOrEqual(1);
+  });
+
   it("returns 422 for invalid UUID id", async () => {
     const res = await request(app)
       .post("/api/surveys/not-a-uuid/complete")

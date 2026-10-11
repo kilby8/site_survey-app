@@ -18,6 +18,7 @@ import {
   enqueueSurveyCompleteWebhook,
   ensureWebhookDeliveriesTable,
   processWebhookQueue,
+  requeueFailedSurveyWebhook,
   softDeleteSurveyAndQueueCleanup,
 } from "../services/webhookService";
 import {
@@ -1178,6 +1179,13 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
 
     const surveyId = req.params.id;
 
+    // The signed-in surveyor. Stamped on the survey so SolarPro can route the
+    // ingest to their account by email instead of guessing from the typed
+    // inspector name. The partner service account is not a person: skip it.
+    const authEmail = req.authUser?.email?.trim().toLowerCase() || null;
+    const ownerEmail =
+      authEmail && req.authUser?.userId !== "partner-service-account" ? authEmail : null;
+
     const { rows: existingDeliveryRows } = await pool.query<{
       event_id: string;
     }>(
@@ -1201,6 +1209,12 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
       if (surveyRows.length === 0) {
         res.status(404).json({ error: "Survey not found" });
         return;
+      }
+
+      // A delivery that ran out of retries is resent (same event_id) when the
+      // device completes the survey again, instead of being stuck forever.
+      if (await requeueFailedSurveyWebhook(surveyId, ownerEmail)) {
+        await processWebhookQueue(10);
       }
 
       res.json({
@@ -1228,13 +1242,15 @@ router.post("/:id/complete", async (req: Request, res: Response) => {
     }>(
       `UPDATE surveys
           SET status = 'submitted',
+              solarpro_email = COALESCE(solarpro_email, $2),
+              inspector_email = COALESCE(inspector_email, $2),
               updated_at = NOW()
         WHERE id = $1 AND deleted_at IS NULL
         RETURNING id::text, status, project_id::text,
                   solarpro_user_id, solarpro_project_id, solarpro_email,
                   solarpro_org_id, inspector_name, inspector_email,
                   site_name, project_name`,
-      [surveyId],
+      [surveyId, ownerEmail],
     );
 
     if (updatedRows.length === 0) {

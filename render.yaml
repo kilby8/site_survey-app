@@ -37,12 +37,12 @@ services:
       # ── CORS ─────────────────────────────────────────────────────────────────
       # Add any additional origins (Expo Go, device LAN IPs) here.
       - key: ALLOWED_ORIGINS
-        value: https://solarpro-dev.vercel.app,https://solar-pro.app
+        value: https://solarpro.solutions,https://www.solarpro.solutions,https://solarpro-dev.vercel.app,https://solar-pro.app
 
       # ── SolarPro integration ─────────────────────────────────────────────────
       # URL of SolarPro's inbound webhook endpoint.
       - key: SOLARPRO_WEBHOOK_URL
-        value: https://solarpro-dev.vercel.app/api/webhooks/survey-complete
+        value: https://solarpro.solutions/api/webhooks/survey-complete
 
       # Shared HMAC secret — must match SURVEY_WEBHOOK_SECRET in Vercel env.
       - key: SURVEY_WEBHOOK_SECRET
@@ -54,7 +54,7 @@ services:
       # and /api/mobile/clients/:id/projects (the client dropdown in the mobile app).
       #
       # HOW TO SET THIS UP (one-time, both dashboards):
-      #   1. Go to Vercel -> solarpro-dev -> Settings -> Environment Variables
+      #   1. Go to Vercel -> solarpro-v31 (production) -> Settings -> Environment Variables
       #   2. Copy the value of MOBILE_SERVICE_API_KEY
       #   3. Go to Render -> site-survey-api -> Environment
       #   4. Set MOBILE_SERVICE_API_KEY to that EXACT same value
@@ -75,7 +75,7 @@ services:
 
       # SolarPro app base URL (no trailing slash).
       - key: SOLARPRO_API_URL
-        value: https://solarpro-dev.vercel.app
+        value: https://solarpro.solutions
 
       # HS256 secret for minting handoff JWTs (/api/handoff → mobile launch).
       # Must match SOLARPRO_HANDOFF_SECRET in Vercel env.

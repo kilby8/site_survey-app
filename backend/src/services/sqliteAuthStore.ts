@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'crypto';
+import { randomUUID, scryptSync, timingSafeEqual } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { Pool } from 'pg';
 import { pool } from '../database';
@@ -129,13 +129,20 @@ function ensureRefreshTokenTable(): Promise<void> {
   return refreshTableReady;
 }
 
-function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString('hex');
-  const derived = scryptSync(password, salt, 64).toString('hex');
-  return `${salt}:${derived}`;
+// The users table belongs to the website, which only accepts bcrypt hashes
+// (cost 12, matching the website's lib/auth.ts). Any other format makes the
+// website treat the account as needing a password reset, so every hash this
+// app writes must be bcrypt.
+const WEBSITE_BCRYPT_COST = 12;
+
+async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, WEBSITE_BCRYPT_COST);
 }
 
-function verifyPassword(password: string, stored: string): boolean {
+// Older builds of this app wrote salt:hex scrypt hashes. Still accepted here so
+// those users can sign in, and rewritten to bcrypt on success (see
+// verifyUserCredentials) so their website login works again.
+function verifyLegacyScryptPassword(password: string, stored: string): boolean {
   const [salt, expectedHex] = stored.split(':');
   if (!salt || !expectedHex) return false;
 
@@ -308,7 +315,7 @@ export async function createUser(
   const shape = await resolveWebsiteUsersShape();
 
   const id = randomUUID();
-  const passwordHash = hashPassword(password);
+  const passwordHash = await hashPassword(password);
 
   const { rows } = await sourcePool.query<AuthUserRecord>(
     `INSERT INTO users (id, email, password_hash, ${shape.nameColumn}, created_at, updated_at)
@@ -333,22 +340,23 @@ export async function verifyUserCredentials(
   const storedHash = websiteUser.password_hash;
   let isValid = false;
 
-  if (storedHash.includes(':')) {
-    isValid = verifyPassword(password, storedHash);
-  } else if (storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$') || storedHash.startsWith('$2y$')) {
+  if (storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$') || storedHash.startsWith('$2y$')) {
+    // Website-format hash: verify only, never rewrite it.
     isValid = await bcrypt.compare(password, storedHash);
+  } else if (storedHash.includes(':')) {
+    isValid = verifyLegacyScryptPassword(password, storedHash);
 
     if (isValid) {
+      // Repair: put back a hash the website can verify.
       try {
         await getWebsitePool().query(
           `UPDATE users
-              SET password_hash = $2,
-                  updated_at = NOW()
+              SET password_hash = $2
             WHERE id::text = $1`,
-          [websiteUser.id, hashPassword(password)],
+          [websiteUser.id, await hashPassword(password)],
         );
       } catch (_) {
-        // hash upgrade best-effort; updated_at may not exist in website schema
+        // best-effort; the user can still sign in to the app
       }
     }
   }
@@ -368,7 +376,7 @@ export async function updateUserPasswordByEmail(
   newPassword: string,
 ): Promise<{ id: string } | null> {
   const sourcePool = getWebsitePool();
-  const hashedPassword = hashPassword(newPassword);
+  const hashedPassword = await hashPassword(newPassword);
 
   try {
     const { rows } = await sourcePool.query<{ id: string }>(
