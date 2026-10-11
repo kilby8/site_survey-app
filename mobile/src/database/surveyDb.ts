@@ -334,6 +334,7 @@ export async function getPendingSurveys(options?: { includeErrors?: boolean }): 
   const rows = await db.getAllAsync<SurveyRow>(
     `SELECT * FROM surveys
       WHERE sync_status IN (${placeholders})
+        AND doc IS NULL
       ORDER BY created_at ASC`
     , syncStatuses
   );
@@ -376,6 +377,7 @@ export async function recoverStuckSyncingSurveys(maxAgeMinutes = 10): Promise<nu
             sync_error = ?,
             updated_at = ?
       WHERE sync_status = 'syncing'
+        AND doc IS NULL
         AND updated_at <= ?`,
     [errorMsg, nowIso, cutoffIso],
   );

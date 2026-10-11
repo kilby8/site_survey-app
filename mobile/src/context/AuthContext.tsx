@@ -1,80 +1,47 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchCurrentUser,
   logout as apiLogout,
   exchangeSolarProSso,
   refreshAccessToken,
+  HttpError,
   type AuthUser,
 } from '../api/client';
+import {
+  clearSession,
+  getAccessToken,
+  getCachedUser,
+  getRefreshToken,
+  isTerminalRefreshError,
+  onSessionChange,
+  refreshOnce,
+  saveCachedUser,
+  saveTokens,
+} from '../api/session';
 
-// Bump key version to invalidate stale sessions after auth flow rollout.
-const AUTH_TOKEN_KEY = 'site-survey.auth.token.v2';
-const REFRESH_TOKEN_KEY = 'site-survey.auth.refresh-token.v1';
-
-// Refresh the access token this many ms before it expires (2 minutes)
+// Refresh the access token this long before it expires.
 const REFRESH_BUFFER_MS = 2 * 60 * 1000;
 const REFRESH_RETRY_DELAY_MS = 60 * 1000;
 
-async function getStoredToken(): Promise<string | null> {
-  if (!AsyncStorage || typeof AsyncStorage.getItem !== 'function') return null;
-  try { return await AsyncStorage.getItem(AUTH_TOKEN_KEY); } catch { return null; }
-}
-
-async function setStoredToken(token: string): Promise<void> {
-  if (!AsyncStorage || typeof AsyncStorage.setItem !== 'function') return;
-  try { await AsyncStorage.setItem(AUTH_TOKEN_KEY, token); } catch { /* ignore */ }
-}
-
-async function clearStoredToken(): Promise<void> {
-  if (!AsyncStorage || typeof AsyncStorage.removeItem !== 'function') return;
-  try { await AsyncStorage.removeItem(AUTH_TOKEN_KEY); } catch { /* ignore */ }
-}
-
-async function getStoredRefreshToken(): Promise<string | null> {
-  if (!AsyncStorage || typeof AsyncStorage.getItem !== 'function') return null;
-  try { return await AsyncStorage.getItem(REFRESH_TOKEN_KEY); } catch { return null; }
-}
-
-async function setStoredRefreshToken(token: string): Promise<void> {
-  if (!AsyncStorage || typeof AsyncStorage.setItem !== 'function') return;
-  try { await AsyncStorage.setItem(REFRESH_TOKEN_KEY, token); } catch { /* ignore */ }
-}
-
-async function clearStoredRefreshToken(): Promise<void> {
-  if (!AsyncStorage || typeof AsyncStorage.removeItem !== 'function') return;
-  try { await AsyncStorage.removeItem(REFRESH_TOKEN_KEY); } catch { /* ignore */ }
-}
-
-/** Parse the exp claim from a JWT without verifying the signature. */
+/** exp claim (ms) from a JWT, without verifying it. */
 function getTokenExpMs(token: string): number | null {
   try {
     const payload = token.split('.')[1];
     if (!payload) return null;
-    const decoded = JSON.parse(atob(payload)) as { exp?: number };
-    if (typeof decoded.exp !== 'number') return null;
-    return decoded.exp * 1000;
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const decoded = JSON.parse(json) as { exp?: number };
+    return typeof decoded.exp === 'number' ? decoded.exp * 1000 : null;
   } catch {
     return null;
   }
-}
-
-function isSessionTerminalRefreshError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const message = error.message.toLowerCase();
-  return (
-    message.includes("http 401") ||
-    message.includes("http 403") ||
-    message.includes("invalid refresh token") ||
-    message.includes("expired or revoked") ||
-    message.includes("refresh token is required")
-  );
 }
 
 interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
   loading: boolean;
+  /** True while we show a cached user that hasn't been re-checked with the server yet. */
+  offlineSession: boolean;
   signInWithSolarProToken: (token: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -85,172 +52,130 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [offlineSession, setOfflineSession] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const refreshTokenRef = useRef<string | null>(null);
 
-  const refreshSession = useCallback(async (storedRefreshToken: string): Promise<string | null> => {
-    try {
-      const result = await refreshAccessToken(storedRefreshToken);
-      await setStoredToken(result.token);
-      await setStoredRefreshToken(result.refreshToken);
-      refreshTokenRef.current = result.refreshToken;
-      setToken(result.token);
-      return result.token;
-    } catch (error) {
-      if (!isSessionTerminalRefreshError(error)) {
-        return token;
-      }
-      await clearStoredToken();
-      await clearStoredRefreshToken();
-      refreshTokenRef.current = null;
-      setToken(null);
-      setUser(null);
-      return null;
-    }
-  }, [token]);
-
-  /** Schedule a proactive token refresh REFRESH_BUFFER_MS before expiry. */
-  const scheduleRefresh = useCallback((accessToken: string, storedRefreshToken: string) => {
-    if (refreshTimerRef.current) {
-      clearTimeout(refreshTimerRef.current);
-      refreshTimerRef.current = null;
-    }
-
-    const expMs = getTokenExpMs(accessToken);
-    if (!expMs) return;
-
-    const delay = expMs - Date.now() - REFRESH_BUFFER_MS;
-    if (delay <= 0) {
-      void (async () => {
-        const nextAccessToken = await refreshSession(storedRefreshToken);
-        if (!nextAccessToken) return;
-        scheduleRefresh(nextAccessToken, refreshTokenRef.current || storedRefreshToken);
-      })();
-      return;
-    }
-
-    refreshTimerRef.current = setTimeout(async () => {
-      try {
-        const result = await refreshAccessToken(storedRefreshToken);
-        await setStoredToken(result.token);
-        await setStoredRefreshToken(result.refreshToken);
-        refreshTokenRef.current = result.refreshToken;
-        setToken(result.token);
-        scheduleRefresh(result.token, result.refreshToken);
-      } catch (error) {
-        if (isSessionTerminalRefreshError(error)) {
-          await clearStoredToken();
-          await clearStoredRefreshToken();
-          refreshTokenRef.current = null;
-          setToken(null);
-          setUser(null);
-          return;
-        }
-
-        // Transient refresh failures (network hiccups / 5xx) should not force logout.
-        refreshTimerRef.current = setTimeout(async () => {
-          const activeRefreshToken = refreshTokenRef.current || storedRefreshToken;
-          const nextAccessToken = await refreshSession(activeRefreshToken);
-          if (!nextAccessToken || !refreshTokenRef.current) return;
-          scheduleRefresh(nextAccessToken, refreshTokenRef.current);
-        }, REFRESH_RETRY_DELAY_MS);
-      }
-    }, delay);
-  }, [refreshSession]);
-
-  const persistSession = useCallback(async (result: { token: string; refreshToken: string | null; user: AuthUser }) => {
-    await setStoredToken(result.token);
-    if (result.refreshToken) {
-      await setStoredRefreshToken(result.refreshToken);
-      refreshTokenRef.current = result.refreshToken;
-      scheduleRefresh(result.token, result.refreshToken);
-    } else {
-      await clearStoredRefreshToken();
-      refreshTokenRef.current = null;
-    }
-    setToken(result.token);
-    setUser(result.user);
-  }, [scheduleRefresh]);
-
-  const signOut = useCallback(async () => {
+  const clearTimer = () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    await apiLogout(refreshTokenRef.current);
-    await clearStoredToken();
-    await clearStoredRefreshToken();
-    refreshTokenRef.current = null;
+    refreshTimerRef.current = null;
+  };
+
+  const endSession = useCallback(async () => {
+    clearTimer();
+    await clearSession();
     setToken(null);
     setUser(null);
+    setOfflineSession(false);
   }, []);
+
+  /** Refresh shortly before the access token expires; transient failures retry. */
+  const scheduleRefresh = useCallback((accessToken: string) => {
+    clearTimer();
+    const expMs = getTokenExpMs(accessToken);
+    if (!expMs) return;
+    const delay = Math.max(0, expMs - Date.now() - REFRESH_BUFFER_MS);
+    refreshTimerRef.current = setTimeout(async () => {
+      try {
+        const next = await refreshOnce(refreshAccessToken);
+        setToken(next);
+        scheduleRefresh(next);
+      } catch (error) {
+        if (isTerminalRefreshError(error)) {
+          await endSession();
+          return;
+        }
+        refreshTimerRef.current = setTimeout(() => scheduleRefresh(accessToken), REFRESH_RETRY_DELAY_MS);
+      }
+    }, delay);
+  }, [endSession]);
+
+  // Follow token changes made by the API layer (e.g. a 401 refresh during sync).
+  useEffect(() => onSessionChange(() => {
+    void (async () => {
+      const current = await getAccessToken();
+      setToken(current);
+      if (!current) {
+        clearTimer();
+        setUser(null);
+      } else {
+        scheduleRefresh(current);
+      }
+    })();
+  }), [scheduleRefresh]);
 
   useEffect(() => {
     let mounted = true;
 
     async function restoreSession() {
+      const [savedToken, cached] = await Promise.all([getAccessToken(), getCachedUser()]);
+      if (!savedToken) {
+        if (mounted) setLoading(false);
+        return;
+      }
+
+      // Open straight away with the cached user so the app works offline and
+      // during a server cold start; confirm with the server in the background.
+      if (cached && mounted) {
+        setToken(savedToken);
+        setUser(cached);
+        setOfflineSession(true);
+        setLoading(false);
+      }
+
       try {
-        const savedToken = await getStoredToken();
-        if (!savedToken) return;
-
-        const savedRefreshToken = await getStoredRefreshToken();
-        refreshTokenRef.current = savedRefreshToken;
-
-        let activeToken = savedToken;
-        let currentUser: AuthUser | null = null;
-
+        let active = savedToken;
+        let current: AuthUser;
         try {
-          currentUser = await fetchCurrentUser(savedToken);
-        } catch {
-          if (savedRefreshToken) {
-            const refreshedToken = await refreshSession(savedRefreshToken);
-            if (refreshedToken) {
-              activeToken = refreshedToken;
-              currentUser = await fetchCurrentUser(refreshedToken);
-            }
-          }
+          current = await fetchCurrentUser(active);
+        } catch (error) {
+          if (!(error instanceof HttpError && error.status === 401)) throw error;
+          active = await refreshOnce(refreshAccessToken);
+          current = await fetchCurrentUser(active);
         }
-
-        if (!mounted || !currentUser) return;
-
-        setToken(activeToken);
-        setUser(currentUser);
-
-        if (refreshTokenRef.current) {
-          scheduleRefresh(activeToken, refreshTokenRef.current);
+        if (!mounted) return;
+        await saveCachedUser(current);
+        setToken(active);
+        setUser(current);
+        setOfflineSession(false);
+        scheduleRefresh(active);
+      } catch (error) {
+        if (isTerminalRefreshError(error)) {
+          await endSession();
+        } else if (mounted && cached) {
+          // Offline or server waking up: keep working with the cached user.
+          scheduleRefresh(savedToken);
         }
-      } catch {
-        await clearStoredToken();
-        await clearStoredRefreshToken();
       } finally {
         if (mounted) setLoading(false);
       }
     }
 
-    restoreSession();
+    void restoreSession();
     return () => {
       mounted = false;
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      clearTimer();
     };
-  }, [refreshSession, scheduleRefresh]);
+  }, [endSession, scheduleRefresh]);
 
-  const signInWithSolarProToken = useCallback(async (token: string) => {
-    const result = await exchangeSolarProSso(token);
-    await persistSession(result);
-  }, [persistSession]);
+  const signInWithSolarProToken = useCallback(async (ssoToken: string) => {
+    const result = await exchangeSolarProSso(ssoToken);
+    await saveTokens(result.token, result.refreshToken);
+    await saveCachedUser(result.user);
+    setToken(result.token);
+    setUser(result.user);
+    setOfflineSession(false);
+    if (result.refreshToken) scheduleRefresh(result.token);
+  }, [scheduleRefresh]);
+
+  const signOut = useCallback(async () => {
+    const refresh = await getRefreshToken();
+    await apiLogout(refresh);
+    await endSession();
+  }, [endSession]);
 
   const value = useMemo<AuthContextValue>(
-    () => ({
-      user,
-      token,
-      loading,
-      signInWithSolarProToken,
-      signOut,
-    }),
-    [
-      user,
-      token,
-      loading,
-      signInWithSolarProToken,
-      signOut,
-    ]
+    () => ({ user, token, loading, offlineSession, signInWithSolarProToken, signOut }),
+    [user, token, loading, offlineSession, signInWithSolarProToken, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

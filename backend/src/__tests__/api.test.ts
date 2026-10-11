@@ -571,6 +571,37 @@ describe("POST /api/surveys/:id/photos", () => {
     expect(res.status).toBe(201);
     expect(res.body.uploaded).toBe(22);
   });
+
+  it("stores the Golden Block and never duplicates a re-sent photo", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({ project_name: "Idempotent Photos", inspector_name: "Tester", site_name: "Idem" });
+    createdIds.push(create.body.id);
+    const surveyId = create.body.id as string;
+
+    const send = () =>
+      request(app)
+        .post(`/api/surveys/${surveyId}/photos`)
+        .set("Authorization", authHeader)
+        .field("labels", JSON.stringify(["Arrival · Front of home"]))
+        .field("client_ids", JSON.stringify(["dev-photo-1"]))
+        .field("captured_ats", JSON.stringify(["2026-10-11T15:04:05.000Z"]))
+        .field("metas", JSON.stringify([{ photoSlotId: "arrival_front", heading: 182 }]))
+        .attach("photos", Buffer.from("fake-image"), { filename: "a.jpg", contentType: "image/jpeg" });
+
+    const first = await send();
+    expect(first.status).toBe(201);
+    const second = await send();
+    expect(second.status).toBe(201);
+    expect(second.body.photos[0].duplicate).toBe(true);
+    expect(second.body.photos[0].id).toBe(first.body.photos[0].id);
+
+    const full = await getAuth(`/api/surveys/${surveyId}`);
+    expect(full.body.photos).toHaveLength(1);
+    expect(full.body.photos[0].meta).toMatchObject({ photoSlotId: "arrival_front", heading: 182 });
+    expect(new Date(full.body.photos[0].captured_at).toISOString()).toBe("2026-10-11T15:04:05.000Z");
+  });
 });
 
 describe("PUT /api/surveys/:id", () => {

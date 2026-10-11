@@ -8,7 +8,8 @@
 import { useState, useEffect } from 'react';
 import * as SQLite from 'expo-sqlite';
 import * as Device from 'expo-device';
-import { INIT_STATEMENTS, SURVEYS_OPTIONAL_COLUMNS } from '../database/schema';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { INIT_STATEMENTS, PHOTOS_OPTIONAL_COLUMNS, SURVEYS_OPTIONAL_COLUMNS } from '../database/schema';
 import { setDb } from '../database/surveyDb';
 
 interface UseDatabaseResult {
@@ -22,15 +23,34 @@ function makeDeviceId(seed?: string | null): string {
   return `${base}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function ensureSurveyColumns(db: SQLite.SQLiteDatabase): Promise<void> {
-  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(surveys)');
+const DEVICE_ID_KEY = 'site-survey.device-id.v1';
+
+/** One id per install, kept across launches so the server sees a stable device. */
+async function loadDeviceId(seed?: string | null): Promise<string> {
+  try {
+    const saved = await AsyncStorage.getItem(DEVICE_ID_KEY);
+    if (saved) return saved;
+    const id = makeDeviceId(seed);
+    await AsyncStorage.setItem(DEVICE_ID_KEY, id);
+    return id;
+  } catch {
+    return makeDeviceId(seed);
+  }
+}
+
+async function ensureColumns(
+  db: SQLite.SQLiteDatabase,
+  table: 'surveys' | 'survey_photos',
+  wanted: ReadonlyArray<{ name: string; sqlType: string }>,
+): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
   const existing = new Set(columns.map((column) => column.name));
 
-  for (const column of SURVEYS_OPTIONAL_COLUMNS) {
+  for (const column of wanted) {
     if (existing.has(column.name)) continue;
 
     try {
-      await db.execAsync(`ALTER TABLE surveys ADD COLUMN ${column.name} ${column.sqlType};`);
+      await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column.name} ${column.sqlType};`);
       existing.add(column.name);
     } catch (migrationError) {
       const message =
@@ -43,7 +63,7 @@ async function ensureSurveyColumns(db: SQLite.SQLiteDatabase): Promise<void> {
         continue;
       }
 
-      throw new Error(`SQLite migration failed for surveys.${column.name}: ${message}`);
+      throw new Error(`SQLite migration failed for ${table}.${column.name}: ${message}`);
     }
   }
 }
@@ -81,12 +101,13 @@ export function useDatabase(): UseDatabaseResult {
           }
         }
 
-        await ensureSurveyColumns(db);
+        await ensureColumns(db, 'surveys', SURVEYS_OPTIONAL_COLUMNS);
+        await ensureColumns(db, 'survey_photos', PHOTOS_OPTIONAL_COLUMNS);
 
         // Register db globally so surveyDb helpers can use it
         setDb(db);
 
-        const id = makeDeviceId(Device.modelName ?? null);
+        const id = await loadDeviceId(Device.modelName ?? null);
 
         if (!cancelled) {
           setDeviceId(id);

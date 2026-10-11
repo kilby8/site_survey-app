@@ -22,8 +22,21 @@ import {
   getSurveyById,
   recoverStuckSyncingSurveys,
 } from '../database/surveyDb';
-import { postSurvey, uploadPhotos, completeSurvey } from '../api/client';
+import * as FileSystem from 'expo-file-system/legacy';
+import { AppState, type AppStateStatus, type NativeEventSubscription } from 'react-native';
+import {
+  postSurvey,
+  uploadPhotos,
+  completeSurvey,
+  warmUpApi,
+  postSurveyV2,
+  uploadSurveyPhotoV2,
+  completeSurveyV2,
+} from '../api/client';
+import { SessionExpiredError } from '../api/session';
 import type { Survey } from '../types';
+import * as repo from '../survey/repo';
+import { syncSurveyV2, type SyncDeps } from '../survey/sync';
 
 // ----------------------------------------------------------------
 // Sync state callback type
@@ -42,6 +55,10 @@ export type SyncStatusCallback = (counts: {
 let _isSyncing        = false;
 let _isOnline         = false;
 let _subscription:     EventSubscription | null = null;
+let _appStateSub:      NativeEventSubscription | null = null;
+let _retryTimer:       ReturnType<typeof setTimeout> | null = null;
+let _rerun            = false;
+let _progressListeners: Array<(surveyId: string, done: number, total: number) => void> = [];
 let _statusCallbacks: SyncStatusCallback[] = [];
 let _deviceId         = '';
 let _telemetryListener: ((event: {
@@ -65,6 +82,11 @@ export async function initSyncManager(deviceId: string): Promise<void> {
 
   // Recover stale `syncing` rows left behind by interrupted app sessions.
   try {
+    await repo.recoverInterruptedSyncs();
+  } catch (err) {
+    console.warn('[SyncManager] Failed to recover v2 syncs:', err);
+  }
+  try {
     const recovered = await recoverStuckSyncingSurveys(0);
     if (recovered > 0) {
       console.warn(`[SyncManager] Recovered ${recovered} stuck syncing survey(s)`);
@@ -86,15 +108,31 @@ export async function initSyncManager(deviceId: string): Promise<void> {
 
     // Auto-trigger sync when connectivity is restored
     if (wasOffline && _isOnline) {
-      syncPending({ includeErrors: false }).catch(console.error);
+      syncPending({ force: true }).catch(console.error);
     }
     _notifyCallbacks();
   });
 
+  // Coming back to the app is a good moment to retry.
+  if (_appStateSub) _appStateSub.remove();
+  _appStateSub = AppState.addEventListener('change', (next: AppStateStatus) => {
+    if (next === 'active') syncPending({ force: true }).catch(console.error);
+  });
+
   // Attempt an initial sync if already online
   if (_isOnline) {
-    syncPending({ includeErrors: false }).catch(console.error);
+    syncPending({ force: true }).catch(console.error);
   }
+}
+
+/** Live per-photo progress for v2 uploads. */
+export function onSurveyUploadProgress(
+  listener: (surveyId: string, done: number, total: number) => void,
+): () => void {
+  _progressListeners.push(listener);
+  return () => {
+    _progressListeners = _progressListeners.filter((l) => l !== listener);
+  };
 }
 
 /** Tear down the network listener (call on app unmount / logout). */
@@ -103,6 +141,12 @@ export function teardownSyncManager(): void {
     _subscription.remove();
     _subscription = null;
   }
+  if (_appStateSub) {
+    _appStateSub.remove();
+    _appStateSub = null;
+  }
+  if (_retryTimer) clearTimeout(_retryTimer);
+  _retryTimer = null;
   _statusCallbacks = [];
 }
 
@@ -120,26 +164,97 @@ export function isOnline(): boolean {
 }
 
 /**
- * Manually trigger a sync. Safe to call multiple times — concurrent
- * runs are de-duplicated by the _isSyncing guard.
+ * Upload everything that is waiting. Safe to call any time: a call made
+ * while a run is in progress schedules one more run afterwards.
+ *
+ * `force` also retries surveys whose backoff hasn't expired (used when the
+ * network comes back, the app is reopened, or the user taps Retry).
  */
-export async function syncPending(options?: { includeErrors?: boolean }): Promise<void> {
-  if (_isSyncing || !_isOnline) return;
+export async function syncPending(options?: { includeErrors?: boolean; force?: boolean }): Promise<void> {
+  if (_isSyncing) {
+    _rerun = true;
+    return;
+  }
+  if (!_isOnline) return;
   _isSyncing = true;
-  const includeErrors = options?.includeErrors ?? true;
+  const force = options?.force ?? options?.includeErrors ?? true;
 
   try {
-    const surveys = await getPendingSurveys({ includeErrors });
-    if (surveys.length === 0) return;
+    const legacy = await getPendingSurveys({ includeErrors: true });
+    const due = await repo.surveysDueForSync(new Date().toISOString(), force);
+    if (legacy.length === 0 && due.length === 0) return;
 
-    for (const survey of surveys) {
-      await _syncOneSurvey(survey);
+    // Absorb a Render cold start with one cheap request first.
+    await warmUpApi();
+
+    for (const survey of legacy) {
+      try {
+        await _syncOneSurvey(survey);
+      } catch (err) {
+        console.warn('[SyncManager] legacy survey failed', survey.id, err);
+      }
+      _notifyCallbacks();
+    }
+
+    for (const survey of due) {
+      const outcome = await syncSurveyV2(survey, _v2Deps);
+      _notifyCallbacks();
+      if (outcome === 'needs_login') break; // nothing else will upload until sign-in
     }
   } finally {
     _isSyncing = false;
     _notifyCallbacks();
+    await _scheduleNextRetry();
+    if (_rerun) {
+      _rerun = false;
+      syncPending({ force: false }).catch(console.error);
+    }
   }
 }
+
+/** Arm a timer for the earliest v2 retry so failed uploads retry on their own. */
+async function _scheduleNextRetry(): Promise<void> {
+  if (_retryTimer) clearTimeout(_retryTimer);
+  _retryTimer = null;
+  try {
+    const waiting = await repo.surveysDueForSync(new Date(8.64e15).toISOString(), true);
+    const times = waiting
+      .map((s) => (s.nextRetryAt ? Date.parse(s.nextRetryAt) : Date.now()))
+      .filter((t) => Number.isFinite(t));
+    if (!times.length) return;
+    const delay = Math.max(5_000, Math.min(...times) - Date.now());
+    _retryTimer = setTimeout(() => {
+      syncPending({ force: false }).catch(console.error);
+    }, Math.min(delay, 30 * 60_000));
+  } catch {
+    // DB not ready
+  }
+}
+
+const _v2Deps: SyncDeps = {
+  loadPhotos: repo.loadPhotos,
+  fileExists: async (rel) => {
+    try {
+      return (await FileSystem.getInfoAsync(repo.absPath(rel))).exists;
+    } catch {
+      return false;
+    }
+  },
+  fileUri: repo.absPath,
+  postSurvey: postSurveyV2,
+  uploadPhoto: uploadSurveyPhotoV2,
+  complete: completeSurveyV2,
+  markSyncing: async (id) => {
+    await repo.markSyncing(id);
+    _notifyCallbacks();
+  },
+  markPhotoUploaded: repo.markPhotoUploaded,
+  markSynced: repo.markSynced,
+  markSyncError: repo.markSyncError,
+  isSessionExpired: (e): e is SessionExpiredError => e instanceof SessionExpiredError,
+  now: () => new Date(),
+  onProgress: (id, done, total) => _progressListeners.forEach((l) => l(id, done, total)),
+};
 
 /** Optional telemetry listener for sync events. */
 export function onSyncTelemetry(

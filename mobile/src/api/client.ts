@@ -7,7 +7,7 @@
  */
 import Constants from "expo-constants";
 import { Platform } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getAccessToken, refreshOnce, SessionExpiredError } from "./session";
 import type {
   Survey,
   SurveyFormData,
@@ -166,7 +166,13 @@ const API_NETWORK_ERROR =
     ? `Cannot reach API. Tried: ${API_CANDIDATES.join(", ")}.${isDevelopmentRuntime ? " Ensure backend is running and your phone is on the same Wi-Fi as this machine." : ""}`
     : "API is not configured for this build. Set EXPO_PUBLIC_API_URL or expo.extra.apiUrl for your production EAS environment, then rebuild or publish an update.";
 
-function withTimeoutSignal(init: RequestInit, timeoutMs = 5_000): RequestInit {
+/**
+ * Default request timeout. The Render backend can take 30–60 s to wake from
+ * sleep, so short timeouts turned every first request of the day into a failure.
+ */
+export const DEFAULT_TIMEOUT_MS = 45_000;
+
+function withTimeoutSignal(init: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): RequestInit {
   if (init.signal || typeof AbortController === "undefined") {
     return init;
   }
@@ -189,7 +195,7 @@ async function fetchWithFallback(
     try {
       return await fetch(
         `${baseUrl}${path}`,
-        withTimeoutSignal(init, options?.timeoutMs ?? 5_000),
+        withTimeoutSignal(init, options?.timeoutMs ?? DEFAULT_TIMEOUT_MS),
       );
     } catch {
       // Try next candidate URL.
@@ -218,35 +224,45 @@ function delay(ms: number): Promise<void> {
 // Helpers
 // ----------------------------------------------------------------
 
+export class HttpError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = "HttpError";
+  }
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     try {
-      const body = (await res.json()) as { error?: string; message?: string };
-      // Prefer human-readable message over terse error code
+      const body = (await res.json()) as {
+        error?: string | { code?: string; message?: string };
+        message?: string;
+      };
+      // Prefer human-readable message over terse error code. Validation
+      // errors arrive as { error: { code, message } }.
       if (body.message) message = body.message;
-      else if (body.error) message = body.error;
+      else if (typeof body.error === "string") message = body.error;
+      else if (body.error && typeof body.error === "object") {
+        message = body.error.message || body.error.code || message;
+      }
     } catch {
       /* ignore */
     }
-    throw new Error(message);
+    throw new HttpError(res.status, message);
   }
   return res.json() as Promise<T>;
 }
 
-const AUTH_TOKEN_KEY = "site-survey.auth.token.v2";
-const REFRESH_TOKEN_KEY = "site-survey.auth.refresh-token.v1";
-
 async function getAuthHeaders(): Promise<Record<string, string>> {
-  try {
-    const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
-    if (!token) return {};
-    return { Authorization: `Bearer ${token}` };
-  } catch {
-    return {};
-  }
+  const token = await getAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/**
+ * Fetch; on 401 refresh the token once (shared with every other caller)
+ * and retry. Throws SessionExpiredError when the user must sign in again.
+ */
 async function fetchWithAuthRetry(
   path: string,
   init: RequestInit,
@@ -257,36 +273,12 @@ async function fetchWithAuthRetry(
     return firstResponse;
   }
 
-  let refreshToken: string | null = null;
-  try {
-    refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
-  } catch {
-    refreshToken = null;
-  }
-
-  if (!refreshToken) {
-    return firstResponse;
-  }
-
-  try {
-    const refreshed = await refreshAccessToken(refreshToken);
-    await AsyncStorage.setItem(AUTH_TOKEN_KEY, refreshed.token);
-    await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshed.refreshToken);
-
-    const retryHeaders = new Headers(init.headers as HeadersInit | undefined);
-    retryHeaders.set("Authorization", `Bearer ${refreshed.token}`);
-
-    return fetchWithFallback(
-      path,
-      {
-        ...init,
-        headers: retryHeaders,
-      },
-      options,
-    );
-  } catch {
-    return firstResponse;
-  }
+  const token = await refreshOnce(refreshAccessToken);
+  const retryHeaders = new Headers(init.headers as HeadersInit | undefined);
+  retryHeaders.set("Authorization", `Bearer ${token}`);
+  const retry = await fetchWithFallback(path, { ...init, headers: retryHeaders }, options);
+  if (retry.status === 401) throw new SessionExpiredError();
+  return retry;
 }
 
 // ----------------------------------------------------------------
@@ -735,7 +727,7 @@ export interface MobileProject {
  */
 export async function fetchMobileClients(): Promise<MobileClient[]> {
   const authHeaders = await getAuthHeaders();
-  const res = await fetchWithFallback("/api/mobile/clients", {
+  const res = await fetchWithAuthRetry("/api/mobile/clients", {
     headers: authHeaders,
   });
   const data = await handleResponse<{ clients: MobileClient[] }>(res);
@@ -750,7 +742,7 @@ export async function fetchMobileClientProjects(
   clientId: string,
 ): Promise<MobileProject[]> {
   const authHeaders = await getAuthHeaders();
-  const res = await fetchWithFallback(
+  const res = await fetchWithAuthRetry(
     `/api/mobile/clients/${encodeURIComponent(clientId)}/projects`,
     { headers: authHeaders },
   );
@@ -769,7 +761,7 @@ export async function fetchMobileProjectDetail(
 ): Promise<MobileProject | null> {
   try {
     const authHeaders = await getAuthHeaders();
-    const res = await fetchWithFallback(
+    const res = await fetchWithAuthRetry(
       `/api/mobile/projects/${encodeURIComponent(projectId)}`,
       { headers: authHeaders },
     );
@@ -833,4 +825,83 @@ export async function submitBugReport(input: {
   );
 
   return handleResponse<BugReportResponse>(res);
+}
+
+// ----------------------------------------------------------------
+// v2 structured surveys (src/survey)
+// ----------------------------------------------------------------
+
+/**
+ * Wake the backend before a sync run. Render free/starter instances sleep;
+ * one cheap request absorbs the cold start instead of a real upload.
+ */
+export async function warmUpApi(timeoutMs = 75_000): Promise<boolean> {
+  try {
+    const res = await fetchWithFallback("/api/health", {}, { timeoutMs });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Create or update a survey (server upserts by id). */
+export async function postSurveyV2(payload: object): Promise<{ id: string }> {
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithAuthRetry("/api/surveys", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<{ id: string }>(res);
+}
+
+/**
+ * Upload one photo. Safe to repeat: the server returns the existing row
+ * for a client id it has already stored.
+ */
+export async function uploadSurveyPhotoV2(
+  surveyId: string,
+  photo: {
+    uri: string;
+    mimeType: string;
+    label: string;
+    clientId: string;
+    capturedAt: string;
+    meta: Record<string, unknown>;
+  },
+): Promise<{ id: string | null; duplicate: boolean }> {
+  const form = new FormData();
+  form.append("photos", {
+    uri: photo.uri,
+    type: photo.mimeType,
+    name: `${photo.clientId}.jpg`,
+  } as unknown as Blob);
+  form.append("labels", JSON.stringify([photo.label]));
+  form.append("client_ids", JSON.stringify([photo.clientId]));
+  form.append("captured_ats", JSON.stringify([photo.capturedAt]));
+  form.append("metas", JSON.stringify([photo.meta]));
+
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithAuthRetry(
+    `/api/surveys/${surveyId}/photos`,
+    { method: "POST", headers: authHeaders, body: form },
+    { timeoutMs: 180_000 },
+  );
+  const body = await handleResponse<{ photos?: Array<{ id?: string; duplicate?: boolean }> }>(res);
+  const row = body.photos?.[0];
+  return { id: row?.id ?? null, duplicate: Boolean(row?.duplicate) };
+}
+
+export async function completeSurveyV2(surveyId: string): Promise<{ event_id: string }> {
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithAuthRetry(
+    `/api/surveys/${surveyId}/complete`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders },
+      body: JSON.stringify({}),
+    },
+    { timeoutMs: 90_000 },
+  );
+  return handleResponse<{ event_id: string }>(res);
 }

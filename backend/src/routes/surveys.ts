@@ -44,6 +44,13 @@ async function ensureSurveySoftDeleteColumn(): Promise<void> {
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS solarpro_org_id TEXT`);
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS inspector_email TEXT`);
         await pool.query(`ALTER TABLE survey_photos ADD COLUMN IF NOT EXISTS photo_data BYTEA`);
+        // v2 app: per-photo Golden Block + idempotent uploads keyed by the device's photo id.
+        await pool.query(`ALTER TABLE survey_photos ADD COLUMN IF NOT EXISTS client_photo_id TEXT`);
+        await pool.query(`ALTER TABLE survey_photos ADD COLUMN IF NOT EXISTS meta JSONB`);
+        await pool.query(
+          `CREATE UNIQUE INDEX IF NOT EXISTS uq_survey_photos_client_photo
+             ON survey_photos(survey_id, client_photo_id) WHERE client_photo_id IS NOT NULL`,
+        );
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_solarpro_user_id ON surveys(solarpro_user_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_surveys_solarpro_project_id ON surveys(solarpro_project_id)`);
       } catch (error) {
@@ -453,6 +460,7 @@ async function fetchSurveyFull(id: string) {
 
   const { rows: photos } = await pool.query(
     `SELECT id, survey_id, filename, label, file_path, mime_type, captured_at, created_at,
+            client_photo_id, meta,
             CASE WHEN photo_data IS NOT NULL THEN true ELSE false END as has_photo_data
        FROM survey_photos
       WHERE survey_id = $1
@@ -2138,6 +2146,29 @@ router.post(
       ? new Date(req.body.captured_at as string)
       : new Date();
 
+    // v2 app sends, per file and in the same order: a stable client photo id,
+    // the shutter time and the Golden Block. Re-sending a photo with the same
+    // client id returns the existing row instead of storing a duplicate.
+    const parseArray = (raw: unknown): unknown[] => {
+      if (typeof raw !== "string" || !raw) return [];
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
+    const clientIds = parseArray(req.body.client_ids).map((v) =>
+      typeof v === "string" && v.length > 0 && v.length <= 100 ? v : null,
+    );
+    const capturedAts = parseArray(req.body.captured_ats).map((v) => {
+      const d = typeof v === "string" ? new Date(v) : null;
+      return d && !Number.isNaN(d.getTime()) ? d : null;
+    });
+    const metas = parseArray(req.body.metas).map((v) =>
+      v && typeof v === "object" && !Array.isArray(v) ? v : null,
+    );
+
     const inserted: unknown[] = [];
     const uploadedPaths: string[] = [];
     const client = await pool.connect();
@@ -2158,6 +2189,19 @@ router.post(
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const label = labels[i] ?? file.originalname ?? "";
+        const clientPhotoId = clientIds[i] ?? null;
+
+        if (clientPhotoId) {
+          const { rows: existing } = await client.query(
+            `SELECT id, survey_id, filename, label, file_path, mime_type, captured_at, created_at, client_photo_id
+               FROM survey_photos WHERE survey_id = $1 AND client_photo_id = $2`,
+            [id, clientPhotoId],
+          );
+          if (existing.length > 0) {
+            inserted.push({ ...existing[0], duplicate: true });
+            continue;
+          }
+        }
 
         // Upload buffer to storage backend (local disk or S3)
         const ext = path.extname(file.originalname) || ".jpg";
@@ -2167,17 +2211,19 @@ router.post(
 
         const { rows: photoRows } = await client.query(
           `INSERT INTO survey_photos
-         (survey_id, filename, label, file_path, mime_type, captured_at, photo_data)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, survey_id, filename, label, file_path, mime_type, captured_at, created_at`,
+         (survey_id, filename, label, file_path, mime_type, captured_at, photo_data, client_photo_id, meta)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, survey_id, filename, label, file_path, mime_type, captured_at, created_at, client_photo_id`,
           [
             id,
             file.originalname,
             label,
             storedPath, // URL returned by storageClient (local path or S3 presigned URL)
             file.mimetype,
-            captured_at,
+            capturedAts[i] ?? captured_at,
             file.buffer, // store raw binary for persistent DB-backed serving
+            clientPhotoId,
+            metas[i] ? JSON.stringify(metas[i]) : null,
           ],
         );
         inserted.push(photoRows[0]);

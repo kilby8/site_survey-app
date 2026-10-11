@@ -73,6 +73,36 @@ export const SURVEYS_OPTIONAL_COLUMNS = [
   { name: 'solarpro_project_id', sqlType: 'TEXT' },
   { name: 'solarpro_email', sqlType: 'TEXT' },
   { name: 'solarpro_org_id', sqlType: 'TEXT' },
+  // v2 structured surveys (src/survey). A row with doc IS NULL is a legacy survey.
+  { name: 'doc', sqlType: 'TEXT' },
+  { name: 'current_step', sqlType: 'TEXT' },
+  { name: 'owner_email', sqlType: 'TEXT' },
+  { name: 'sync_attempts', sqlType: 'INTEGER DEFAULT 0' },
+  { name: 'next_retry_at', sqlType: 'TEXT' },
+  { name: 'server_posted', sqlType: 'INTEGER DEFAULT 0' },
+  { name: 'submitted_at', sqlType: 'TEXT' },
+] as const;
+
+/** v2 Golden Block columns on survey_photos. Legacy rows leave them NULL. */
+export const PHOTOS_OPTIONAL_COLUMNS = [
+  { name: 'rel_path', sqlType: 'TEXT' },
+  { name: 'annotated_rel_path', sqlType: 'TEXT' },
+  { name: 'step_id', sqlType: 'TEXT' },
+  { name: 'section_id', sqlType: 'TEXT' },
+  { name: 'slot_id', sqlType: 'TEXT' },
+  { name: 'plane_id', sqlType: 'TEXT' },
+  { name: 'required', sqlType: 'INTEGER DEFAULT 0' },
+  { name: 'capture_order', sqlType: 'INTEGER DEFAULT 0' },
+  { name: 'gps_lat', sqlType: 'REAL' },
+  { name: 'gps_lng', sqlType: 'REAL' },
+  { name: 'gps_alt', sqlType: 'REAL' },
+  { name: 'heading', sqlType: 'REAL' },
+  { name: 'notes', sqlType: 'TEXT' },
+  { name: 'retake_reason', sqlType: 'TEXT' },
+  { name: 'quality_status', sqlType: 'TEXT' },
+  { name: 'blur_score', sqlType: 'REAL' },
+  { name: 'upload_state', sqlType: "TEXT DEFAULT 'local'" },
+  { name: 'server_photo_id', sqlType: 'TEXT' },
 ] as const;
 
 /** Run once at app startup to ensure all tables exist. */
