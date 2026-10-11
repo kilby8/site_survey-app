@@ -106,7 +106,7 @@ export const PHOTOS_OPTIONAL_COLUMNS = [
   { name: 'markup_json', sqlType: 'TEXT' },
   { name: 'detected_text', sqlType: 'TEXT' },
   { name: 'labels_json', sqlType: 'TEXT' },
-  { name: 'content_checked', sqlType: 'INTEGER' },
+  { name: 'content_check', sqlType: 'TEXT' },
   { name: 'upload_state', sqlType: "TEXT DEFAULT 'local'" },
   { name: 'server_photo_id', sqlType: 'TEXT' },
 ] as const;

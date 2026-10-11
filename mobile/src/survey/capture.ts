@@ -212,7 +212,7 @@ export async function fileAsset(
     ahash: analysis?.ahash ?? null,
     detectedText: content.text || null,
     labels: content.labels,
-    contentChecked: content.checked,
+    contentCheck: content.checked ? "checked" : content.unavailable === "failed" ? "failed" : "unavailable",
     uploadState: "local",
     serverPhotoId: null,
   };

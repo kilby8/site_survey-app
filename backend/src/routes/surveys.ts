@@ -2255,11 +2255,15 @@ router.post(
           if (existing.length > 0) {
             // Same photo again: keep the stored file, refresh its label and
             // Golden Block (e.g. a note added after the first upload).
-            await client.query(
-              `UPDATE survey_photos SET label = $2, meta = COALESCE($3::jsonb, meta) WHERE id = $1`,
+            // A real change (new note, keep reason) counts as an edit; an
+            // identical re-send does not.
+            const { rowCount: changed } = await client.query(
+              `UPDATE survey_photos SET label = $2, meta = COALESCE($3::jsonb, meta)
+                WHERE id = $1
+                  AND (label IS DISTINCT FROM $2 OR meta IS DISTINCT FROM COALESCE($3::jsonb, meta))`,
               [existing[0].id, label, metas[i] ? JSON.stringify(metas[i]) : null],
             );
-            inserted.push({ ...existing[0], label, duplicate: true });
+            inserted.push({ ...existing[0], label, duplicate: true, changed: (changed ?? 0) > 0 });
             continue;
           }
         }
@@ -2290,7 +2294,7 @@ router.post(
         inserted.push(photoRows[0]);
       }
 
-      if (inserted.some((p) => !(p as { duplicate?: boolean }).duplicate)) {
+      if (inserted.some((p) => !(p as { duplicate?: boolean }).duplicate || (p as { changed?: boolean }).changed)) {
         await client.query(`UPDATE surveys SET content_updated_at = NOW() WHERE id = $1`, [id]);
       }
       await client.query("COMMIT");

@@ -603,6 +603,36 @@ describe("POST /api/surveys/:id/photos", () => {
     expect(new Date(full.body.photos[0].captured_at).toISOString()).toBe("2026-10-11T15:04:05.000Z");
   });
 
+  it("counts a changed note on a re-sent photo as an edit, an identical re-send as none", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({ project_name: "Photo Note Edit", inspector_name: "Tester", site_name: "Note" });
+    createdIds.push(create.body.id);
+    const surveyId = create.body.id as string;
+    const send = (notes: string) =>
+      request(app)
+        .post(`/api/surveys/${surveyId}/photos`)
+        .set("Authorization", authHeader)
+        .field("labels", JSON.stringify(["Arrival · Front of home"]))
+        .field("client_ids", JSON.stringify(["note-photo-1"]))
+        .field("metas", JSON.stringify([{ photoSlotId: "arrival_front", notes }]))
+        .attach("photos", Buffer.from("fake-image"), { filename: "a.jpg", contentType: "image/jpeg" });
+    const stamp = async () =>
+      (await pool.query(`SELECT content_updated_at FROM surveys WHERE id = $1`, [surveyId])).rows[0].content_updated_at as Date;
+    const backdate = () =>
+      pool.query(`UPDATE surveys SET content_updated_at = NOW() - INTERVAL '5 minutes' WHERE id = $1`, [surveyId]);
+
+    await send("");
+    await backdate();
+    const before = await stamp();
+    await send("");
+    expect((await stamp()).getTime()).toBe(before.getTime());
+    const edited = await send("Meter behind the gate");
+    expect(edited.body.photos[0].duplicate).toBe(true);
+    expect((await stamp()).getTime()).toBeGreaterThan(before.getTime());
+  });
+
   it("drops v2 photos the survey no longer lists and refreshes metadata on re-send", async () => {
     const create = await request(app)
       .post("/api/surveys")

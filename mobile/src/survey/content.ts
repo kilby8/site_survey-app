@@ -16,65 +16,68 @@ export const TEXT_SLOTS: Record<string, { digits: boolean; what: string }> = {
   elec_directory: { digits: false, what: "the circuit directory" },
 };
 
-/**
- * On-device image labels that mean "this is not a site photo".
- * Screens ("Monitor", "Screenshot") are only counted outside meter and
- * electrical slots, where a digital display is a legitimate subject.
- */
+// Label names below are exactly as the ML Kit base image-labeling model
+// emits them (https://developers.google.com/ml-kit/vision/image-labeling/label-map).
+// Words outside that map (e.g. "House", "Window", "Grass") can never match.
+
+/** Labels that mean "this is not a site photo". */
 export const OFF_SUBJECT = new Set([
-  "Selfie",
-  "Smile",
-  "Beard",
-  "Food",
-  "Cuisine",
-  "Dessert",
-  "Cake",
-  "Drink",
-  "Cup",
-  "Tableware",
-  "Cat",
-  "Dog",
-  "Pet",
-  "Toy",
-  "Bed",
-  "Couch",
+  "Selfie", "Smile", "Laugh", "Beard", "Moustache", "Lipstick", "Eyelash",
+  "Food", "Cuisine", "Fast food", "Meal", "Lunch", "Supper", "Cake", "Cookie", "Pizza", "Bread", "Fruit", "Juice",
+  "Coffee", "Cappuccino", "Wine", "Alcohol", "Cola", "Cup", "Tableware", "Cutlery",
+  "Cat", "Dog", "Pet", "Toy", "Stuffed toy", "Plush",
+  "Couch", "Pillow", "Cushion", "Bedroom", "Bunk bed",
 ]);
-const SCREEN_LABELS = new Set(["Screenshot", "Television", "Monitor"]);
+/** Screens: off-subject except on meter/electrical slots (digital meters, inverter displays). */
+export const SCREEN_LABELS = new Set(["Screenshot", "Web page", "Television", "Computer", "Mobile phone"]);
 const DISPLAY_OK_STEPS = ["utility_", "elec_"];
 
+const BUILT = ["Building", "Roof", "Wall", "Brick", "Tile", "Metal", "Infrastructure", "Construction"];
+const LAND = ["Field", "Soil", "Prairie", "Plant", "Flora", "Forest", "Garden", "Farm", "Ranch", "Rock", "Sand", "Road"];
+
 /**
- * What each kind of slot should show. Used two ways: a confident match
- * clears any off-subject suspicion; a confident off-subject label with
- * none of these present is flagged.
+ * What each kind of slot should show. A labelled photo with none of these
+ * is flagged "doesn't look like <slot>"; a confident one also outweighs a
+ * weaker off-subject label (a dog in front of the house).
  */
 export const EXPECTED: { prefix: string; labels: string[] }[] = [
-  { prefix: "roof_", labels: ["Roof", "Building", "House", "Brick", "Wood", "Metal", "Ceiling", "Plank", "Lumber"] },
-  { prefix: "walk_", labels: ["Building", "House", "Roof", "Tree", "Plant", "Sky", "Grass", "Lawn", "Window", "Porch"] },
-  { prefix: "arrival_", labels: ["Building", "House", "Roof", "Road", "Asphalt", "Grass", "Door", "Window", "Fence"] },
-  { prefix: "utility_", labels: ["Building", "Wall", "Brick", "Metal", "Pipe", "Pole", "Wire"] },
-  { prefix: "elec_", labels: ["Metal", "Wall", "Electrical wiring", "Machine", "Pipe", "Plastic"] },
-  { prefix: "ground_", labels: ["Grass", "Field", "Lawn", "Soil", "Plant", "Tree", "Sky"] },
-  { prefix: "fence_", labels: ["Grass", "Field", "Fence", "Soil", "Plant", "Sky"] },
+  { prefix: "roof_", labels: [...BUILT, "Asphalt", "Pattern", "Rock", "Skyline"] },
+  { prefix: "walk_", labels: [...BUILT, "Garden", "Plant", "Flora", "Forest", "Branch", "Twig", "Field", "Skyline", "Barn", "Farm", "Ranch", "Stairs", "Handrail"] },
+  { prefix: "arrival_", labels: [...BUILT, "Road", "Asphalt", "Stairs", "Handrail", "Garden", "Plant", "Flora", "Car", "Vehicle", "Field", "Farm", "Barn", "Ranch"] },
+  { prefix: "utility_", labels: [...BUILT, "Odometer", "Clock", "Product", "Garden", "Plant", "Soil", "Field", "Road"] },
+  { prefix: "elec_", labels: ["Wall", "Metal", "Product", "Infrastructure", "Construction", "Cabinetry", "Shelf", "Drawer", "Room", "Building", "Clock", "Paper", "Tile", "Brick"] },
+  { prefix: "ground_", labels: [...LAND, "Construction", "Infrastructure"] },
+  { prefix: "fence_", labels: [...LAND, "Metal", "Construction", "Infrastructure"] },
 ];
 
+/**
+ * Slots where "is the subject there?" isn't asked: text slots (the text
+ * check is the real test) and close-ups the general model labels poorly.
+ */
+const NO_SUBJECT_CHECK = new Set([...Object.keys(TEXT_SLOTS), "roof_attic", "roof_structure", "elec_grounding"]);
+
 export const OFF_SUBJECT_CONFIDENCE = 0.75;
-export const EXPECTED_CONFIDENCE = 0.6;
+export const EXPECTED_CONFIDENCE = 0.5;
+
+export type ContentFlag = "no_text" | "off_subject" | "wrong_subject";
 
 export interface ContentResult {
-  flags: ("no_text" | "off_subject")[];
+  flags: ContentFlag[];
   /** Text read from the photo (trimmed), for the designer and the meter-number hint. */
   text: string;
   labels: { text: string; confidence: number }[];
   /** False when the phone couldn't run the check (shown on the photo, never silent). */
   checked: boolean;
+  /** Why it didn't run: the phone lacks ML Kit, or it failed on this photo. */
+  unavailable?: "no_mlkit" | "failed";
 }
 
 export function contentFlags(
   slotId: string,
   text: string,
   labels: { text: string; confidence: number }[],
-): ContentResult["flags"] {
-  const flags: ContentResult["flags"] = [];
+): ContentFlag[] {
+  const flags: ContentFlag[] = [];
   const need = TEXT_SLOTS[slotId];
   if (need) {
     const alnum = text.replace(/[^A-Za-z0-9]/g, "");
@@ -82,14 +85,18 @@ export function contentFlags(
     if (!ok) flags.push("no_text");
   }
   const expected = EXPECTED.find((e) => slotId.startsWith(e.prefix))?.labels ?? [];
-  const looksRight = labels.some((l) => l.confidence >= EXPECTED_CONFIDENCE && expected.includes(l.text));
+  const bestExpected = Math.max(0, ...labels.filter((l) => expected.includes(l.text)).map((l) => l.confidence));
   const displayOk = DISPLAY_OK_STEPS.some((p) => slotId.startsWith(p));
-  const offSubject = labels.some(
-    (l) =>
-      l.confidence >= OFF_SUBJECT_CONFIDENCE &&
-      (OFF_SUBJECT.has(l.text) || (!displayOk && SCREEN_LABELS.has(l.text))),
+  const bestOff = Math.max(
+    0,
+    ...labels.filter((l) => OFF_SUBJECT.has(l.text) || (!displayOk && SCREEN_LABELS.has(l.text))).map((l) => l.confidence),
   );
-  if (offSubject && !looksRight) flags.push("off_subject");
+  if (bestOff >= OFF_SUBJECT_CONFIDENCE && bestOff > bestExpected) {
+    flags.push("off_subject");
+  } else if (labels.some((l) => l.confidence >= EXPECTED_CONFIDENCE) && expected.length > 0 && !NO_SUBJECT_CHECK.has(slotId) && bestExpected < EXPECTED_CONFIDENCE) {
+    // Positive check: the labeller saw something, but none of it is what this slot needs.
+    flags.push("wrong_subject");
+  }
   return flags;
 }
 
@@ -142,20 +149,36 @@ export async function checkContent(slotId: string, uri: string): Promise<Content
   let text = "";
   let labels: { text: string; confidence: number }[] = [];
   let ocrRan = false;
-  try {
-    if (ocr) {
-      text = ((await ocr.recognize(uri))?.text ?? "").trim();
-      ocrRan = true;
-    }
-  } catch {
-    text = "";
-  }
-  try {
-    if (labeler) labels = ((await labeler.label(uri)) ?? []).slice(0, 8).map((l) => ({ text: l.text, confidence: l.confidence }));
-  } catch {
-    labels = [];
-  }
-  // Without OCR we can't judge text slots; don't flag what we couldn't check.
-  const flags = contentFlags(slotId, ocrRan ? text : "x1x1x1", labels);
-  return { flags, text: text.slice(0, 400), labels, checked: ocrRan && !!labeler };
+  let labelsRan = false;
+  // Both models run side by side on the same (small) copy.
+  await Promise.all([
+    (async () => {
+      if (!ocr) return;
+      try {
+        text = ((await ocr.recognize(uri))?.text ?? "").trim();
+        ocrRan = true;
+      } catch {
+        text = "";
+      }
+    })(),
+    (async () => {
+      if (!labeler) return;
+      try {
+        labels = ((await labeler.label(uri)) ?? []).slice(0, 10).map((l) => ({ text: l.text, confidence: l.confidence }));
+        labelsRan = true;
+      } catch {
+        labels = [];
+      }
+    })(),
+  ]);
+  // Don't flag what we couldn't check: no OCR → no text verdict.
+  const flags = contentFlags(slotId, ocrRan ? text : "x1x1x1", labelsRan ? labels : []);
+  const checked = ocrRan && labelsRan;
+  return {
+    flags,
+    text: text.slice(0, 400),
+    labels,
+    checked,
+    unavailable: checked ? undefined : !ocr || !labeler ? "no_mlkit" : "failed",
+  };
 }

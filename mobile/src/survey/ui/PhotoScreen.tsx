@@ -14,7 +14,7 @@ import { color, radius, space } from "../../ui/theme";
 import { findSlot } from "../blueprint";
 import { discardMarkupFile, storeMarkup, takePhoto } from "../capture";
 import type { CapturedPhoto } from "../model";
-import { BLUR_THRESHOLD } from "../quality";
+import { BLUR_THRESHOLD, flagLabels } from "../quality";
 import { absPath, loadPhotos, loadSurvey, removePhoto, updatePhoto } from "../repo";
 import { MarkupEditor, type Mark } from "./MarkupEditor";
 
@@ -132,9 +132,14 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
             <View style={{ padding: space.lg, gap: space.lg }}>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
                 {photo.qualityStatus === "pending_review" ? (
-                  <Badge label={`Flagged: ${flags.join(", ")}`} tone="warn" icon="alert-circle" />
+                  <Badge label={`Flagged: ${flagLabels(flags)}`} tone="warn" icon="alert-circle" />
                 ) : (
-                  <Badge label="Passed checks" tone="good" icon="checkmark" />
+                  // Only "passed" when every check actually ran.
+                  photo.contentCheck === "unavailable" || photo.contentCheck === "failed" ? (
+                    <Badge label="Partly checked" tone="neutral" icon="checkmark" />
+                  ) : (
+                    <Badge label="Passed checks" tone="good" icon="checkmark" />
+                  )
                 )}
                 {photo.annotatedRelPath ? <Badge label="Marked up" tone="info" icon="brush" /> : null}
                 <Badge
@@ -160,10 +165,16 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
                 {photo.detectedText ? (
                   <MetaRow icon="scan-outline" label="Text read" value={photo.detectedText.replace(/\s+/g, " ").slice(0, 160)} />
                 ) : null}
-                {photo.contentChecked === false ? (
+                {photo.contentCheck === "unavailable" ? (
                   <MetaRow icon="eye-off-outline" label="Content check" value="Not available on this phone (sharpness, light and duplicates still checked)" />
-                ) : photo.contentChecked ? (
-                  <MetaRow icon="eye-outline" label="Content check" value={(photo.qualityFlags ?? []).some((f) => f === "no_text" || f === "off_subject") ? "Flagged — see above" : "Passed"} />
+                ) : photo.contentCheck === "failed" ? (
+                  <MetaRow icon="eye-off-outline" label="Content check" value="Couldn't check this photo (sharpness, light and duplicates still checked)" />
+                ) : photo.contentCheck === "checked" ? (
+                  <MetaRow
+                    icon="eye-outline"
+                    label="Content check"
+                    value={(photo.qualityFlags ?? []).some((f) => f === "no_text" || f === "off_subject" || f === "wrong_subject") ? "Flagged — see above" : "Passed"}
+                  />
                 ) : null}
                 {photo.retakeReason ? <MetaRow icon="refresh" label="Retake of" value={photo.retakeReason} /> : null}
               </View>

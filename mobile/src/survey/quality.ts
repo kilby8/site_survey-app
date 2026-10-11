@@ -7,6 +7,7 @@
 // ============================================================
 
 import { decode as decodeJpeg } from "jpeg-js";
+import { findSlot } from "./blueprint";
 import { TEXT_SLOTS } from "./content";
 
 export const BLUR_SAMPLE_WIDTH = 480;
@@ -167,8 +168,24 @@ export function qualityFlags(
   return flags;
 }
 
+/** Short names for badges and screen readers. */
+export const FLAG_LABEL: Record<string, string> = {
+  blurry: "blurry",
+  dark: "too dark",
+  bright: "washed out",
+  duplicate: "duplicate",
+  no_text: "no readable text",
+  off_subject: "not a site photo",
+  wrong_subject: "wrong subject",
+};
+
+export function flagLabels(flags: string[]): string {
+  return flags.map((f) => FLAG_LABEL[f] ?? f).join(", ");
+}
+
 export function flagMessage(flags: string[], slotId?: string): string {
   const need = slotId ? TEXT_SLOTS[slotId] : undefined;
+  const slotLabel = slotId ? findSlot(slotId)?.slot.label : undefined;
   const parts: Record<string, string> = {
     blurry: "looks blurry",
     dark: "is too dark",
@@ -176,6 +193,7 @@ export function flagMessage(flags: string[], slotId?: string): string {
     duplicate: "looks the same as another photo in this survey",
     no_text: `has no readable ${need ? need.what : "text"}`,
     off_subject: "doesn't look like a site photo",
+    wrong_subject: `doesn't seem to show the ${slotLabel ? slotLabel.toLowerCase() : "subject this slot needs"}`,
   };
   const said = flags.map((f) => parts[f]).filter(Boolean);
   if (!said.length) return "";

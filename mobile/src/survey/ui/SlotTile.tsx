@@ -4,6 +4,7 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { FramingGuide } from "../../ui/FramingGuide";
 import { color, radius, space } from "../../ui/theme";
 import type { SlotDef } from "../blueprint";
+import { flagLabels } from "../quality";
 import type { CapturedPhoto } from "../model";
 import { absPath } from "../repo";
 
@@ -53,7 +54,7 @@ export function SlotTile({
         accessibilityRole="button"
         accessibilityLabel={
           first
-            ? `${slot.label}: ${ui.text}. Open photo${flagged ? `, flagged ${(first.qualityFlags ?? ["blurry"]).join(" and ")}` : ""}`
+            ? `${slot.label}: ${ui.text}. Open photo${flagged ? `, flagged ${flagLabels(first.qualityFlags?.length ? first.qualityFlags : ["blurry"])}` : ""}`
             : `Take ${slot.label} photo. ${slot.hint}`
         }
         style={({ pressed }) => [s.media, pressed && { opacity: 0.8 }]}

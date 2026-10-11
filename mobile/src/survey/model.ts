@@ -56,6 +56,8 @@ export interface SurveyDoc {
 
 export type UploadState = "local" | "uploaded";
 
+export type ContentCheck = "checked" | "unavailable" | "failed";
+
 export interface CapturedPhoto {
   id: string;
   surveyId: string;
@@ -87,8 +89,11 @@ export interface CapturedPhoto {
   detectedText?: string | null;
   /** On-device image labels with confidence. */
   labels?: { text: string; confidence: number }[] | null;
-  /** Whether the on-device content check ran (false: not available on this phone). null: unknown (older photo). */
-  contentChecked?: boolean | null;
+  /**
+   * On-device content check: "checked" ran; "unavailable" this phone has no
+   * ML Kit; "failed" it errored on this photo. null: older photo.
+   */
+  contentCheck?: ContentCheck | null;
   /** Editable markup vectors (MarkupEditor marks); the rendered copy is annotatedRelPath. */
   markup?: unknown[] | null;
   uploadState: UploadState;
