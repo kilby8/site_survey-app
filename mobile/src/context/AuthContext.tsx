@@ -22,6 +22,7 @@ import {
 // Refresh the access token this long before it expires.
 const REFRESH_BUFFER_MS = 2 * 60 * 1000;
 const REFRESH_RETRY_DELAY_MS = 60 * 1000;
+const MAX_TIMER_MS = 24 * 60 * 60 * 1000;
 
 /** exp claim (ms) from a JWT, without verifying it. */
 function getTokenExpMs(token: string): number | null {
@@ -74,6 +75,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const expMs = getTokenExpMs(accessToken);
     if (!expMs) return;
     const delay = Math.max(0, expMs - Date.now() - REFRESH_BUFFER_MS);
+    // setTimeout overflows past ~24.8 days and fires at once; re-check daily instead.
+    if (delay > MAX_TIMER_MS) {
+      refreshTimerRef.current = setTimeout(() => scheduleRefresh(accessToken), MAX_TIMER_MS);
+      return;
+    }
     refreshTimerRef.current = setTimeout(async () => {
       try {
         const next = await refreshOnce(refreshAccessToken);

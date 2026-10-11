@@ -293,7 +293,7 @@ export default function LoginScreen() {
               </View>
               <Text style={styles.title}>Site Survey</Text>
               <Text style={styles.subtitle}>Use your SolarPro account to sign in</Text>
-              <Text style={styles.helperText}>Local email/password login has been removed. The app now opens SolarPro directly and returns here with a secure handoff token.</Text>
+              <Text style={styles.helperText}>Sign in once with SolarPro. After that the app opens and saves surveys even with no signal.</Text>
 
               {status && <StatusBanner type={status.type} message={status.message} />}
               {debugInfo ? <Text style={styles.debugText}>{debugInfo}</Text> : null}

@@ -1,0 +1,172 @@
+// ============================================================
+// Editing state for one survey. Every change is saved to SQLite
+// (debounced 400 ms, and immediately when the app goes to background
+// or the screen closes), so a killed app resumes exactly where it was.
+// ============================================================
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
+import type { AnswerValue } from "./blueprint";
+import { nextPlaneId, type CapturedPhoto, type SurveyDoc } from "./model";
+import { loadPhotos, loadSurvey, saveDoc, type StoredSurvey } from "./repo";
+
+export type SaveState = "saved" | "saving" | "error";
+
+export function useSurveyEditor(surveyId: string) {
+  const [survey, setSurvey] = useState<StoredSurvey | null>(null);
+  const [doc, setDoc] = useState<SurveyDoc | null>(null);
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
+  const [step, setStepState] = useState<StoredSurvey["currentStep"]>("project_arrival");
+  const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [notFound, setNotFound] = useState(false);
+
+  const docRef = useRef<SurveyDoc | null>(null);
+  const stepRef = useRef<StoredSurvey["currentStep"]>("project_arrival");
+  const dirty = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const loaded = await loadSurvey(surveyId);
+      if (!alive) return;
+      if (!loaded) {
+        setNotFound(true);
+        return;
+      }
+      docRef.current = loaded.survey.doc;
+      stepRef.current = loaded.survey.currentStep;
+      setSurvey(loaded.survey);
+      setDoc(loaded.survey.doc);
+      setStepState(loaded.survey.currentStep === "review" ? "review" : loaded.survey.currentStep);
+      setPhotos(loaded.photos);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [surveyId]);
+
+  const flush = useCallback(async () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    if (!dirty.current || !docRef.current) return;
+    dirty.current = false;
+    setSaveState("saving");
+    try {
+      await saveDoc(surveyId, docRef.current, stepRef.current);
+      setSaveState(dirty.current ? "saving" : "saved");
+    } catch {
+      dirty.current = true;
+      setSaveState("error");
+    }
+  }, [surveyId]);
+
+  const schedule = useCallback(() => {
+    dirty.current = true;
+    setSaveState("saving");
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => void flush(), 400);
+  }, [flush]);
+
+  // Save right away when the app is backgrounded or the screen goes away.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s !== "active") void flush();
+    });
+    return () => {
+      sub.remove();
+      void flush();
+    };
+  }, [flush]);
+
+  const update = useCallback(
+    (fn: (d: SurveyDoc) => SurveyDoc) => {
+      if (!docRef.current) return;
+      const next = fn(docRef.current);
+      docRef.current = next;
+      setDoc(next);
+      schedule();
+    },
+    [schedule],
+  );
+
+  const setAnswer = useCallback(
+    (fieldId: string, value: AnswerValue, planeId: string | null = null) =>
+      update((d) =>
+        planeId
+          ? {
+              ...d,
+              planes: d.planes.map((p) => (p.id === planeId ? { ...p, answers: { ...p.answers, [fieldId]: value } } : p)),
+            }
+          : { ...d, answers: { ...d.answers, [fieldId]: value } },
+      ),
+    [update],
+  );
+
+  const addPlane = useCallback(() => {
+    let id = "";
+    update((d) => {
+      id = nextPlaneId(d.planes);
+      return { ...d, planes: [...d.planes, { id, answers: {} }] };
+    });
+    return id;
+  }, [update]);
+
+  const removePlane = useCallback(
+    (planeId: string) =>
+      update((d) => ({
+        ...d,
+        planes: d.planes.filter((p) => p.id !== planeId),
+        overrides: d.overrides.filter((o) => !o.key.startsWith(`${planeId}:`) && !o.key.startsWith(`field:${planeId}:`)),
+      })),
+    [update],
+  );
+
+  const setOverride = useCallback(
+    (key: string, reason: string | null) =>
+      update((d) => ({
+        ...d,
+        overrides: reason
+          ? [...d.overrides.filter((o) => o.key !== key), { key, reason, at: new Date().toISOString() }]
+          : d.overrides.filter((o) => o.key !== key),
+      })),
+    [update],
+  );
+
+  const setNotes = useCallback((notes: string) => update((d) => ({ ...d, notes })), [update]);
+
+  const setGps = useCallback((gps: SurveyDoc["gps"]) => update((d) => ({ ...d, gps })), [update]);
+
+  const setStep = useCallback(
+    (s: StoredSurvey["currentStep"]) => {
+      stepRef.current = s;
+      setStepState(s);
+      dirty.current = true;
+      void flush();
+    },
+    [flush],
+  );
+
+  const reloadPhotos = useCallback(async () => {
+    setPhotos(await loadPhotos(surveyId));
+  }, [surveyId]);
+
+  return {
+    survey,
+    doc,
+    photos,
+    step,
+    saveState,
+    notFound,
+    setAnswer,
+    addPlane,
+    removePlane,
+    setOverride,
+    setNotes,
+    setGps,
+    setStep,
+    setPhotos,
+    reloadPhotos,
+    flush,
+  };
+}

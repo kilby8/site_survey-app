@@ -58,7 +58,7 @@ let _subscription:     EventSubscription | null = null;
 let _appStateSub:      NativeEventSubscription | null = null;
 let _retryTimer:       ReturnType<typeof setTimeout> | null = null;
 let _rerun            = false;
-let _progressListeners: Array<(surveyId: string, done: number, total: number) => void> = [];
+let _progressListeners: ((surveyId: string, done: number, total: number) => void)[] = [];
 let _statusCallbacks: SyncStatusCallback[] = [];
 let _deviceId         = '';
 let _telemetryListener: ((event: {

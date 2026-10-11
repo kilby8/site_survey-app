@@ -58,3 +58,4 @@ mobile/android/local.properties
 
 # Never commit real env files
 backend/.env
+mobile/web-preview/

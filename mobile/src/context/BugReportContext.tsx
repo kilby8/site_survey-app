@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import {
   Alert,
@@ -194,7 +195,9 @@ export function BugReportFloatingButton() {
     return null;
   }
 
-  const bottomOffset = 20 + insets.bottom;
+  // Sits above the screens' bottom action bars, at the right edge, so it
+  // never covers Next / Submit.
+  const bottomOffset = 92 + insets.bottom;
 
   return (
     <TouchableOpacity
@@ -207,10 +210,7 @@ export function BugReportFloatingButton() {
       {reportingBug ? (
         <ActivityIndicator color={colors.background} size="small" />
       ) : (
-        <>
-          <Text style={styles.fabIcon}>🐞</Text>
-          <Text style={styles.fabText}>Bug</Text>
-        </>
+        <Ionicons name="bug-outline" size={22} color={colors.textPrimary} />
       )}
     </TouchableOpacity>
   );
@@ -219,14 +219,13 @@ export function BugReportFloatingButton() {
 const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
-    left: '50%',
-    transform: [{ translateX: -34 }],
-    backgroundColor: colors.primary,
+    right: 12,
+    backgroundColor: 'rgba(16, 30, 69, 0.92)',
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
     borderRadius: 24,
-    minHeight: 46,
-    minWidth: 68,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',

@@ -21,7 +21,7 @@ export type InstallType =
   | "solar_fencing"
   | "commercial_3phase";
 
-export const INSTALL_TYPES: Array<{ id: InstallType; label: string; hint: string }> = [
+export const INSTALL_TYPES: { id: InstallType; label: string; hint: string }[] = [
   { id: "roof_mount", label: "Roof mount", hint: "Residential roof array" },
   { id: "ground_mount", label: "Ground mount", hint: "Racking on the ground" },
   { id: "solar_fencing", label: "Solar fence", hint: "Vertical bifacial fence" },

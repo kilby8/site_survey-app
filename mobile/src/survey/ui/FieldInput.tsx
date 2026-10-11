@@ -1,0 +1,181 @@
+import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
+import React from "react";
+import { Pressable, Text, View } from "react-native";
+import { Chips, FieldLabel, Input, styles as ui, YesNo } from "../../ui/components";
+import { color, space } from "../../ui/theme";
+import type { AnswerValue, FieldDef } from "../blueprint";
+
+const COMPASS: { label: string; deg: number }[] = [
+  { label: "N", deg: 0 },
+  { label: "E", deg: 90 },
+  { label: "S", deg: 180 },
+  { label: "W", deg: 270 },
+];
+
+function parseNumber(text: string): number | null {
+  const clean = text.replace(",", ".").replace(/[^0-9.\-]/g, "");
+  if (!clean || clean === "-" || clean === ".") return null;
+  const n = Number(clean);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Number input that keeps what the user is typing (e.g. "12.") while storing a number. */
+function NumberInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: FieldDef;
+  value: AnswerValue | undefined;
+  onChange: (v: AnswerValue) => void;
+}) {
+  const [text, setText] = React.useState(typeof value === "number" ? String(value) : "");
+  React.useEffect(() => {
+    if (typeof value === "number" && parseNumber(text) !== value) setText(String(value));
+    if (value === null || value === undefined) {
+      if (text && parseNumber(text) !== null) setText("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  const outOfRange =
+    typeof value === "number" &&
+    ((field.min !== undefined && value < field.min) || (field.max !== undefined && value > field.max));
+  return (
+    <View>
+      <Input
+        label={field.label}
+        unit={field.unit}
+        value={text}
+        keyboardType={field.keyboard === "decimal-pad" ? "decimal-pad" : "numeric"}
+        placeholder={field.placeholder}
+        onChangeText={(t) => {
+          setText(t);
+          onChange(parseNumber(t));
+        }}
+        style={outOfRange ? { borderColor: color.red } : undefined}
+      />
+      {outOfRange ? (
+        <Text style={{ color: color.red, marginTop: 4, fontSize: 14 }}>
+          Expected {field.min ?? "…"}–{field.max ?? "…"} {field.unit ?? ""}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function AzimuthInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: FieldDef;
+  value: AnswerValue | undefined;
+  onChange: (v: AnswerValue) => void;
+}) {
+  const [reading, setReading] = React.useState(false);
+  const useCompass = async () => {
+    setReading(true);
+    try {
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (!perm.granted) return;
+      const h = await Location.getHeadingAsync();
+      const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+      if (deg >= 0) onChange(Math.round(deg) % 360);
+    } catch {
+      // compass not available
+    } finally {
+      setReading(false);
+    }
+  };
+  return (
+    <View style={{ gap: space.sm }}>
+      <NumberInput field={field} value={value} onChange={onChange} />
+      <View style={ui.chips}>
+        {COMPASS.map((c) => (
+          <Pressable
+            key={c.label}
+            onPress={() => onChange(c.deg)}
+            accessibilityRole="button"
+            accessibilityLabel={`Set azimuth ${c.label}, ${c.deg} degrees`}
+            style={[ui.chip, value === c.deg && ui.chipOn, { minWidth: 56, justifyContent: "center" }]}
+          >
+            <Text style={[ui.chipText, value === c.deg && { color: color.onAmber }]}>{c.label}</Text>
+          </Pressable>
+        ))}
+        <Pressable
+          onPress={useCompass}
+          accessibilityRole="button"
+          accessibilityLabel="Read azimuth from phone compass. Point the top of the phone the way the roof faces."
+          style={[ui.chip, { borderColor: color.amber }]}
+        >
+          <Ionicons name="compass-outline" size={20} color={color.amber} />
+          <Text style={[ui.chipText, { color: color.amber }]}>{reading ? "Reading…" : "Phone compass"}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+export function FieldInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: FieldDef;
+  value: AnswerValue | undefined;
+  onChange: (v: AnswerValue) => void;
+}) {
+  let control: React.ReactNode;
+  switch (field.kind) {
+    case "text":
+    case "multiline":
+      control = (
+        <Input
+          label={field.label}
+          value={typeof value === "string" ? value : ""}
+          onChangeText={(t) => onChange(t)}
+          placeholder={field.placeholder}
+          multiline={field.kind === "multiline"}
+        />
+      );
+      break;
+    case "number":
+      control = <NumberInput field={field} value={value} onChange={onChange} />;
+      break;
+    case "azimuth":
+      control = <AzimuthInput field={field} value={value} onChange={onChange} />;
+      break;
+    case "choice":
+    case "pitch":
+      control = (
+        <Chips
+          label={field.label}
+          options={field.options ?? []}
+          value={typeof value === "string" ? value : null}
+          onChange={(v) => onChange(v as string | null)}
+        />
+      );
+      break;
+    case "multichoice":
+      control = (
+        <Chips
+          label={field.label}
+          options={field.options ?? []}
+          value={Array.isArray(value) ? value : []}
+          onChange={(v) => onChange(v as string[])}
+          multi
+        />
+      );
+      break;
+    case "yesno":
+      control = <YesNo label={field.label} value={typeof value === "boolean" ? value : null} onChange={onChange} />;
+      break;
+  }
+  return (
+    <View style={{ marginBottom: space.lg }}>
+      <FieldLabel label={field.label} required={field.required} help={field.help} />
+      {control}
+    </View>
+  );
+}

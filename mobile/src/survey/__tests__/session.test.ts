@@ -1,3 +1,12 @@
+import {
+  __resetSessionForTests,
+  getAccessToken,
+  getRefreshToken,
+  refreshOnce,
+  saveTokens,
+  SessionExpiredError,
+} from "../../api/session";
+
 const secure: Record<string, string> = {};
 const plain: Record<string, string> = {};
 
@@ -11,15 +20,6 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   setItem: jest.fn(async (k: string, v: string) => { plain[k] = v; }),
   multiRemove: jest.fn(async (ks: string[]) => { ks.forEach((k) => delete plain[k]); }),
 }));
-
-import {
-  __resetSessionForTests,
-  getAccessToken,
-  getRefreshToken,
-  refreshOnce,
-  saveTokens,
-  SessionExpiredError,
-} from "../../api/session";
 
 beforeEach(() => {
   for (const k of Object.keys(secure)) delete secure[k];
