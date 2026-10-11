@@ -25,6 +25,16 @@ export function isAnswered(value: AnswerValue | undefined): boolean {
   return false;
 }
 
+/** A number outside the field's min/max doesn't count as answered. */
+export function isValidAnswer(field: FieldDef, value: AnswerValue | undefined): boolean {
+  if (!isAnswered(value)) return false;
+  if (typeof value === "number") {
+    if (field.min !== undefined && value < field.min) return false;
+    if (field.max !== undefined && value > field.max) return false;
+  }
+  return true;
+}
+
 export function conditionHolds(
   cond: Condition | undefined,
   answers: Record<string, AnswerValue>,
@@ -142,7 +152,7 @@ export function stepProgress(
         sectionId: instance.section.id,
         planeId: instance.planeId,
         label: itemLabel(instance, field.label),
-        done: isAnswered(instance.answers[field.id]),
+        done: isValidAnswer(field, instance.answers[field.id]),
         overridden: overridden.has(key),
       });
     }

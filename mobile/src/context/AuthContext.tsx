@@ -18,6 +18,7 @@ import {
   saveCachedUser,
   saveTokens,
 } from '../api/session';
+import { syncPending } from '../services/SyncManager';
 
 // Refresh the access token this long before it expires.
 const REFRESH_BUFFER_MS = 2 * 60 * 1000;
@@ -171,6 +172,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(result.user);
     setOfflineSession(false);
     if (result.refreshToken) scheduleRefresh(result.token);
+    // Anything that was waiting for a sign-in can go now.
+    syncPending({ force: true }).catch(() => undefined);
   }, [scheduleRefresh]);
 
   const signOut = useCallback(async () => {

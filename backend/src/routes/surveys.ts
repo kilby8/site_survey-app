@@ -1942,6 +1942,20 @@ router.post("/", async (req: Request, res: Response) => {
       await upsertChecklist(client, newId, body.checklist);
     if (body.photos?.length) await upsertPhotos(client, newId, body.photos);
 
+    // v2 app: the list of photos the survey has now. Photos it uploaded
+    // earlier that are no longer listed (deleted, retaken, re-marked-up)
+    // are removed. Photos without a client id (older app) are untouched.
+    const rawIds = (req.body as { client_photo_ids?: unknown }).client_photo_ids;
+    if (Array.isArray(rawIds)) {
+      const keep = rawIds.filter((v): v is string => typeof v === "string" && v.length > 0 && v.length <= 100);
+      await client.query(
+        `DELETE FROM survey_photos
+          WHERE survey_id = $1 AND client_photo_id IS NOT NULL
+            AND NOT (client_photo_id = ANY($2::text[]))`,
+        [newId, keep],
+      );
+    }
+
     await client.query("COMMIT");
 
     const full = await fetchSurveyFull(newId);
@@ -2198,7 +2212,13 @@ router.post(
             [id, clientPhotoId],
           );
           if (existing.length > 0) {
-            inserted.push({ ...existing[0], duplicate: true });
+            // Same photo again: keep the stored file, refresh its label and
+            // Golden Block (e.g. a note added after the first upload).
+            await client.query(
+              `UPDATE survey_photos SET label = $2, meta = COALESCE($3::jsonb, meta) WHERE id = $1`,
+              [existing[0].id, label, metas[i] ? JSON.stringify(metas[i]) : null],
+            );
+            inserted.push({ ...existing[0], label, duplicate: true });
             continue;
           }
         }

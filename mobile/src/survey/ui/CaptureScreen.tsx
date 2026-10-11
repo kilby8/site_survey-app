@@ -65,13 +65,18 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
   }, [Boolean(ed.doc)]);
 
   // Site GPS for the survey record (best effort, once).
+  const [gpsState, setGpsState] = React.useState<"working" | "failed">("working");
   React.useEffect(() => {
     if (!ed.doc || ed.doc.gps || ed.survey?.status === "submitted") return;
     void (async () => {
       const perm = await Location.requestForegroundPermissionsAsync().catch(() => null);
-      if (!perm?.granted) return;
+      if (!perm?.granted) {
+        setGpsState("failed");
+        return;
+      }
       const fix = await currentFix();
       if (fix.gps) ed.setGps({ lat: fix.gps.lat, lng: fix.gps.lng, accuracy: null });
+      else setGpsState("failed");
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [Boolean(ed.doc)]);
@@ -130,11 +135,22 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
   const fromLibrary = async (target: SlotTarget) => {
     const existing = photosForSlot(ed.photos, target.slot.id, target.planeId).filter((p) => p.qualityStatus !== "rejected");
     const room = (target.slot.max ?? 1) - existing.length;
-    if (room <= 0) return;
-    const filed = await pickFromLibrary({ surveyId, slotId: target.slot.id, planeId: target.planeId }, ed.photos, room);
-    await ed.reloadPhotos();
-    const firstBlurry = filed.find((f) => f.blurry);
-    if (firstBlurry) setBlurry(firstBlurry.photo);
+    if (room <= 0) {
+      Alert.alert("Slot is full", `${target.slot.label} takes up to ${target.slot.max ?? 1} photo${(target.slot.max ?? 1) === 1 ? "" : "s"}.`);
+      return;
+    }
+    const key = slotKey(target.slot.id, target.planeId);
+    setBusySlot(key);
+    try {
+      const filed = await pickFromLibrary({ surveyId, slotId: target.slot.id, planeId: target.planeId }, ed.photos, room);
+      await ed.reloadPhotos();
+      const firstBlurry = filed.find((f) => f.blurry);
+      if (firstBlurry) setBlurry(firstBlurry.photo);
+    } catch (e) {
+      Alert.alert("Photo not added", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusySlot(null);
+    }
   };
 
   const openPhoto = (p: CapturedPhoto) => router.push(`/survey/${surveyId}/photo/${p.id}`);
@@ -176,7 +192,11 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
                 icon="time-outline"
                 label={`Arrived ${new Date(doc.arrivedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`}
               />
-              <Badge icon="location-outline" label={doc.gps ? "Site GPS saved" : "Getting site GPS…"} tone={doc.gps ? "good" : "neutral"} />
+              <Badge
+                icon="location-outline"
+                label={doc.gps ? "Site GPS saved" : gpsState === "failed" ? "No site GPS — photos still get a location if available" : "Getting site GPS…"}
+                tone={doc.gps ? "good" : "neutral"}
+              />
             </View>
           ) : null}
         </View>
@@ -205,9 +225,9 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
                       label={`Remove roof plane ${inst.planeId}`}
                       tint={color.red}
                       onPress={() =>
-                        Alert.alert(`Remove plane ${inst.planeId}?`, "Its answers are removed. Photos stay on the phone until you delete them.", [
+                        Alert.alert(`Remove plane ${inst.planeId}?`, "Its answers and photos are deleted from this survey.", [
                           { text: "Cancel", style: "cancel" },
-                          { text: "Remove", style: "destructive", onPress: () => ed.removePlane(inst.planeId!) },
+                          { text: "Remove", style: "destructive", onPress: () => void ed.removePlane(inst.planeId!) },
                         ])
                       }
                     />
@@ -469,15 +489,16 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
               onPress={async () => {
                 const p = blurry;
                 setBlurry(null);
-                // Replace, don't keep: the blurry original is deleted.
-                await removePhoto(p);
-                await ed.reloadPhotos();
+                // Take the new photo first; the blurry one is only replaced once
+                // there is something to replace it with.
                 const res = await takePhoto(
                   { surveyId, slotId: p.slotId, planeId: p.planeId, retakeOf: { photoId: p.id, reason: "Blurry" } },
                   ed.photos,
                 );
+                if (res.kind === "captured") await removePhoto(p);
                 await ed.reloadPhotos();
                 if (res.kind === "captured" && res.blurry) setBlurry(res.photo);
+                else if (res.kind !== "captured") setBlurry(p);
               }}
             />
             <Button label="Keep it…" kind="secondary" onPress={() => setBlurReasonOpen(true)} />

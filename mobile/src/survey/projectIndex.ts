@@ -50,6 +50,8 @@ export async function loadProjectIndex(): Promise<ProjectIndex> {
 /** Fetch all clients' projects (3 at a time) and cache them. */
 export async function refreshProjectIndex(onProgress?: (done: number, total: number) => void): Promise<ProjectIndex> {
   const clients = await fetchMobileClients();
+  const previous = await loadProjectIndex();
+  const failedClients = new Set<string>();
   const projects: IndexedProject[] = [];
   let done = 0;
   const queue = [...clients];
@@ -68,14 +70,20 @@ export async function refreshProjectIndex(onProgress?: (done: number, total: num
           });
         }
       } catch {
-        // one client failing shouldn't hide the rest
+        // One client failing shouldn't hide the rest; keep its cached projects.
+        failedClients.add(c.id);
       }
       done++;
       onProgress?.(done, clients.length);
     }
   };
   await Promise.all([worker(), worker(), worker()]);
+  projects.push(...previous.projects.filter((p) => failedClients.has(p.clientId)));
   projects.sort((a, b) => a.name.localeCompare(b.name));
+  if (clients.length > 0 && failedClients.size === clients.length) {
+    // Every request failed: keep the old list and its timestamp.
+    throw new Error("Couldn't reach SolarPro. Showing the saved project list.");
+  }
   const index = { updatedAt: new Date().toISOString(), projects };
   try {
     await AsyncStorage.setItem(KEY, JSON.stringify(index));

@@ -180,6 +180,17 @@ export async function createSurveyDraft(input: {
   return id;
 }
 
+/** An in-progress survey for this SolarPro project, if there is one. */
+export async function findDraftForProject(solarproProjectId: string): Promise<string | null> {
+  const row = await getDb().getFirstAsync<{ id: string }>(
+    `SELECT id FROM surveys
+      WHERE doc IS NOT NULL AND status = 'draft' AND solarpro_project_id = ?
+      ORDER BY updated_at DESC LIMIT 1`,
+    [solarproProjectId],
+  );
+  return row?.id ?? null;
+}
+
 export async function loadSurvey(id: string): Promise<{ survey: StoredSurvey; photos: CapturedPhoto[] } | null> {
   const db = getDb();
   const row = await db.getFirstAsync<SurveyRowV2>("SELECT * FROM surveys WHERE id = ? AND doc IS NOT NULL", [id]);
@@ -286,11 +297,13 @@ export async function submitSurvey(id: string): Promise<void> {
 
 /** Back to editing (only before it has fully uploaded). Like Scanifly's "reset to draft". */
 export async function reopenSurvey(id: string): Promise<boolean> {
+  // Allowed until fully uploaded, even mid-upload: the uploader checks the
+  // status before each photo and before completing, and stops.
   const res = await getDb().runAsync(
     `UPDATE surveys
         SET status = 'draft', sync_status = 'local', sync_error = NULL, next_retry_at = NULL,
             updated_at = ?
-      WHERE id = ? AND sync_status IN ('pending', 'error')`,
+      WHERE id = ? AND status = 'submitted' AND sync_status IN ('pending', 'error', 'syncing')`,
     [new Date().toISOString(), id],
   );
   return (res.changes ?? 0) > 0;
@@ -304,22 +317,39 @@ export async function deleteSurveyAndFiles(id: string): Promise<void> {
 
 // ── Sync bookkeeping ────────────────────────────────────────────
 
-export async function surveysDueForSync(nowIso: string, includeNotDue = false): Promise<StoredSurvey[]> {
+/**
+ * Submitted surveys waiting to upload. Only the signed-in surveyor's (or
+ * unowned) surveys are returned: someone else's work waits for them.
+ */
+export async function surveysDueForSync(
+  nowIso: string,
+  includeNotDue = false,
+  ownerEmail: string | null = null,
+): Promise<StoredSurvey[]> {
   const rows = await getDb().getAllAsync<SurveyRowV2>(
     `SELECT * FROM surveys
       WHERE doc IS NOT NULL AND status = 'submitted' AND sync_status IN ('pending', 'error')
         AND (? OR next_retry_at IS NULL OR next_retry_at <= ?)
+        AND (owner_email IS NULL OR ? IS NULL OR lower(owner_email) = lower(?))
       ORDER BY submitted_at ASC`,
-    [includeNotDue ? 1 : 0, nowIso],
+    [includeNotDue ? 1 : 0, nowIso, ownerEmail, ownerEmail],
   );
   return rows.map(rowToSurvey);
 }
 
-export async function markSyncing(id: string): Promise<void> {
-  await getDb().runAsync(
-    "UPDATE surveys SET sync_status = 'syncing', updated_at = ? WHERE id = ?",
+/** Claim a survey for upload; false if it was reopened or another pass has it. */
+export async function markSyncing(id: string): Promise<boolean> {
+  const res = await getDb().runAsync(
+    `UPDATE surveys SET sync_status = 'syncing', updated_at = ?
+      WHERE id = ? AND status = 'submitted' AND sync_status IN ('pending', 'error')`,
     [new Date().toISOString(), id],
   );
+  return (res.changes ?? 0) > 0;
+}
+
+export async function isStillSubmitted(id: string): Promise<boolean> {
+  const row = await getDb().getFirstAsync<{ status: string }>("SELECT status FROM surveys WHERE id = ?", [id]);
+  return row?.status === "submitted";
 }
 
 export async function markPosted(id: string): Promise<void> {
@@ -336,7 +366,7 @@ export async function markPhotoUploaded(photoId: string, serverPhotoId: string |
 export async function markSynced(id: string): Promise<void> {
   await getDb().runAsync(
     `UPDATE surveys SET sync_status = 'synced', sync_error = NULL, next_retry_at = NULL, updated_at = ?
-      WHERE id = ?`,
+      WHERE id = ? AND status = 'submitted'`,
     [new Date().toISOString(), id],
   );
 }
@@ -345,7 +375,7 @@ export async function markSyncError(id: string, message: string, attempts: numbe
   await getDb().runAsync(
     `UPDATE surveys
         SET sync_status = 'error', sync_error = ?, sync_attempts = ?, next_retry_at = ?, updated_at = ?
-      WHERE id = ?`,
+      WHERE id = ? AND status = 'submitted'`,
     [message, attempts, nextRetryAt, new Date().toISOString(), id],
   );
 }

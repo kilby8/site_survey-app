@@ -43,6 +43,8 @@ export interface SurveyDoc {
   /** Survey-level answers keyed by field id. */
   answers: Record<string, AnswerValue>;
   planes: RoofPlane[];
+  /** Count of plane ids handed out so far (ids are never reused). */
+  planeSeq?: number;
   overrides: Override[];
   notes: string;
   /** First time the survey was opened on site (Arrival Time). */
@@ -90,13 +92,25 @@ export function fieldKey(fieldId: string, planeId: string | null): string {
   return planeId ? `field:${planeId}:${fieldId}` : `field:${fieldId}`;
 }
 
-export function nextPlaneId(planes: RoofPlane[]): string {
-  const used = new Set(planes.map((p) => p.id));
-  for (let i = 0; i < 26; i++) {
-    const id = String.fromCharCode(65 + i);
+/**
+ * Next plane id. Ids are never reused within a survey (a removed "B" is not
+ * handed out again), so photos can never attach to the wrong plane.
+ */
+export function nextPlaneId(doc: Pick<SurveyDoc, "planes" | "planeSeq">): string {
+  const used = new Set(doc.planes.map((p) => p.id));
+  let n = Math.max(doc.planeSeq ?? 0, doc.planes.length);
+  for (;;) {
+    const id = n < 26 ? String.fromCharCode(65 + n) : `P${n + 1}`;
+    n++;
     if (!used.has(id)) return id;
   }
-  return `P${planes.length + 1}`;
+}
+
+/** Plane-sequence value after handing out `id`. */
+export function planeSeqAfter(id: string): number {
+  if (/^[A-Z]$/.test(id)) return id.charCodeAt(0) - 64;
+  const m = /^P(\d+)$/.exec(id);
+  return m ? Number(m[1]) : 0;
 }
 
 export function newSurveyDoc(input: {
@@ -115,6 +129,7 @@ export function newSurveyDoc(input: {
     inspectorName: input.inspectorName,
     answers: input.siteAddress ? { site_address: input.siteAddress } : {},
     planes: roofish ? [{ id: "A", answers: {} }] : [],
+    planeSeq: roofish ? 1 : 0,
     overrides: [],
     notes: "",
     arrivedAt: now,

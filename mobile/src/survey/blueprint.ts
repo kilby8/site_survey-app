@@ -135,7 +135,7 @@ export interface StepDef {
   sections: SectionDef[];
 }
 
-const PITCH_OPTIONS = Array.from({ length: 13 }, (_, i) => `${i}/12`);
+const PITCH_OPTIONS = Array.from({ length: 17 }, (_, i) => `${i}/12`);
 
 export const ROOF_MATERIALS = [
   "Asphalt shingle",

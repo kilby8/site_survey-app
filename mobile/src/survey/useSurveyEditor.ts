@@ -7,8 +7,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import type { AnswerValue } from "./blueprint";
-import { nextPlaneId, type CapturedPhoto, type SurveyDoc } from "./model";
-import { loadPhotos, loadSurvey, saveDoc, type StoredSurvey } from "./repo";
+import { nextPlaneId, planeSeqAfter, type CapturedPhoto, type SurveyDoc } from "./model";
+import { loadPhotos, loadSurvey, removePhoto, saveDoc, type StoredSurvey } from "./repo";
 
 export type SaveState = "saved" | "saving" | "error";
 
@@ -106,20 +106,26 @@ export function useSurveyEditor(surveyId: string) {
   const addPlane = useCallback(() => {
     let id = "";
     update((d) => {
-      id = nextPlaneId(d.planes);
-      return { ...d, planes: [...d.planes, { id, answers: {} }] };
+      id = nextPlaneId(d);
+      return { ...d, planes: [...d.planes, { id, answers: {} }], planeSeq: Math.max(d.planeSeq ?? 0, planeSeqAfter(id)) };
     });
     return id;
   }, [update]);
 
+  /** Remove a plane, its skip reasons and its photos. */
   const removePlane = useCallback(
-    (planeId: string) =>
+    async (planeId: string) => {
       update((d) => ({
         ...d,
         planes: d.planes.filter((p) => p.id !== planeId),
+        planeSeq: Math.max(d.planeSeq ?? 0, d.planes.length),
         overrides: d.overrides.filter((o) => !o.key.startsWith(`${planeId}:`) && !o.key.startsWith(`field:${planeId}:`)),
-      })),
-    [update],
+      }));
+      const current = await loadPhotos(surveyId);
+      for (const p of current.filter((x) => x.planeId === planeId)) await removePhoto(p);
+      setPhotos(await loadPhotos(surveyId));
+    },
+    [update, surveyId],
   );
 
   const setOverride = useCallback(

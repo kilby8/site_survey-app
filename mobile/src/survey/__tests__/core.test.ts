@@ -111,7 +111,7 @@ describe("conditions and sections", () => {
 
   it("repeats the roof plane section per plane and hides it for ground mounts", () => {
     const d = doc();
-    d.planes.push({ id: nextPlaneId(d.planes), answers: {} });
+    d.planes.push({ id: nextPlaneId(d), answers: {} });
     const planes = sectionInstances(d, STEPS[4]).filter((i) => i.section.id === "roof_plane");
     expect(planes.map((p) => p.planeId)).toEqual(["A", "B"]);
 

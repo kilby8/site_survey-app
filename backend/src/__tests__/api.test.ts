@@ -602,6 +602,43 @@ describe("POST /api/surveys/:id/photos", () => {
     expect(full.body.photos[0].meta).toMatchObject({ photoSlotId: "arrival_front", heading: 182 });
     expect(new Date(full.body.photos[0].captured_at).toISOString()).toBe("2026-10-11T15:04:05.000Z");
   });
+
+  it("drops v2 photos the survey no longer lists and refreshes metadata on re-send", async () => {
+    const create = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({ project_name: "Stale Photos", inspector_name: "Tester", site_name: "Stale" });
+    createdIds.push(create.body.id);
+    const surveyId = create.body.id as string;
+    const send = (clientId: string, meta: object) =>
+      request(app)
+        .post(`/api/surveys/${surveyId}/photos`)
+        .set("Authorization", authHeader)
+        .field("labels", JSON.stringify([clientId]))
+        .field("client_ids", JSON.stringify([clientId]))
+        .field("metas", JSON.stringify([meta]))
+        .attach("photos", Buffer.from(clientId), { filename: `${clientId}.jpg`, contentType: "image/jpeg" });
+    await send("keep-1", { notes: null });
+    await send("gone-1", {});
+    await request(app)
+      .post(`/api/surveys/${surveyId}/photos`)
+      .set("Authorization", authHeader)
+      .field("labels", JSON.stringify(["legacy"]))
+      .attach("photos", Buffer.from("legacy"), { filename: "legacy.jpg", contentType: "image/jpeg" });
+    await send("keep-1", { notes: "Label behind dead front" });
+
+    const repost = await request(app)
+      .post("/api/surveys")
+      .set("Authorization", authHeader)
+      .send({ id: surveyId, project_name: "Stale Photos", inspector_name: "Tester", site_name: "Stale", client_photo_ids: ["keep-1"] });
+    expect(repost.status).toBe(201);
+
+    const full = await getAuth(`/api/surveys/${surveyId}`);
+    const ids = full.body.photos.map((p: { client_photo_id: string | null }) => p.client_photo_id ?? "legacy");
+    expect(ids.sort()).toEqual(["keep-1", "legacy"]);
+    const kept = full.body.photos.find((p: { client_photo_id: string | null }) => p.client_photo_id === "keep-1");
+    expect(kept.meta.notes).toBe("Label behind dead front");
+  });
 });
 
 describe("PUT /api/surveys/:id", () => {

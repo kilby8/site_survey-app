@@ -61,6 +61,19 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
   const [retakeOpen, setRetakeOpen] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const canvas = React.useRef<View>(null);
+  const notesTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notesRef = React.useRef("");
+  notesRef.current = notes;
+  // Flush a pending note when leaving the screen.
+  React.useEffect(
+    () => () => {
+      if (notesTimer.current) {
+        clearTimeout(notesTimer.current);
+        void updatePhoto(photoId, { notes: notesRef.current });
+      }
+    },
+    [photoId],
+  );
   const liveRef = React.useRef<string | null>(null);
 
   const load = React.useCallback(async () => {
@@ -251,7 +264,12 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
                 label="Photo note"
                 value={notes}
                 editable={!locked}
-                onChangeText={setNotes}
+                onChangeText={(t) => {
+                  setNotes(t);
+                  // Saved as you type, so the back button can't lose it.
+                  if (notesTimer.current) clearTimeout(notesTimer.current);
+                  notesTimer.current = setTimeout(() => void updatePhoto(photo.id, { notes: t }), 300);
+                }}
                 onBlur={() => void updatePhoto(photo.id, { notes })}
                 placeholder="e.g. 200 A main, label behind the dead front"
                 multiline

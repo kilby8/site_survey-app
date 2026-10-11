@@ -2,7 +2,7 @@ import { SessionExpiredError } from "../../api/session";
 import { findSlot } from "../blueprint";
 import { newSurveyDoc, type CapturedPhoto } from "../model";
 import type { StoredSurvey } from "../repo";
-import { BACKOFF_MINUTES, nextRetryAt, syncSurveyV2, type SyncDeps } from "../sync";
+import { BACKOFF_MINUTES, nextRetryAt, syncSurveyV2, WAIT_FOR_LOGIN, type SyncDeps } from "../sync";
 
 jest.mock("expo-secure-store", () => ({}));
 jest.mock("@react-native-async-storage/async-storage", () => ({}));
@@ -51,7 +51,8 @@ function deps(photos: CapturedPhoto[], over: Partial<SyncDeps> = {}) {
     postSurvey: async () => { calls.push("post"); return {}; },
     uploadPhoto: async (_s, p) => { calls.push(`upload:${p.clientId}`); return { id: `srv-${p.clientId}` }; },
     complete: async () => { calls.push("complete"); return {}; },
-    markSyncing: async () => { calls.push("syncing"); },
+    markSyncing: async () => { calls.push("syncing"); return true; },
+    stillSubmitted: async () => true,
     markPhotoUploaded: async (id) => { uploaded.push(id); },
     markSynced: async () => { calls.push("synced"); },
     markSyncError: async (_id, msg, attempts, next) => { calls.push(`error:${attempts}:${next ? "retry" : "none"}:${msg}`); },
@@ -74,7 +75,7 @@ describe("syncSurveyV2", () => {
     const { d, calls } = deps([photo("a", { annotatedRelPath: "survey-photos-v2/a-markup-1.jpg" })]);
     await syncSurveyV2(survey(), d);
     expect(calls).toContain("upload:a");
-    expect(calls).toContain("upload:a-markup-a-markup-1.jpg");
+    expect(calls).toContain("upload:a-markup-1");
   });
 
   it("keeps progress when an upload fails midway and schedules a retry", async () => {
@@ -103,7 +104,49 @@ describe("syncSurveyV2", () => {
       postSurvey: async () => { throw new SessionExpiredError(); },
     });
     await expect(syncSurveyV2(survey(1), d)).resolves.toBe("needs_login");
-    expect(calls[calls.length - 1]).toBe("error:1:none:Sign in again to finish uploading.");
+    expect(calls[calls.length - 1]).toBe("error:1:retry:Sign in again to finish uploading.");
+  });
+
+  it("parks a sign-in failure until sign-in instead of retrying on a timer", async () => {
+    let next: string | null = "unset";
+    const { d } = deps([photo("a")], {
+      postSurvey: async () => { throw new SessionExpiredError(); },
+      markSyncError: async (_i, _m, _a, n) => { next = n; },
+    });
+    await syncSurveyV2(survey(), d);
+    expect(next).toBe(WAIT_FOR_LOGIN);
+  });
+
+  it("does nothing if another pass already claimed it or it was reopened", async () => {
+    const { d, calls } = deps([photo("a")], { markSyncing: async () => false });
+    await expect(syncSurveyV2(survey(), d)).resolves.toBe("skipped");
+    expect(calls).toEqual([]);
+  });
+
+  it("stops without completing when reopened mid-upload", async () => {
+    let n = 0;
+    const { d, calls } = deps([photo("a"), photo("b")], { stillSubmitted: async () => ++n < 2 });
+    await expect(syncSurveyV2(survey(), d)).resolves.toBe("skipped");
+    expect(calls).toContain("upload:a");
+    expect(calls).not.toContain("upload:b");
+    expect(calls).not.toContain("complete");
+    expect(calls.some((c) => c.startsWith("error"))).toBe(false);
+  });
+
+  it("doesn't send photos for items that are now hidden or rejected", async () => {
+    const hidden = { ...photo("h"), slotId: "elec_sub_panel", stepId: "electrical_equipment" as const, sectionId: "sub_panel" };
+    const { d, calls } = deps([photo("a"), photo("r", { qualityStatus: "rejected" }), hidden]);
+    await syncSurveyV2(survey(), d);
+    expect(calls.filter((c) => c.startsWith("upload:"))).toEqual(["upload:a"]);
+  });
+
+  it("tells the server which photos the survey has now", async () => {
+    let payload: { client_photo_ids?: string[] } = {};
+    const { d } = deps([photo("a", { annotatedRelPath: "survey-photos-v2/a-markup-9.jpg" }), photo("b")], {
+      postSurvey: async (p) => { payload = p as typeof payload; return {}; },
+    });
+    await syncSurveyV2(survey(), d);
+    expect(payload.client_photo_ids).toEqual(["a", "a-markup-9", "b"]);
   });
 
   it("backs off 1, 2, 5, 15, then 30 minutes", () => {

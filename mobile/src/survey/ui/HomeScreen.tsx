@@ -29,7 +29,7 @@ function timeAgo(iso: string): string {
 export function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, signOut, offlineSession } = useAuth();
+  const { user, signOut } = useAuth();
   const [rows, setRows] = React.useState<Row[]>([]);
   const [online, setOnline] = React.useState(isOnline());
   const [refreshing, setRefreshing] = React.useState(false);
@@ -122,7 +122,6 @@ export function HomeScreen() {
           tone={online ? "good" : "warn"}
           icon={online ? "cloud-done-outline" : "cloud-offline-outline"}
         />
-        {offlineSession && online ? <Badge label="Reconnecting…" tone="info" /> : null}
       </View>
 
       <SectionList
@@ -147,7 +146,9 @@ export function HomeScreen() {
             {section.title.toUpperCase()} · {section.data.length}
           </T>
         )}
-        renderItem={({ item }) => <SurveyRow row={item} uploading={uploading[item.id]} onPress={() => open(item)} />}
+        renderItem={({ item }) => (
+          <SurveyRow row={item} me={user?.email ?? null} uploading={uploading[item.id]} onPress={() => open(item)} />
+        )}
         ListEmptyComponent={
           <View style={s.empty}>
             <Ionicons name="clipboard-outline" size={48} color={color.textMuted} />
@@ -181,7 +182,18 @@ export function HomeScreen() {
   );
 }
 
-function SurveyRow({ row, uploading, onPress }: { row: Row; uploading?: { done: number; total: number }; onPress: () => void }) {
+function SurveyRow({
+  row,
+  me,
+  uploading,
+  onPress,
+}: {
+  row: Row;
+  me: string | null;
+  uploading?: { done: number; total: number };
+  onPress: () => void;
+}) {
+  const someoneElse = !!row.ownerEmail && !!me && row.ownerEmail.toLowerCase() !== me.toLowerCase();
   const install = INSTALL_TYPES.find((t) => t.id === row.installType)?.label;
   let status: React.ReactNode = null;
   if (row.status === "draft") {
@@ -189,6 +201,12 @@ function SurveyRow({ row, uploading, onPress }: { row: Row; uploading?: { done: 
     status = (
       <T variant="small" dim>
         {step ? `On step ${step.number}: ${step.short}` : "Ready to review"} · saved {timeAgo(row.updatedAt)}
+      </T>
+    );
+  } else if (someoneElse && row.syncStatus !== "synced") {
+    status = (
+      <T variant="small" dim numberOfLines={2}>
+        Uploads when {row.ownerEmail} signs in on this phone
       </T>
     );
   } else if (row.syncStatus === "syncing") {

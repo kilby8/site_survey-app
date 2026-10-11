@@ -33,10 +33,10 @@ import {
   uploadSurveyPhotoV2,
   completeSurveyV2,
 } from '../api/client';
-import { SessionExpiredError } from '../api/session';
+import { getAccessToken, getCachedUser, SessionExpiredError } from '../api/session';
 import type { Survey } from '../types';
 import * as repo from '../survey/repo';
-import { syncSurveyV2, type SyncDeps } from '../survey/sync';
+import { syncSurveyV2, WAIT_FOR_LOGIN, type SyncDeps } from '../survey/sync';
 
 // ----------------------------------------------------------------
 // Sync state callback type
@@ -176,12 +176,15 @@ export async function syncPending(options?: { includeErrors?: boolean; force?: b
     return;
   }
   if (!_isOnline) return;
+  // Signed out: nothing can upload, so don't spend data or battery trying.
+  if (!(await getAccessToken())) return;
   _isSyncing = true;
   const force = options?.force ?? options?.includeErrors ?? true;
 
   try {
     const legacy = await getPendingSurveys({ includeErrors: true });
-    const due = await repo.surveysDueForSync(new Date().toISOString(), force);
+    const owner = (await getCachedUser())?.email ?? null;
+    const due = await repo.surveysDueForSync(new Date().toISOString(), force, owner);
     if (legacy.length === 0 && due.length === 0) return;
 
     // Absorb a Render cold start with one cheap request first.
@@ -217,8 +220,10 @@ async function _scheduleNextRetry(): Promise<void> {
   if (_retryTimer) clearTimeout(_retryTimer);
   _retryTimer = null;
   try {
-    const waiting = await repo.surveysDueForSync(new Date(8.64e15).toISOString(), true);
+    const owner = (await getCachedUser())?.email ?? null;
+    const waiting = await repo.surveysDueForSync(new Date(8.64e15).toISOString(), true, owner);
     const times = waiting
+      .filter((s) => s.nextRetryAt !== WAIT_FOR_LOGIN) // waits for sign-in, not a timer
       .map((s) => (s.nextRetryAt ? Date.parse(s.nextRetryAt) : Date.now()))
       .filter((t) => Number.isFinite(t));
     if (!times.length) return;
@@ -245,9 +250,11 @@ const _v2Deps: SyncDeps = {
   uploadPhoto: uploadSurveyPhotoV2,
   complete: completeSurveyV2,
   markSyncing: async (id) => {
-    await repo.markSyncing(id);
+    const claimed = await repo.markSyncing(id);
     _notifyCallbacks();
+    return claimed;
   },
+  stillSubmitted: repo.isStillSubmitted,
   markPhotoUploaded: repo.markPhotoUploaded,
   markSynced: repo.markSynced,
   markSyncError: repo.markSyncError,

@@ -9,6 +9,7 @@
 import { findSlot, INSTALL_TYPES, STEPS, type AnswerValue } from "./blueprint";
 import type { CapturedPhoto, SurveyDoc } from "./model";
 import { sectionInstances, surveyReadiness } from "./progress";
+import { slotKey } from "./model";
 
 export interface ServerChecklistItem {
   label: string;
@@ -37,6 +38,8 @@ export interface ServerSurveyPayload {
   solarpro_org_id: string | null;
   metadata: Record<string, unknown>;
   checklist: ServerChecklistItem[];
+  /** Photos the survey has now; server removes any of its v2 photos not listed. */
+  client_photo_ids: string[];
 }
 
 const str = (v: AnswerValue | undefined): string | null =>
@@ -44,6 +47,18 @@ const str = (v: AnswerValue | undefined): string | null =>
 const num = (v: AnswerValue | undefined): number | null =>
   typeof v === "number" && Number.isFinite(v) ? v : null;
 const bool = (v: AnswerValue | undefined): boolean | null => (typeof v === "boolean" ? v : null);
+
+/** Every roof plane in a flat, importer-friendly shape. */
+function planesSummary(doc: SurveyDoc): Record<string, unknown>[] {
+  return doc.planes.map((p) => ({
+    plane_id: p.id,
+    pitch: str(p.answers.pitch),
+    azimuth: num(p.answers.azimuth),
+    material: str(p.answers.material),
+    obstructions: Array.isArray(p.answers.obstructions) ? p.answers.obstructions : [],
+    notes: str(p.answers.plane_notes),
+  }));
+}
 
 /** Legacy category metadata, read by the backend report and SolarPro's transformer. */
 export function legacyMetadata(doc: SurveyDoc): Record<string, unknown> {
@@ -58,6 +73,8 @@ export function legacyMetadata(doc: SurveyDoc): Record<string, unknown> {
         rafter_spacing: str(a.rafter_spacing),
         roof_age_years: num(a.roof_age_years),
         azimuth: num(planeA.azimuth),
+        roof_pitch: str(planeA.pitch),
+        roof_planes: planesSummary(doc),
       };
     case "ground_mount":
       return {
@@ -94,6 +111,8 @@ export function legacyMetadata(doc: SurveyDoc): Record<string, unknown> {
         system_kw: num(a.system_kw),
         array_azimuth: num(planeA.azimuth),
         roof_material: str(planeA.material),
+        roof_pitch: str(planeA.pitch),
+        roof_planes: planesSummary(doc),
       };
     }
   }
@@ -132,6 +151,28 @@ export function checklistFromDoc(doc: SurveyDoc, photos: CapturedPhoto[]): Serve
       notes: lines.join("\n"),
     };
   });
+}
+
+/** Photos that belong in the upload: in a slot that is still shown, and not rejected. */
+export function photosToSend(doc: SurveyDoc, photos: CapturedPhoto[]): CapturedPhoto[] {
+  const visible = new Set<string>();
+  for (const step of STEPS) {
+    for (const inst of sectionInstances(doc, step)) {
+      for (const slot of inst.slots) visible.add(slotKey(slot.id, inst.planeId));
+    }
+  }
+  return photos.filter((p) => p.qualityStatus !== "rejected" && visible.has(slotKey(p.slotId, p.planeId)));
+}
+
+/** Server id for a photo's marked-up copy (changes when the markup changes). */
+export function markupClientId(photo: CapturedPhoto): string {
+  const file = photo.annotatedRelPath?.split("/").pop()?.replace(/\.jpg$/, "") ?? "markup";
+  return `${photo.id}-${file.startsWith(photo.id) ? file.slice(photo.id.length + 1) : file}`;
+}
+
+/** Every server-side photo id this survey should have; the server drops the rest. */
+export function clientPhotoIds(photos: CapturedPhoto[]): string[] {
+  return photos.flatMap((p) => (p.annotatedRelPath ? [p.id, markupClientId(p)] : [p.id]));
 }
 
 export function photoLabel(photo: CapturedPhoto): string {
@@ -210,5 +251,6 @@ export function buildSurveyPayload(input: {
       },
     },
     checklist: checklistFromDoc(doc, input.photos),
+    client_photo_ids: clientPhotoIds(input.photos),
   };
 }

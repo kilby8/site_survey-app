@@ -68,6 +68,34 @@ export async function currentFix(): Promise<{
   }
 }
 
+type Exif = Record<string, unknown> | null | undefined;
+
+function exifNumber(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() && Number.isFinite(Number(v))) return Number(v);
+  return null;
+}
+
+/** GPS and shutter time recorded by the camera, when present. */
+export function readExif(exif: Exif): { gps: CapturedPhoto["gps"]; takenAt: string | null } {
+  if (!exif) return { gps: null, takenAt: null };
+  let lat = exifNumber(exif.GPSLatitude);
+  let lng = exifNumber(exif.GPSLongitude);
+  if (lat !== null && String(exif.GPSLatitudeRef ?? "N").toUpperCase().startsWith("S")) lat = -Math.abs(lat);
+  if (lng !== null && String(exif.GPSLongitudeRef ?? "E").toUpperCase().startsWith("W")) lng = -Math.abs(lng);
+  const gps = lat !== null && lng !== null && !(lat === 0 && lng === 0) ? { lat, lng, alt: exifNumber(exif.GPSAltitude) } : null;
+  let takenAt: string | null = null;
+  const raw = exif.DateTimeOriginal ?? exif.DateTime;
+  if (typeof raw === "string") {
+    const m = /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(raw);
+    if (m) {
+      const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+      if (!Number.isNaN(d.getTime())) takenAt = d.toISOString();
+    }
+  }
+  return { gps, takenAt };
+}
+
 /** Measure sharpness on a small copy. Returns null if it can't be measured. */
 export async function measureSharpness(uri: string): Promise<number | null> {
   try {
@@ -107,11 +135,12 @@ export async function fileAsset(
   target: CaptureTarget,
   existing: CapturedPhoto[],
   fix?: { gps: CapturedPhoto["gps"]; heading: number | null },
+  takenAt?: string | null,
 ): Promise<{ photo: CapturedPhoto; blurry: boolean }> {
   const found = findSlot(target.slotId);
   if (!found) throw new Error(`Unknown photo slot ${target.slotId}`);
   const id = newId();
-  const capturedAt = new Date().toISOString();
+  const capturedAt = takenAt ?? new Date().toISOString();
   const [where, relPath] = await Promise.all([fix ?? currentFix(), storeImage(asset, id)]);
   const blurScore = await measureSharpness(absPath(relPath));
   const blurry = isBlurry(blurScore);
@@ -149,17 +178,20 @@ export async function takePhoto(target: CaptureTarget, existing: CapturedPhoto[]
   void Location.requestForegroundPermissionsAsync().catch(() => undefined);
 
   await AsyncStorage.setItem(PENDING_KEY, JSON.stringify(target));
-  // Start the fix while the camera is open so it's ready at the shutter.
-  const fixPromise = currentFix();
   try {
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ["images"],
       quality: 1,
-      exif: false,
+      exif: true,
       allowsEditing: false,
     });
     if (result.canceled || !result.assets?.length) return { kind: "cancelled" };
-    const filed = await fileAsset(result.assets[0], target, existing, await fixPromise);
+    const asset = result.assets[0];
+    // Location and compass are read when the camera returns (the phone is
+    // still pointing at the subject); the camera's own EXIF GPS wins if present.
+    const exif = readExif(asset.exif as Exif);
+    const live = await currentFix();
+    const filed = await fileAsset(asset, target, existing, { gps: exif.gps ?? live.gps, heading: live.heading });
     return { kind: "captured", ...filed };
   } finally {
     await AsyncStorage.removeItem(PENDING_KEY);
@@ -175,6 +207,7 @@ export async function pickFromLibrary(
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ["images"],
     quality: 1,
+    exif: true,
     allowsMultipleSelection: limit > 1,
     selectionLimit: limit,
   });
@@ -182,7 +215,9 @@ export async function pickFromLibrary(
   const out: { photo: CapturedPhoto; blurry: boolean }[] = [];
   let all = existing;
   for (const asset of result.assets.slice(0, limit)) {
-    const filed = await fileAsset(asset, target, all, { gps: null, heading: null });
+    // Library photos keep their own time and place (heading isn't known).
+    const exif = readExif(asset.exif as Exif);
+    const filed = await fileAsset(asset, target, all, { gps: exif.gps, heading: null }, exif.takenAt);
     out.push(filed);
     all = [...all, filed.photo];
   }

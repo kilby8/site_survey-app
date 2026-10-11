@@ -18,7 +18,7 @@ import { color, radius, space } from "../../ui/theme";
 import { INSTALL_TYPES, type AnswerValue, type InstallType } from "../blueprint";
 import { newSurveyDoc, type ProjectLink } from "../model";
 import { loadProjectIndex, refreshProjectIndex, searchProjects, type IndexedProject, type ProjectIndex } from "../projectIndex";
-import { createSurveyDraft } from "../repo";
+import { createSurveyDraft, findDraftForProject } from "../repo";
 
 const NO_PROJECT = "__none__";
 
@@ -85,6 +85,13 @@ export function StartSurveyScreen({ handoffToken }: { handoffToken?: string }) {
     void (async () => {
       try {
         const h = await fetchHandoffToken(handoffToken);
+        // Opening the same SolarPro link twice resumes the survey already started.
+        const linkedProject = h.solarpro_project_id ?? h.project_id ?? null;
+        const existing = linkedProject ? await findDraftForProject(linkedProject) : null;
+        if (existing) {
+          router.replace(`/survey/${existing}/capture`);
+          return;
+        }
         const type = (INSTALL_TYPES.find((t) => t.id === h.category_id)?.id ?? "roof_mount") as InstallType;
         const project: ProjectLink = {
           solarproProjectId: h.solarpro_project_id ?? h.project_id ?? null,
@@ -121,6 +128,22 @@ export function StartSurveyScreen({ handoffToken }: { handoffToken?: string }) {
   };
 
   const start = async () => {
+    if (!picked || !installType) return;
+    if (picked !== NO_PROJECT) {
+      const existing = await findDraftForProject(picked.id);
+      if (existing) {
+        Alert.alert("Survey already started", `There's an unfinished survey for ${picked.name} on this phone.`, [
+          { text: "Resume it", onPress: () => router.replace(`/survey/${existing}/capture`) },
+          { text: "Start a new one", style: "destructive", onPress: () => void create() },
+          { text: "Cancel", style: "cancel" },
+        ]);
+        return;
+      }
+    }
+    await create();
+  };
+
+  const create = async () => {
     if (!picked || !installType) return;
     setStarting(true);
     try {

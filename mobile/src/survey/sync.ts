@@ -1,6 +1,7 @@
 // ============================================================
 // v2 survey upload. Every step is safe to repeat:
-//   1. POST the survey (server upserts by id)
+//   1. POST the survey (server upserts by id; it also drops server
+//      photos this survey no longer has)
 //   2. upload each photo not yet uploaded (server dedupes by client id)
 //   3. POST /complete (server reuses or requeues its webhook event)
 // Progress is stored per photo, so a killed app or dropped signal
@@ -9,11 +10,14 @@
 
 import type { SessionExpiredError } from "../api/session";
 import type { CapturedPhoto } from "./model";
-import { buildSurveyPayload, goldenBlock, photoLabel } from "./payload";
+import { buildSurveyPayload, goldenBlock, markupClientId, photoLabel, photosToSend } from "./payload";
 import type { StoredSurvey } from "./repo";
 
 /** Minutes to wait after the 1st, 2nd, … failure. */
 export const BACKOFF_MINUTES = [1, 2, 5, 15, 30];
+
+/** Marker for "waiting for sign-in": never retried by the timer. */
+export const WAIT_FOR_LOGIN = "9999-12-31T00:00:00.000Z";
 
 export function nextRetryAt(attempts: number, now: Date): string {
   const minutes = BACKOFF_MINUTES[Math.min(attempts - 1, BACKOFF_MINUTES.length - 1)] ?? 30;
@@ -30,7 +34,10 @@ export interface SyncDeps {
     photo: { uri: string; mimeType: string; label: string; clientId: string; capturedAt: string; meta: Record<string, unknown> },
   ) => Promise<{ id: string | null }>;
   complete: (surveyId: string) => Promise<unknown>;
-  markSyncing: (id: string) => Promise<void>;
+  /** Claim the survey for upload. False if it was reopened or is already being sent. */
+  markSyncing: (id: string) => Promise<boolean>;
+  /** Still submitted (not reopened for editing since the claim)? */
+  stillSubmitted: (id: string) => Promise<boolean>;
   markPhotoUploaded: (photoId: string, serverId: string | null) => Promise<void>;
   markSynced: (id: string) => Promise<void>;
   markSyncError: (id: string, message: string, attempts: number, nextRetryAt: string | null) => Promise<void>;
@@ -39,7 +46,7 @@ export interface SyncDeps {
   onProgress?: (surveyId: string, done: number, total: number) => void;
 }
 
-export type SyncOutcome = "synced" | "error" | "needs_login";
+export type SyncOutcome = "synced" | "error" | "needs_login" | "skipped";
 
 /** Plain-language message for the survey card. */
 export function friendlySyncError(error: unknown): string {
@@ -53,13 +60,15 @@ export function friendlySyncError(error: unknown): string {
   return raw;
 }
 
-export async function syncSurveyV2(
-  survey: StoredSurvey,
-  deps: SyncDeps,
-): Promise<SyncOutcome> {
-  await deps.markSyncing(survey.id);
+class Reopened extends Error {}
+
+export async function syncSurveyV2(survey: StoredSurvey, deps: SyncDeps): Promise<SyncOutcome> {
+  if (!(await deps.markSyncing(survey.id))) return "skipped";
   try {
-    const photos = await deps.loadPhotos(survey.id);
+    // Photos in items the surveyor later hid (e.g. answered "No sub panel")
+    // or rejected stay on the phone and are not sent.
+    const all = await deps.loadPhotos(survey.id);
+    const photos = photosToSend(survey.doc, all);
 
     await deps.postSurvey(
       buildSurveyPayload({
@@ -71,13 +80,13 @@ export async function syncSurveyV2(
       }),
     );
 
-    // Upload the original, plus the marked-up copy as its own photo.
     const pending = photos.filter((p) => p.uploadState !== "uploaded");
     const missing: string[] = [];
     let done = photos.length - pending.length;
     deps.onProgress?.(survey.id, done, photos.length);
 
     for (const photo of pending) {
+      if (!(await deps.stillSubmitted(survey.id))) throw new Reopened();
       const label = photoLabel(photo);
       if (!(await deps.fileExists(photo.relPath))) {
         missing.push(label);
@@ -92,12 +101,13 @@ export async function syncSurveyV2(
         capturedAt: photo.capturedAt,
         meta,
       });
+      // The marked-up copy goes up as its own photo; the original is kept.
       if (photo.annotatedRelPath && (await deps.fileExists(photo.annotatedRelPath))) {
         await deps.uploadPhoto(survey.id, {
           uri: deps.fileUri(photo.annotatedRelPath),
           mimeType: "image/jpeg",
           label: `${label} (marked up)`,
-          clientId: `${photo.id}-markup-${photo.annotatedRelPath.split("/").pop()}`,
+          clientId: markupClientId(photo),
           capturedAt: photo.capturedAt,
           meta: { ...meta, markupOf: photo.id },
         });
@@ -111,12 +121,15 @@ export async function syncSurveyV2(
       throw new Error(`Photo file missing on this phone: ${missing.join(", ")}. Retake it, then submit again.`);
     }
 
+    // Don't tell SolarPro it's complete if it was reopened mid-upload.
+    if (!(await deps.stillSubmitted(survey.id))) throw new Reopened();
     await deps.complete(survey.id);
     await deps.markSynced(survey.id);
     return "synced";
   } catch (error) {
+    if (error instanceof Reopened) return "skipped";
     if (deps.isSessionExpired(error)) {
-      await deps.markSyncError(survey.id, "Sign in again to finish uploading.", survey.syncAttempts, null);
+      await deps.markSyncError(survey.id, "Sign in again to finish uploading.", survey.syncAttempts, WAIT_FOR_LOGIN);
       return "needs_login";
     }
     const attempts = survey.syncAttempts + 1;
