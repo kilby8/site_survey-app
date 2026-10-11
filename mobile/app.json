@@ -41,7 +41,11 @@
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.RECORD_AUDIO"
       ],
-      "versionCode": 26
+      "versionCode": 26,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B2545"
+      }
     },
     "web": {
       "bundler": "metro"
@@ -104,6 +108,7 @@
           "survey/[id]/index": "/survey/:id"
         }
       }
-    }
+    },
+    "icon": "./assets/icon.png"
   }
 }
