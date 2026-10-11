@@ -176,15 +176,15 @@ X-Survey-Signature: sha256=<64-char-hex>
 
 ### SolarPro Backend (.env)
 ```
-SOLARPRO_HANDOFF_SECRET=prod_handoff_secret_2026_rotate_me
+SOLARPRO_HANDOFF_SECRET=<set in Render and Vercel env; never commit>
 AUTHORIZE_ALLOWED_REDIRECTS=sitesurvey://,exp://,com.underthesun.
 # Leave blank to use defaults
 ```
 
 ### Site Survey Backend (Render Dashboard)
 ```
-SOLARPRO_HANDOFF_SECRET=prod_handoff_secret_2026_rotate_me
-SURVEY_WEBHOOK_SECRET=prod_handoff_secret_2026_rotate_me
+SOLARPRO_HANDOFF_SECRET=<set in Render and Vercel env; never commit>
+SURVEY_WEBHOOK_SECRET=<set in Render and Vercel env; never commit>
 SOLARPRO_WEBHOOK_URL=https://solarpro.solutions/api/webhooks/survey-complete
 ```
 

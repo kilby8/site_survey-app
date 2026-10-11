@@ -78,7 +78,7 @@ User authenticated ✅
 
 **IMPORTANT**: The JWT **MUST** be signed with this secret:
 ```
-SOLARPRO_HANDOFF_SECRET = prod_handoff_secret_2026_rotate_me
+SOLARPRO_HANDOFF_SECRET = <set in Render and Vercel env; never commit>
 ```
 
 This same secret is configured in:

@@ -20,7 +20,8 @@ function createJWT(payload, secret) {
   return `${header}.${encodedPayload}.${signature}`;
 }
 
-const secret = 'prod_handoff_secret_2026_rotate_me';
+const secret = process.env.SOLARPRO_HANDOFF_SECRET;
+if (!secret) { console.error('Set SOLARPRO_HANDOFF_SECRET in your environment first.'); process.exit(1); }
 const mockToken = createJWT({
   solarpro_user_id: 'user-123',
   solarpro_email: 'test@example.com',

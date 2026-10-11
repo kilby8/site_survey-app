@@ -119,14 +119,14 @@ function getProxyAuthStrategies(userEmail: string): AuthStrategy[] {
 
   for (const key of Array.from(new Set(staticKeyCandidates))) {
     strategies.push({
-      id: `bearer:${key}`,
+      id: "bearer",
       headers: {
         Authorization: `Bearer ${key}`,
       },
     });
     // Some SolarPro deployments expect API keys in x-api-key instead of Bearer.
     strategies.push({
-      id: `x-api-key:${key}`,
+      id: "x-api-key",
       headers: {
         "x-api-key": key,
       },
@@ -137,7 +137,7 @@ function getProxyAuthStrategies(userEmail: string): AuthStrategy[] {
     const jwtToken = mintServiceJwtWithSecret(userEmail, handoffSecret);
     if (!jwtToken) continue;
     strategies.push({
-      id: `jwt:${handoffSecret.slice(0, 8)}`,
+      id: "minted-jwt",
       headers: {
         Authorization: `Bearer ${jwtToken}`,
       },

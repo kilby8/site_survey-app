@@ -55,3 +55,6 @@ coverage/
 mobile/gradle-build.log
 
 mobile/android/local.properties
+
+# Never commit real env files
+backend/.env

@@ -118,7 +118,7 @@ The SSO (Single Sign-On) flow has been tested and verified to be **functioning c
 
 **Backend (.env file)**
 ```
-SOLARPRO_HANDOFF_SECRET=prod_handoff_secret_2026_rotate_me
+SOLARPRO_HANDOFF_SECRET=<set in Render and Vercel env; never commit>
 JWT_SECRET=change_this_for_prod
 DATABASE_URL=postgres://survey_user:survey_pass_2024@localhost:5432/site_survey?sslmode=disable
 SOLARPRO_API_URL=https://solarpro-dev.vercel.app

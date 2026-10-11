@@ -127,8 +127,8 @@ Same flow, but may need to restart Expo Go explicitly to pull updates.
 
 | Secret | Value |Where |
 |--------|-------|------|
-| `SOLARPRO_HANDOFF_SECRET` | `prod_handoff_secret_2026_rotate_me` | Both SolarPro & Render env |
-| `SURVEY_WEBHOOK_SECRET` | `prod_handoff_secret_2026_rotate_me` | Render env (for webhook HMAC) |
+| `SOLARPRO_HANDOFF_SECRET` | `<set in Render and Vercel env; never commit>` | Both SolarPro & Render env |
+| `SURVEY_WEBHOOK_SECRET` | `<set in Render and Vercel env; never commit>` | Render env (for webhook HMAC) |
 
 ---
 

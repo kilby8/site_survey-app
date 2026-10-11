@@ -16,7 +16,8 @@ const https = require('https');
 const crypto = require('crypto');
 
 const BACKEND_URL = 'http://localhost:3001';
-const HANDOFF_SECRET = 'prod_handoff_secret_2026_rotate_me';
+const HANDOFF_SECRET = process.env.SOLARPRO_HANDOFF_SECRET;
+if (!HANDOFF_SECRET) { console.error('Set SOLARPRO_HANDOFF_SECRET in your environment first.'); process.exit(1); }
 
 function createJWT(payload, secret) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');

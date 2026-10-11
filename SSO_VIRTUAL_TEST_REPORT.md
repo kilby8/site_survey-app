@@ -31,7 +31,7 @@ Database: connected
 ### 2. JWT Generation ✅
 ```
 Algorithm: HS256
-Secret: prod_handoff_secret_2026_rotate_me (32 chars)
+Secret: <set in Render and Vercel env; never commit> (32 chars)
 Claims:
   - solarpro_user_id
   - solarpro_email
@@ -151,8 +151,8 @@ Test 2: Reuse same JWT
 
 **Backend (.env)**:
 ```
-SOLARPRO_HANDOFF_SECRET=prod_handoff_secret_2026_rotate_me
-SURVEY_WEBHOOK_SECRET=prod_handoff_secret_2026_rotate_me
+SOLARPRO_HANDOFF_SECRET=<set in Render and Vercel env; never commit>
+SURVEY_WEBHOOK_SECRET=<set in Render and Vercel env; never commit>
 SOLARPRO_API_URL=https://solarpro-dev.vercel.app
 SOLARPRO_WEBHOOK_URL=https://solarpro-dev.vercel.app/api/webhooks/survey-complete
 ```

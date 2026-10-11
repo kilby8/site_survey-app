@@ -46,7 +46,7 @@ GET /api/auth/authorize
   ```
 - [ ] **Sign JWT with this Secret:**
   ```
-  prod_handoff_secret_2026_rotate_me
+  <set in Render and Vercel env; never commit>
   ```
   (Must be HS256 algorithm)
 - [ ] Redirect browser to:
