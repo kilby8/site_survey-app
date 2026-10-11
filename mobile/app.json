@@ -62,7 +62,14 @@
           "cameraPermission": "Site Survey needs camera access."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Site Survey takes survey photos inside the app so each one is filed in the right spot.",
+          "recordAudioAndroid": false
+        }
+      ]
     ],
     "extra": {
       "apiUrl": "https://site-survey-api-bpyz.onrender.com",

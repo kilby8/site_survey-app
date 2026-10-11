@@ -56,19 +56,43 @@ function Drawing({ id }: { id: GuideId }) {
       );
     case "house_front":
     case "elevation_front":
-    case "elevation_back":
-    case "elevation_left":
-    case "elevation_right": {
-      const tag = { house_front: null, elevation_front: "F", elevation_back: "B", elevation_left: "L", elevation_right: "R" }[id];
       return (
         <G>
           <House />
-          {tag ? (
+          <Line x1={14} y1={70} x2={106} y2={70} {...S} />
+          <Path d="M 60 70 L 56 84 M 60 70 L 64 84" {...S} />
+          {id === "elevation_front" ? (
             <SvgText x={14} y={50} fontSize={14} fontWeight="800" fill={color.amber} textAnchor="middle">
-              {tag}
+              F
             </SvgText>
           ) : null}
+        </G>
+      );
+    case "elevation_back":
+      return (
+        <G>
+          <Polyline points="24,34 60,12 96,34" {...S} />
+          <Rect x={30} y={30} width={60} height={40} {...S} />
+          <Rect x={46} y={46} width={28} height={24} {...S} />
+          <Line x1={60} y1={46} x2={60} y2={70} {...S} />
+          <Line x1={20} y1={74} x2={100} y2={74} {...A} />
+          <SvgText x={14} y={50} fontSize={14} fontWeight="800" fill={color.amber} textAnchor="middle">
+            B
+          </SvgText>
+        </G>
+      );
+    case "elevation_left":
+    case "elevation_right": {
+      const left = id === "elevation_left";
+      return (
+        <G>
+          <Polygon points="34,70 34,36 60,16 86,36 86,70" {...S} />
+          <Rect x={52} y={42} width={16} height={12} {...S} />
           <Line x1={14} y1={70} x2={106} y2={70} {...S} />
+          <Path d={left ? "M 104 44 L 94 50 L 104 56" : "M 16 44 L 26 50 L 16 56"} {...A} />
+          <SvgText x={left ? 14 : 106} y={36} fontSize={14} fontWeight="800" fill={color.amber} textAnchor="middle">
+            {left ? "L" : "R"}
+          </SvgText>
         </G>
       );
     }

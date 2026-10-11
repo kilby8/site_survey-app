@@ -224,3 +224,45 @@ export function surveyReadiness(doc: SurveyDoc, photos: CapturedPhoto[]): Survey
 export function nextCaptureOrder(photos: CapturedPhoto[]): number {
   return photos.reduce((max, p) => Math.max(max, p.captureOrder), 0) + 1;
 }
+
+export interface ShotTarget {
+  slot: SlotDef;
+  planeId: string | null;
+  sectionTitle: string;
+}
+
+/**
+ * Photo slots in a step in screen order, with whether each is still needed.
+ * Drives the guided camera: it walks the empty required slots in order.
+ */
+export function stepShots(doc: SurveyDoc, photos: CapturedPhoto[], stepId: SurveyStepId): Array<ShotTarget & { filled: number; needed: boolean }> {
+  const step = STEPS.find((s) => s.id === stepId)!;
+  const overridden = new Set(doc.overrides.map((o) => o.key));
+  const out: Array<ShotTarget & { filled: number; needed: boolean }> = [];
+  for (const inst of sectionInstances(doc, step)) {
+    for (const slot of inst.slots) {
+      const filled = photosForSlot(photos, slot.id, inst.planeId).filter((p) => p.qualityStatus !== "rejected").length;
+      out.push({
+        slot,
+        planeId: inst.planeId,
+        sectionTitle: inst.planeId ? `Roof plane ${inst.planeId}` : inst.section.title,
+        filled,
+        needed: slot.required && filled === 0 && !overridden.has(slotKey(slot.id, inst.planeId)),
+      });
+    }
+  }
+  return out;
+}
+
+/** The next slot still needing a photo after `current` (wrapping), or null when the step is covered. */
+export function nextNeededShot(
+  doc: SurveyDoc,
+  photos: CapturedPhoto[],
+  stepId: SurveyStepId,
+  current: { slotId: string; planeId: string | null },
+): ShotTarget | null {
+  const shots = stepShots(doc, photos, stepId);
+  const i = shots.findIndex((x) => x.slot.id === current.slotId && x.planeId === current.planeId);
+  const ordered = [...shots.slice(i + 1), ...shots.slice(0, Math.max(i, 0))];
+  return ordered.find((x) => x.needed) ?? null;
+}

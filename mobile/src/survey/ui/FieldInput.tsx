@@ -117,6 +117,63 @@ function AzimuthInput({
   );
 }
 
+const QUICK_PITCHES = ["4/12", "6/12", "8/12", "10/12", "12/12"];
+
+/** Pitch as x/12: big − / + buttons plus the common pitches one tap away. */
+function PitchInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: FieldDef;
+  value: AnswerValue | undefined;
+  onChange: (v: AnswerValue) => void;
+}) {
+  const options = field.options ?? [];
+  const idx = typeof value === "string" ? options.indexOf(value) : -1;
+  const step = (d: number) => {
+    const base = idx < 0 ? options.indexOf("6/12") : idx;
+    const next = Math.max(0, Math.min(options.length - 1, base + d));
+    onChange(options[next]);
+  };
+  return (
+    <View style={{ gap: space.sm }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+        <Pressable onPress={() => step(-1)} accessibilityRole="button" accessibilityLabel="Less steep" style={[ui.chip, { width: 64, justifyContent: "center" }]}>
+          <Ionicons name="remove" size={26} color={color.text} />
+        </Pressable>
+        <View style={{ flex: 1, alignItems: "center" }} accessible accessibilityLabel={`Pitch ${idx < 0 ? "not set" : options[idx]}`}>
+          <Text style={{ color: idx < 0 ? color.textMuted : color.text, fontSize: 30, fontWeight: "800" }}>
+            {idx < 0 ? "–/12" : options[idx]}
+          </Text>
+          {idx >= 0 ? (
+            <Text style={{ color: color.textMuted, fontSize: 14 }}>
+              {Math.round((Math.atan(Number(options[idx].split("/")[0]) / 12) * 180) / Math.PI)}°
+            </Text>
+          ) : null}
+        </View>
+        <Pressable onPress={() => step(1)} accessibilityRole="button" accessibilityLabel="Steeper" style={[ui.chip, { width: 64, justifyContent: "center" }]}>
+          <Ionicons name="add" size={26} color={color.text} />
+        </Pressable>
+      </View>
+      <View style={ui.chips}>
+        {QUICK_PITCHES.filter((q) => options.includes(q)).map((q) => (
+          <Pressable
+            key={q}
+            onPress={() => onChange(q)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: value === q }}
+            accessibilityLabel={`Pitch ${q}`}
+            style={[ui.chip, value === q && ui.chipOn]}
+          >
+            <Text style={[ui.chipText, value === q && { color: color.onAmber }]}>{q}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function FieldInput({
   field,
   value,
@@ -146,8 +203,10 @@ export function FieldInput({
     case "azimuth":
       control = <AzimuthInput field={field} value={value} onChange={onChange} />;
       break;
-    case "choice":
     case "pitch":
+      control = <PitchInput field={field} value={value} onChange={onChange} />;
+      break;
+    case "choice":
       control = (
         <Chips
           label={field.label}

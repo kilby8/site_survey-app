@@ -20,6 +20,8 @@ jest.mock("expo-haptics", () => ({
 }));
 jest.mock("expo-location", () => ({ requestForegroundPermissionsAsync: jest.fn(async () => ({ granted: false })) }));
 jest.mock("../../services/SyncManager", () => ({ syncPending: jest.fn(async () => undefined) }));
+jest.mock("../../context/BugReportContext", () => ({ useBugReport: () => ({ openBugReport: jest.fn() }) }));
+jest.mock("../report", () => ({ shareSurveyPdf: jest.fn() }));
 jest.mock("../capture", () => ({
   currentFix: jest.fn(async () => ({ gps: null, heading: null })),
   takePhoto: jest.fn(async () => ({ kind: "cancelled" })),

@@ -2,8 +2,14 @@ import { encode as encodeJpeg } from "jpeg-js";
 import { allFieldIds, allSlotIds, findSlot, STEPS } from "../blueprint";
 import { newSurveyDoc, nextPlaneId, slotKey, type CapturedPhoto, type SurveyDoc } from "../model";
 import { buildSurveyPayload, goldenBlock, legacyMetadata, photoLabel } from "../payload";
-import { conditionHolds, sectionInstances, stepProgress, surveyReadiness } from "../progress";
+import { conditionHolds, nextNeededShot, sectionInstances, stepProgress, surveyReadiness } from "../progress";
+import { readExif } from "../capture";
 import {
+  analyzeJpegBase64,
+  averageHash,
+  flagMessage,
+  hammingHex,
+  qualityFlags,
   base64ToBytes,
   BLUR_THRESHOLD,
   isBlurry,
@@ -299,5 +305,105 @@ describe("blur check", () => {
     expect(isBlurry(blurScore)).toBe(true);
     expect(isBlurry(sharpScore)).toBe(false);
     expect(isBlurry(null)).toBe(false);
+  });
+});
+
+jest.mock("expo-crypto", () => ({ randomUUID: () => "uuid" }));
+jest.mock("expo-file-system/legacy", () => ({}));
+jest.mock("expo-image-manipulator", () => ({}));
+jest.mock("expo-image-picker", () => ({}));
+jest.mock("expo-location", () => ({}));
+jest.mock("@react-native-async-storage/async-storage", () => ({}));
+
+describe("guided camera order", () => {
+  it("walks the step's still-needed slots in screen order, wrapping, then stops", () => {
+    const d = doc();
+    d.answers.hazards_present = false;
+    const first = nextNeededShot(d, [], "project_arrival", { slotId: "arrival_address", planeId: null });
+    expect(first?.slot.id).toBe("arrival_front");
+    const photos = [photo("arrival_front"), photo("arrival_access")];
+    const wrap = nextNeededShot(d, photos, "project_arrival", { slotId: "arrival_access", planeId: null });
+    expect(wrap?.slot.id).toBe("arrival_address");
+    expect(nextNeededShot(d, [...photos, photo("arrival_address")], "project_arrival", { slotId: "arrival_address", planeId: null })).toBeNull();
+  });
+
+  it("covers every roof plane's slots before finishing", () => {
+    const d = doc();
+    d.planes.push({ id: "B", answers: { obstructions: ["None"] } });
+    d.planes[0].answers.obstructions = ["None"];
+    const next = nextNeededShot(d, [], "roof_array", { slotId: "roof_material", planeId: "A" });
+    expect(next).toMatchObject({ planeId: "B" });
+    expect(next?.slot.id).toBe("roof_plane_wide");
+  });
+});
+
+describe("EXIF", () => {
+  it("reads signed GPS and the shutter time", () => {
+    const r = readExif({ GPSLatitude: 41.5, GPSLatitudeRef: "N", GPSLongitude: 89.1, GPSLongitudeRef: "W", GPSAltitude: 200, DateTimeOriginal: "2026:10:11 09:30:05" });
+    expect(r.gps).toEqual({ lat: 41.5, lng: -89.1, alt: 200 });
+    expect(new Date(r.takenAt!).getHours()).toBe(9);
+  });
+
+  it("ignores missing or zero GPS", () => {
+    expect(readExif(undefined)).toEqual({ gps: null, takenAt: null });
+    expect(readExif({ GPSLatitude: 0, GPSLongitude: 0 }).gps).toBeNull();
+  });
+});
+
+describe("exposure and duplicate checks", () => {
+  function scene(w: number, h: number, light: number, seed = 1): Uint8Array {
+    const rgba = new Uint8Array(w * h * 4);
+    let r = seed;
+    for (let i = 0; i < w * h; i++) {
+      r = (r * 1103515245 + 12345) & 0x7fffffff;
+      const x = i % w;
+      const v = Math.max(0, Math.min(255, light + ((Math.floor(x / 10) % 2) * 60 - 30) + (r % 21) - 10));
+      rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = v;
+      rgba[i * 4 + 3] = 255;
+    }
+    return rgba;
+  }
+  const b64 = (rgba: Uint8Array, w: number, h: number) =>
+    Buffer.from(encodeJpeg({ data: rgba, width: w, height: h }, 90).data).toString("base64");
+
+  it("flags a dark shot and a washed-out shot, passes a normal one", () => {
+    const normal = analyzeJpegBase64(b64(scene(160, 120, 128), 160, 120));
+    const dark = analyzeJpegBase64(b64(scene(160, 120, 12), 160, 120));
+    const flat = new Uint8Array(160 * 120 * 4).fill(250);
+    const bright = analyzeJpegBase64(b64(flat, 160, 120));
+    expect(qualityFlags(normal, [])).toEqual([]);
+    expect(qualityFlags(dark, [])).toContain("dark");
+    expect(qualityFlags(bright, [])).toContain("bright");
+  });
+
+  it("spots the same shot taken twice but not a different scene", () => {
+    // A lit house wall: bright left half, shadowed right, plus sensor noise.
+    function wall(seed: number, flip = false): Uint8Array {
+      const w = 160;
+      const h = 120;
+      const rgba = new Uint8Array(w * h * 4);
+      let r = seed;
+      for (let i = 0; i < w * h; i++) {
+        r = (r * 1103515245 + 12345) & 0x7fffffff;
+        const x = i % w;
+        const y = Math.floor(i / w);
+        const lit = (x < w / 2) !== flip;
+        const v = Math.max(0, Math.min(255, (lit ? 190 : 70) + (y < 30 ? -40 : 0) + (r % 31) - 15));
+        rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = v;
+        rgba[i * 4 + 3] = 255;
+      }
+      return rgba;
+    }
+    const a = analyzeJpegBase64(b64(wall(1), 160, 120));
+    const again = analyzeJpegBase64(b64(wall(7), 160, 120));
+    const other = analyzeJpegBase64(b64(wall(1, true), 160, 120));
+    expect(qualityFlags(again, [{ ahash: a.ahash }])).toContain("duplicate");
+    expect(qualityFlags(other, [{ ahash: a.ahash }])).not.toContain("duplicate");
+  });
+
+  it("hashes and compares", () => {
+    expect(averageHash(new Uint8Array(64).fill(9), 8, 8)).toBe("0000000000000000");
+    expect(hammingHex("f0", "0f")).toBe(8);
+    expect(flagMessage(["blurry", "dark"])).toBe("This photo looks blurry and is too dark.");
   });
 });

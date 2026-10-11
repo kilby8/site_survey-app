@@ -191,7 +191,9 @@ export function BugReportFloatingButton() {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
 
-  if (pathname === '/' || pathname === '/login') {
+  // Survey screens have their own action bars and the camera; the bug report
+  // lives in the Home header there instead of floating over the controls.
+  if (pathname === '/' || pathname === '/login' || pathname.startsWith('/survey/') || pathname === '/new-survey') {
     return null;
   }
 

@@ -11,21 +11,25 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React from "react";
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useBugReport } from "../../context/BugReportContext";
 import { syncPending } from "../../services/SyncManager";
 import { Badge, Button, Card, IconButton, ReasonSheet, Sheet, T } from "../../ui/components";
 import { FramingGuide } from "../../ui/FramingGuide";
 import { color, radius, space } from "../../ui/theme";
 import { STEPS, type SlotDef } from "../blueprint";
+import { photoLabel } from "../payload";
+import { flagMessage } from "../quality";
 import { currentFix, pickFromLibrary, recoverPendingCapture, takePhoto } from "../capture";
-import { slotKey, type CapturedPhoto } from "../model";
+import { fieldKey, slotKey, type CapturedPhoto } from "../model";
 import { photosForSlot, sectionInstances, surveyReadiness, type RequiredItem } from "../progress";
 import { removePhoto, submitSurvey, updatePhoto, type StoredSurvey } from "../repo";
+import { shareSurveyPdf } from "../report";
 import { useSurveyEditor } from "../useSurveyEditor";
 import { FieldInput } from "./FieldInput";
 import { SlotTile } from "./SlotTile";
 import { StepTabs } from "./StepTabs";
 
-const BLUR_REASONS = ["Best possible in this light", "Label is still readable", "Couldn't get closer"];
+const BLUR_REASONS = ["Best possible in this light", "Label is still readable", "Couldn't get closer", "Different angle on purpose"];
 const SKIP_REASONS = ["No access", "Customer declined", "Not present at this site", "Unsafe to reach"];
 
 type SlotTarget = { slot: SlotDef; planeId: string | null };
@@ -34,7 +38,12 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const ed = useSurveyEditor(surveyId);
+  const { openBugReport } = useBugReport();
   const scroller = React.useRef<ScrollView>(null);
+  // Jump-to-item from Review: positions of each field/slot inside the scroll content.
+  const content = React.useRef<View>(null);
+  const itemRefs = React.useRef(new Map<string, View | null>());
+  const [focusKey, setFocusKey] = React.useState<string | null>(null);
 
   const [busySlot, setBusySlot] = React.useState<string | null>(null);
   const [blurry, setBlurry] = React.useState<CapturedPhoto | null>(null);
@@ -42,6 +51,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
   const [help, setHelp] = React.useState<SlotTarget | null>(null);
   const [skip, setSkip] = React.useState<RequiredItem | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+  const [pdfBusy, setPdfBusy] = React.useState(false);
 
   // Photos can change on the photo screen (markup, retake, delete).
   useFocusEffect(
@@ -102,11 +112,39 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
     ed.setStep(target);
     scroller.current?.scrollTo({ y: 0, animated: false });
   };
+
+  /** Open the step holding a missing item and scroll it into view, highlighted. */
+  const jumpTo = (item: RequiredItem) => {
+    goTo(item.stepId);
+    setFocusKey(item.key);
+    setTimeout(() => {
+      const node = itemRefs.current.get(item.key);
+      if (node && content.current) {
+        node.measureLayout(
+          content.current,
+          (_x, y) => scroller.current?.scrollTo({ y: Math.max(0, y - space.lg), animated: true }),
+          () => undefined,
+        );
+      }
+    }, 120);
+    setTimeout(() => setFocusKey(null), 2500);
+  };
   const stepIndex = ed.step === "review" ? STEPS.length : STEPS.findIndex((st) => st.id === ed.step);
   const prev = stepIndex > 0 ? (STEPS[stepIndex - 1]?.id ?? null) : null;
   const next = stepIndex < STEPS.length - 1 ? STEPS[stepIndex + 1].id : stepIndex === STEPS.length - 1 ? "review" : null;
 
-  const capture = async (target: SlotTarget) => {
+  /** Guided in-app camera: framing overlay, blur check, walks the step's remaining photos. */
+  const capture = (target: SlotTarget) => {
+    if (locked) return;
+    void ed.flush();
+    router.push({
+      pathname: "/survey/[id]/camera",
+      params: { id: surveyId, slot: target.slot.id, plane: target.planeId ?? "" },
+    });
+  };
+
+  /** The phone's own camera app (fallback, e.g. for a lens the in-app camera doesn't offer). */
+  const captureWithSystemCamera = async (target: SlotTarget) => {
     if (locked) return;
     const key = slotKey(target.slot.id, target.planeId);
     setBusySlot(key);
@@ -234,23 +272,40 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
                   ) : null}
                 </View>
 
-                {inst.fields.map((f) => (
-                  <View key={f.id} pointerEvents={locked ? "none" : "auto"}>
-                    <FieldInput field={f} value={inst.answers[f.id]} onChange={(v) => ed.setAnswer(f.id, v, inst.planeId)} />
-                  </View>
-                ))}
+                {inst.fields.map((f) => {
+                  const key = fieldKey(f.id, inst.planeId);
+                  return (
+                    <View
+                      key={f.id}
+                      ref={(r) => {
+                        itemRefs.current.set(key, r);
+                      }}
+                      pointerEvents={locked ? "none" : "auto"}
+                      style={focusKey === key ? s.focused : undefined}
+                    >
+                      <FieldInput field={f} value={inst.answers[f.id]} onChange={(v) => ed.setAnswer(f.id, v, inst.planeId)} />
+                    </View>
+                  );
+                })}
 
                 {inst.slots.length ? (
-                  <View style={{ gap: space.md }}>
+                  <View style={s.grid}>
                     {inst.slots.map((slot) => {
                       const key = slotKey(slot.id, inst.planeId);
                       return (
-                        <View key={key} style={{ opacity: busySlot && busySlot !== key ? 0.6 : 1 }}>
+                        <View
+                          key={key}
+                          ref={(r) => {
+                            itemRefs.current.set(key, r);
+                          }}
+                          style={[s.cell, { opacity: busySlot && busySlot !== key ? 0.6 : 1 }]}
+                        >
                           <SlotTile
                             slot={slot}
                             photos={photosForSlot(ed.photos, slot.id, inst.planeId)}
                             overridden={overridden.has(key)}
-                            onCapture={() => void capture({ slot, planeId: inst.planeId })}
+                            highlighted={focusKey === key}
+                            onCapture={() => capture({ slot, planeId: inst.planeId })}
                             onOpen={openPhoto}
                             onHelp={() => setHelp({ slot, planeId: inst.planeId })}
                           />
@@ -323,8 +378,15 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
             </Pressable>
             {missing.map((m) => (
               <View key={m.key} style={s.reviewRow}>
-                <Ionicons name={m.kind === "slot" ? "camera-outline" : "create-outline"} size={20} color={color.amber} />
-                <T style={{ flex: 1 }}>{m.label}</T>
+                <Pressable
+                  onPress={() => jumpTo(m)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Go to ${m.label}`}
+                  style={s.reviewJump}
+                >
+                  <Ionicons name={m.kind === "slot" ? "camera-outline" : "create-outline"} size={20} color={color.amber} />
+                  <T style={{ flex: 1 }}>{m.label}</T>
+                </Pressable>
                 {!locked ? (
                   <Button label="Skip…" kind="ghost" onPress={() => setSkip(m)} style={{ minHeight: 44 }} />
                 ) : null}
@@ -348,7 +410,8 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
               <Pressable key={p.id} onPress={() => openPhoto(p)} style={s.reviewRow} accessibilityRole="button" accessibilityLabel="Open blurry photo">
                 <Ionicons name="eye-off-outline" size={20} color={color.amber} />
                 <T style={{ flex: 1 }}>
-                  Blurry photo kept{p.notes ? `: ${p.notes}` : " — add a reason or retake"}
+                  {photoLabel(p)}: {(p.qualityFlags?.length ? p.qualityFlags : ["blurry"]).join(", ")}
+                  {p.notes ? ` — kept: ${p.notes}` : " — add a reason or retake"}
                 </T>
                 <Ionicons name="chevron-forward" size={20} color={color.textDim} />
               </Pressable>
@@ -367,6 +430,24 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
           />
         </View>
       </Card>
+
+      <Button
+        label="Preview PDF report"
+        icon="document-text-outline"
+        kind="secondary"
+        busy={pdfBusy}
+        onPress={async () => {
+          setPdfBusy(true);
+          try {
+            await ed.flush();
+            await shareSurveyPdf(doc, ed.photos);
+          } catch (e) {
+            Alert.alert("Report not made", e instanceof Error ? e.message : String(e));
+          } finally {
+            setPdfBusy(false);
+          }
+        }}
+      />
 
       {!locked ? (
         <Button
@@ -401,6 +482,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
               </T>
             </View>
           </View>
+          <IconButton icon="bug-outline" label="Report a problem with the app" onPress={() => openBugReport()} tint={color.textMuted} size={20} />
           <View style={{ alignItems: "flex-end", marginRight: space.sm }}>
             <T variant="title" style={{ color: readiness.ready ? color.green : color.amber }}>
               {Math.round((readiness.total ? readiness.done / readiness.total : 1) * 100)}%
@@ -415,7 +497,9 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
         contentContainerStyle={{ padding: space.lg, paddingBottom: 140 }}
         keyboardShouldPersistTaps="handled"
       >
-        {ed.step === "review" ? renderReview() : renderStep()}
+        <View ref={content} collapsable={false}>
+          {ed.step === "review" ? renderReview() : renderStep()}
+        </View>
       </ScrollView>
 
       <View style={[s.bottom, { paddingBottom: insets.bottom + space.sm }]}>
@@ -449,37 +533,50 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
               ))}
             </View>
             {!locked ? (
-              <View style={{ flexDirection: "row", gap: space.sm, alignSelf: "stretch" }}>
-                <Button
-                  label="From library"
-                  icon="images-outline"
-                  kind="secondary"
-                  style={{ flex: 1 }}
-                  onPress={() => {
-                    const target = help;
-                    setHelp(null);
-                    void fromLibrary(target);
-                  }}
-                />
+              <View style={{ gap: space.sm, alignSelf: "stretch" }}>
                 <Button
                   label="Take photo"
                   icon="camera"
-                  style={{ flex: 1 }}
                   onPress={() => {
                     const target = help;
                     setHelp(null);
-                    void capture(target);
+                    capture(target);
                   }}
                 />
+                <View style={{ flexDirection: "row", gap: space.sm }}>
+                  <Button
+                    label="Library"
+                    icon="images-outline"
+                    kind="secondary"
+                    style={{ flex: 1 }}
+                    onPress={() => {
+                      const target = help;
+                      setHelp(null);
+                      void fromLibrary(target);
+                    }}
+                  />
+                  <Button
+                    label="Phone camera"
+                    icon="phone-portrait-outline"
+                    kind="secondary"
+                    style={{ flex: 1 }}
+                    onPress={() => {
+                      const target = help;
+                      setHelp(null);
+                      void captureWithSystemCamera(target);
+                    }}
+                  />
+                </View>
               </View>
             ) : null}
           </View>
         ) : null}
       </Sheet>
 
-      <Sheet visible={!!blurry && !blurReasonOpen} onClose={() => setBlurry(null)} title="This photo looks blurry">
+      <Sheet visible={!!blurry && !blurReasonOpen} onClose={() => setBlurry(null)} title="Check this photo">
         {blurry ? (
           <View style={{ gap: space.md }}>
+            <T>{flagMessage(blurry.qualityFlags ?? ["blurry"])}</T>
             <T dim>
               Designers need to read labels and edges. Retake it now while you’re here, or keep it and say why.
             </T>
@@ -508,7 +605,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
 
       <ReasonSheet
         visible={blurReasonOpen}
-        title="Keep blurry photo"
+        title="Keep this photo"
         prompt="Why keep it? This note goes to the design team with the photo."
         suggestions={BLUR_REASONS}
         confirmLabel="Keep photo"
@@ -543,6 +640,10 @@ const s = StyleSheet.create({
   titleRow: { flexDirection: "row", alignItems: "center", gap: space.xs, paddingRight: space.sm },
   sectionHead: { flexDirection: "row", alignItems: "center", gap: space.sm },
   reviewHead: { flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: 48 },
+  reviewJump: { flex: 1, flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: 48 },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
+  cell: { flexBasis: "47%", flexGrow: 1 },
+  focused: { borderRadius: radius.md, borderWidth: 3, borderColor: color.amber, padding: space.sm, margin: -space.sm },
   reviewRow: {
     flexDirection: "row",
     alignItems: "center",

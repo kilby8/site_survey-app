@@ -63,6 +63,9 @@ interface PhotoRowV2 {
   retake_reason: string | null;
   quality_status: string | null;
   blur_score: number | null;
+  quality_flags: string | null;
+  ahash: string | null;
+  markup_json: string | null;
   upload_state: string | null;
   server_photo_id: string | null;
 }
@@ -126,6 +129,9 @@ function rowToPhoto(r: PhotoRowV2): CapturedPhoto {
     retakeReason: r.retake_reason,
     qualityStatus: (r.quality_status ?? "accepted") as CapturedPhoto["qualityStatus"],
     blurScore: r.blur_score,
+    qualityFlags: r.quality_flags ? r.quality_flags.split(",").filter(Boolean) : [],
+    ahash: r.ahash,
+    markup: r.markup_json ? (JSON.parse(r.markup_json) as unknown[]) : null,
     uploadState: r.upload_state === "uploaded" ? "uploaded" : "local",
     serverPhotoId: r.server_photo_id,
   };
@@ -234,13 +240,14 @@ export async function insertPhoto(p: CapturedPhoto): Promise<void> {
        (id, survey_id, file_path, label, mime_type, captured_at, created_at,
         rel_path, annotated_rel_path, step_id, section_id, slot_id, plane_id, required,
         capture_order, gps_lat, gps_lng, gps_alt, heading, notes, retake_reason,
-        quality_status, blur_score, upload_state, server_photo_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        quality_status, blur_score, upload_state, server_photo_id, quality_flags, ahash)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       p.id, p.surveyId, p.relPath, p.slotId, p.mimeType, p.capturedAt, new Date().toISOString(),
       p.relPath, p.annotatedRelPath, p.stepId, p.sectionId, p.slotId, p.planeId, p.required ? 1 : 0,
       p.captureOrder, p.gps?.lat ?? null, p.gps?.lng ?? null, p.gps?.alt ?? null, p.heading,
       p.notes, p.retakeReason, p.qualityStatus, p.blurScore, p.uploadState, p.serverPhotoId,
+      (p.qualityFlags ?? []).join(","), p.ahash ?? null,
     ],
   );
   await touch(p.surveyId);
@@ -248,7 +255,7 @@ export async function insertPhoto(p: CapturedPhoto): Promise<void> {
 
 export async function updatePhoto(
   id: string,
-  patch: Partial<Pick<CapturedPhoto, "notes" | "qualityStatus" | "annotatedRelPath" | "retakeReason">>,
+  patch: Partial<Pick<CapturedPhoto, "notes" | "qualityStatus" | "annotatedRelPath" | "retakeReason" | "markup">>,
 ): Promise<void> {
   const db = getDb();
   const sets: string[] = [];
@@ -261,6 +268,7 @@ export async function updatePhoto(
     args.push(patch.annotatedRelPath);
   }
   if (patch.retakeReason !== undefined) { sets.push("retake_reason = ?"); args.push(patch.retakeReason); }
+  if (patch.markup !== undefined) { sets.push("markup_json = ?"); args.push(patch.markup ? JSON.stringify(patch.markup) : null); }
   if (!sets.length) return;
   await db.runAsync(`UPDATE survey_photos SET ${sets.join(", ")} WHERE id = ?`, [...args, id]);
 }

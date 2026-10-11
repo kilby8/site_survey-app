@@ -202,6 +202,7 @@ export function goldenBlock(photo: CapturedPhoto, doc: SurveyDoc): Record<string
     retakeReason: photo.retakeReason,
     qualityStatus: photo.qualityStatus,
     blurScore: photo.blurScore,
+    qualityFlags: photo.qualityFlags ?? [],
     annotated: Boolean(photo.annotatedRelPath),
     solarProRequirementId: found?.slot.requirementId ?? null,
     solarProUsageMapping: found?.slot.usage ?? [],

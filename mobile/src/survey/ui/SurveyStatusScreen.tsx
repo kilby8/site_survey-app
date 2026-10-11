@@ -15,6 +15,7 @@ import { STEPS } from "../blueprint";
 import type { CapturedPhoto } from "../model";
 import { checklistFromDoc } from "../payload";
 import { absPath, deleteSurveyAndFiles, loadSurvey, reopenSurvey, type StoredSurvey } from "../repo";
+import { shareSurveyPdf } from "../report";
 
 export function SurveyStatusScreen({ surveyId }: { surveyId: string }) {
   const router = useRouter();
@@ -22,6 +23,7 @@ export function SurveyStatusScreen({ surveyId }: { surveyId: string }) {
   const [survey, setSurvey] = React.useState<StoredSurvey | null>(null);
   const [photos, setPhotos] = React.useState<CapturedPhoto[]>([]);
   const [progress, setProgress] = React.useState<{ done: number; total: number } | null>(null);
+  const [pdfBusy, setPdfBusy] = React.useState(false);
 
   const load = React.useCallback(async () => {
     const loaded = await loadSurvey(surveyId);
@@ -88,6 +90,22 @@ export function SurveyStatusScreen({ surveyId }: { surveyId: string }) {
         </Card>
 
         <View style={{ gap: space.sm }}>
+          <Button
+            label="Share PDF report"
+            icon="document-text-outline"
+            kind="secondary"
+            busy={pdfBusy}
+            onPress={async () => {
+              setPdfBusy(true);
+              try {
+                await shareSurveyPdf(survey.doc, photos);
+              } catch (e) {
+                Alert.alert("Report not made", e instanceof Error ? e.message : String(e));
+              } finally {
+                setPdfBusy(false);
+              }
+            }}
+          />
           {survey.status === "draft" ? (
             <Button label="Continue survey" icon="arrow-forward" onPress={() => router.replace(`/survey/${surveyId}/capture`)} />
           ) : null}

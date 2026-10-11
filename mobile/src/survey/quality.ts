@@ -75,3 +75,105 @@ export function sharpnessFromJpegBase64(b64: string): number {
 export function isBlurry(score: number | null): boolean {
   return score !== null && score < BLUR_THRESHOLD;
 }
+
+// ── Exposure and duplicate checks ───────────────────────────────
+
+/** Mean luma below this is too dark to read labels. */
+export const DARK_MEAN = 40;
+/** Mean luma above this, with little detail, is washed out (glare, sky). */
+export const BRIGHT_MEAN = 225;
+
+export type QualityFlag = "blurry" | "dark" | "bright" | "duplicate";
+
+export interface ImageAnalysis {
+  sharpness: number;
+  brightness: number;
+  /** 64-bit average hash (16 hex chars) of an 8×8 grayscale thumbnail. */
+  ahash: string;
+}
+
+export function meanLuma(gray: Uint8Array): number {
+  let sum = 0;
+  for (let i = 0; i < gray.length; i++) sum += gray[i];
+  return gray.length ? sum / gray.length : 0;
+}
+
+/** Average hash: shrink to 8×8 by block means, threshold on the mean. */
+export function averageHash(gray: Uint8Array, width: number, height: number): string {
+  const cells: number[] = [];
+  for (let by = 0; by < 8; by++) {
+    for (let bx = 0; bx < 8; bx++) {
+      const x0 = Math.floor((bx * width) / 8);
+      const x1 = Math.max(x0 + 1, Math.floor(((bx + 1) * width) / 8));
+      const y0 = Math.floor((by * height) / 8);
+      const y1 = Math.max(y0 + 1, Math.floor(((by + 1) * height) / 8));
+      let sum = 0;
+      let n = 0;
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          sum += gray[y * width + x];
+          n++;
+        }
+      }
+      cells.push(sum / n);
+    }
+  }
+  const mean = cells.reduce((a, b) => a + b, 0) / 64;
+  let hex = "";
+  for (let i = 0; i < 64; i += 4) {
+    let nib = 0;
+    for (let j = 0; j < 4; j++) nib = (nib << 1) | (cells[i + j] > mean ? 1 : 0);
+    hex += nib.toString(16);
+  }
+  return hex;
+}
+
+export function hammingHex(a: string, b: string): number {
+  let d = 0;
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    let x = parseInt(a[i], 16) ^ parseInt(b[i], 16);
+    while (x) {
+      d += x & 1;
+      x >>= 1;
+    }
+  }
+  return d + Math.abs(a.length - b.length) * 4;
+}
+
+/** Two photos this close (of 64 bits) are the same shot taken twice. */
+export const DUPLICATE_DISTANCE = 4;
+
+export function analyzeJpegBase64(b64: string): ImageAnalysis {
+  const img = decodeJpeg(base64ToBytes(b64), { useTArray: true, formatAsRGBA: true });
+  const gray = toGray(img.data, img.width, img.height);
+  return {
+    sharpness: laplacianVariance(gray, img.width, img.height),
+    brightness: meanLuma(gray),
+    ahash: averageHash(gray, img.width, img.height),
+  };
+}
+
+export function qualityFlags(
+  a: ImageAnalysis | null,
+  others: { ahash?: string | null }[],
+): QualityFlag[] {
+  if (!a) return [];
+  const flags: QualityFlag[] = [];
+  if (a.sharpness < BLUR_THRESHOLD) flags.push("blurry");
+  if (a.brightness < DARK_MEAN) flags.push("dark");
+  else if (a.brightness > BRIGHT_MEAN && a.sharpness < BLUR_THRESHOLD * 4) flags.push("bright");
+  if (others.some((o) => o.ahash && hammingHex(o.ahash, a.ahash) <= DUPLICATE_DISTANCE)) flags.push("duplicate");
+  return flags;
+}
+
+export function flagMessage(flags: string[]): string {
+  const parts: Record<string, string> = {
+    blurry: "looks blurry",
+    dark: "is too dark",
+    bright: "is washed out",
+    duplicate: "looks the same as another photo in this survey",
+  };
+  const said = flags.map((f) => parts[f]).filter(Boolean);
+  if (!said.length) return "";
+  return `This photo ${said.join(" and ")}.`;
+}

@@ -16,7 +16,7 @@ import type { SurveyStepId } from "../types/pipeline";
 import { findSlot } from "./blueprint";
 import type { CapturedPhoto } from "./model";
 import { nextCaptureOrder } from "./progress";
-import { BLUR_SAMPLE_WIDTH, isBlurry, sharpnessFromJpegBase64 } from "./quality";
+import { analyzeJpegBase64, BLUR_SAMPLE_WIDTH, qualityFlags, type ImageAnalysis } from "./quality";
 import { absPath, insertPhoto, newId, PHOTO_DIR } from "./repo";
 
 const PENDING_KEY = "site-survey.pending-capture.v1";
@@ -96,22 +96,28 @@ export function readExif(exif: Exif): { gps: CapturedPhoto["gps"]; takenAt: stri
   return { gps, takenAt };
 }
 
-/** Measure sharpness on a small copy. Returns null if it can't be measured. */
-export async function measureSharpness(uri: string): Promise<number | null> {
+/** Sharpness, brightness and hash from a small copy. null if it can't be measured. */
+export async function analyzeImage(uri: string): Promise<ImageAnalysis | null> {
   try {
     const small = await ImageManipulator.manipulateAsync(uri, [{ resize: { width: BLUR_SAMPLE_WIDTH } }], {
       compress: 0.9,
       format: ImageManipulator.SaveFormat.JPEG,
       base64: true,
     });
-    return small.base64 ? sharpnessFromJpegBase64(small.base64) : null;
+    return small.base64 ? analyzeJpegBase64(small.base64) : null;
   } catch {
     return null;
   }
 }
 
-/** Resize and store a camera image; returns the relative path. */
-async function storeImage(asset: ImagePicker.ImagePickerAsset, photoId: string): Promise<string> {
+/** What fileAsset needs from a camera/library image. */
+export interface RawImage {
+  uri: string;
+  width?: number;
+  height?: number;
+}
+
+async function storeImage(asset: RawImage, photoId: string): Promise<string> {
   await ensureDir();
   const longEdge = Math.max(asset.width ?? 0, asset.height ?? 0);
   const actions: ImageManipulator.Action[] = [];
@@ -131,7 +137,7 @@ async function storeImage(asset: ImagePicker.ImagePickerAsset, photoId: string):
 
 /** File an image into a slot with its Golden Block. */
 export async function fileAsset(
-  asset: ImagePicker.ImagePickerAsset,
+  asset: RawImage,
   target: CaptureTarget,
   existing: CapturedPhoto[],
   fix?: { gps: CapturedPhoto["gps"]; heading: number | null },
@@ -142,8 +148,11 @@ export async function fileAsset(
   const id = newId();
   const capturedAt = takenAt ?? new Date().toISOString();
   const [where, relPath] = await Promise.all([fix ?? currentFix(), storeImage(asset, id)]);
-  const blurScore = await measureSharpness(absPath(relPath));
-  const blurry = isBlurry(blurScore);
+  const analysis = await analyzeImage(absPath(relPath));
+  const flags = qualityFlags(analysis, existing.filter((p) => p.qualityStatus !== "rejected"));
+  const blurScore = analysis?.sharpness ?? null;
+  // "blurry" here means "needs the surveyor's decision" (any quality flag).
+  const blurry = flags.length > 0;
   const photo: CapturedPhoto = {
     id,
     surveyId: target.surveyId,
@@ -164,6 +173,8 @@ export async function fileAsset(
     // Blurry photos wait for the surveyor's decision (retake or keep with a reason).
     qualityStatus: blurry ? "pending_review" : "accepted",
     blurScore,
+    qualityFlags: flags,
+    ahash: analysis?.ahash ?? null,
     uploadState: "local",
     serverPhotoId: null,
   };
@@ -256,4 +267,8 @@ export async function storeMarkup(photo: CapturedPhoto, tmpUri: string): Promise
     await FileSystem.deleteAsync(absPath(photo.annotatedRelPath), { idempotent: true }).catch(() => undefined);
   }
   return rel;
+}
+
+export async function discardMarkupFile(relPath: string): Promise<void> {
+  await FileSystem.deleteAsync(absPath(relPath), { idempotent: true }).catch(() => undefined);
 }

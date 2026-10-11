@@ -79,6 +79,12 @@ export interface CapturedPhoto {
   qualityStatus: PhotoQualityStatus;
   /** Sharpness score (variance of Laplacian); higher is sharper. null when not measured. */
   blurScore: number | null;
+  /** Problems the on-device check found: blurry, dark, bright, duplicate. */
+  qualityFlags?: string[];
+  /** Perceptual hash used to spot the same shot taken twice. */
+  ahash?: string | null;
+  /** Editable markup vectors (MarkupEditor marks); the rendered copy is annotatedRelPath. */
+  markup?: unknown[] | null;
   uploadState: UploadState;
   serverPhotoId: string | null;
 }

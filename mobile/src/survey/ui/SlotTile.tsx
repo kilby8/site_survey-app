@@ -8,13 +8,15 @@ import type { CapturedPhoto } from "../model";
 import { absPath } from "../repo";
 
 /**
- * One photo slot. Empty: shows the framing guide; one tap opens the camera.
- * Filled: shows the photo(s); tap one to view, mark up or retake.
+ * One photo slot, sized for a two-column grid. Empty: the framing guide;
+ * one tap opens the guided camera. Filled: the photo (tap to view, mark
+ * up or retake), with a "+" when the slot takes more than one.
  */
 export function SlotTile({
   slot,
   photos,
   overridden,
+  highlighted,
   onCapture,
   onOpen,
   onHelp,
@@ -22,6 +24,7 @@ export function SlotTile({
   slot: SlotDef;
   photos: CapturedPhoto[];
   overridden: boolean;
+  highlighted?: boolean;
   onCapture: () => void;
   onOpen: (photo: CapturedPhoto) => void;
   onHelp: () => void;
@@ -33,140 +36,108 @@ export function SlotTile({
   const flagged = usable.some((p) => p.qualityStatus === "pending_review");
 
   const status = filled ? (flagged ? "flagged" : "done") : overridden ? "skipped" : slot.required ? "needed" : "optional";
-  const statusUi = {
+  const ui = {
     done: { icon: "checkmark-circle" as const, tint: color.green, text: "Done" },
-    flagged: { icon: "alert-circle" as const, tint: color.amber, text: "Blurry" },
+    flagged: { icon: "alert-circle" as const, tint: color.amber, text: "Check photo" },
     skipped: { icon: "remove-circle" as const, tint: color.textMuted, text: "Skipped" },
     needed: { icon: "ellipse-outline" as const, tint: color.amber, text: "Required" },
     optional: { icon: "ellipse-outline" as const, tint: color.textMuted, text: "Optional" },
   }[status];
 
+  const first = usable[0];
+
   return (
-    <View style={[s.tile, status === "needed" && s.tileNeeded]}>
-      <View style={s.head}>
-        <Ionicons name={statusUi.icon} size={20} color={statusUi.tint} />
+    <View style={[s.tile, status === "needed" && s.needed, highlighted && s.highlight]}>
+      <Pressable
+        onPress={() => (first ? onOpen(first) : onCapture())}
+        accessibilityRole="button"
+        accessibilityLabel={
+          first
+            ? `${slot.label}: ${ui.text}. Open photo${flagged ? `, flagged ${(first.qualityFlags ?? ["blurry"]).join(" and ")}` : ""}`
+            : `Take ${slot.label} photo. ${slot.hint}`
+        }
+        style={({ pressed }) => [s.media, pressed && { opacity: 0.8 }]}
+      >
+        {first ? (
+          <Image source={{ uri: absPath(first.annotatedRelPath ?? first.relPath) }} style={s.photo} />
+        ) : (
+          <View style={s.guide}>
+            <FramingGuide id={slot.guide} size={120} />
+            <View style={s.cam}>
+              <Ionicons name="camera" size={18} color={color.onAmber} />
+            </View>
+          </View>
+        )}
+        {first && usable.length > 1 ? (
+          <View style={s.count}>
+            <Text style={s.countText}>
+              {usable.length}/{max}
+            </Text>
+          </View>
+        ) : null}
+        {first?.annotatedRelPath ? (
+          <View style={[s.chip, { backgroundColor: color.blue }]}>
+            <Ionicons name="brush" size={12} color={color.bg} />
+          </View>
+        ) : null}
+      </Pressable>
+
+      <View style={s.foot}>
+        <Ionicons name={ui.icon} size={18} color={ui.tint} style={{ marginTop: 2 }} />
         <Text style={s.label} numberOfLines={2}>
           {slot.label}
+          {!slot.required ? <Text style={s.optional}> · optional</Text> : null}
         </Text>
-        <Pressable
-          onPress={onHelp}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={`How to shoot ${slot.label}`}
-          style={s.help}
-        >
+        <Pressable onPress={onHelp} accessibilityRole="button" accessibilityLabel={`How to shoot ${slot.label}, and more options`} style={s.help}>
           <Ionicons name="help-circle-outline" size={22} color={color.textDim} />
         </Pressable>
       </View>
 
-      {filled ? (
-        <View style={s.thumbs}>
-          {usable.map((p) => (
-            <Pressable
-              key={p.id}
-              onPress={() => onOpen(p)}
-              accessibilityRole="imagebutton"
-              accessibilityLabel={`${slot.label} photo${p.qualityStatus === "pending_review" ? ", flagged blurry" : ""}. Open`}
-              style={s.thumbWrap}
-            >
-              <Image source={{ uri: absPath(p.annotatedRelPath ?? p.relPath) }} style={s.thumb} />
-              {p.qualityStatus === "pending_review" ? (
-                <View style={[s.flag, { backgroundColor: color.amber }]}>
-                  <Ionicons name="eye-off" size={14} color={color.onAmber} />
-                </View>
-              ) : null}
-              {p.annotatedRelPath ? (
-                <View style={[s.flag, { right: undefined, left: 4, backgroundColor: color.blue }]}>
-                  <Ionicons name="brush" size={12} color={color.bg} />
-                </View>
-              ) : null}
-            </Pressable>
-          ))}
-          {canAdd ? (
-            <Pressable
-              onPress={onCapture}
-              accessibilityRole="button"
-              accessibilityLabel={`Add another ${slot.label} photo`}
-              style={[s.thumbWrap, s.add]}
-            >
-              <Ionicons name="add" size={28} color={color.amber} />
-            </Pressable>
-          ) : null}
-        </View>
-      ) : (
-        <Pressable
-          onPress={onCapture}
-          accessibilityRole="button"
-          accessibilityLabel={`Take ${slot.label} photo. ${slot.hint}`}
-          style={({ pressed }) => [s.empty, pressed && { opacity: 0.75 }]}
-        >
-          <FramingGuide id={slot.guide} size={112} />
-          <View style={s.shoot}>
-            <Ionicons name="camera" size={20} color={color.onAmber} />
-            <Text style={s.shootText}>Take photo</Text>
-          </View>
+      {filled && canAdd ? (
+        <Pressable onPress={onCapture} accessibilityRole="button" accessibilityLabel={`Add another ${slot.label} photo`} style={s.action}>
+          <Ionicons name="add" size={20} color={color.amber} />
+          <Text style={s.actionText}>
+            Add another ({usable.length}/{max})
+          </Text>
         </Pressable>
-      )}
-
-      <Text style={s.hint} numberOfLines={2}>
-        {slot.hint}
-        {max > 1 ? `  ·  up to ${max}` : ""}
-      </Text>
+      ) : null}
     </View>
   );
 }
 
 const s = StyleSheet.create({
   tile: {
+    flexBasis: "47%",
+    flexGrow: 1,
     backgroundColor: color.surfaceRaised,
     borderRadius: radius.md,
     borderWidth: 1.5,
     borderColor: color.border,
-    padding: space.md,
-    gap: space.sm,
+    overflow: "hidden",
   },
-  tileNeeded: { borderColor: "#6B4E0E" },
-  head: { flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: 32 },
-  label: { flex: 1, color: color.text, fontSize: 17, fontWeight: "700" },
-  help: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  empty: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: color.bg,
-    borderRadius: radius.sm,
-    padding: space.sm,
-    minHeight: 100,
-  },
-  shoot: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: color.amber,
-    borderRadius: radius.md,
-    paddingHorizontal: space.lg,
-    minHeight: 52,
-  },
-  shootText: { color: color.onAmber, fontSize: 17, fontWeight: "800" },
-  thumbs: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
-  thumbWrap: { width: 96, height: 96, borderRadius: radius.sm, overflow: "hidden" },
-  thumb: { width: "100%", height: "100%" },
-  add: {
-    borderWidth: 1.5,
-    borderColor: color.amber,
-    borderStyle: "dashed",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  flag: {
+  needed: { borderColor: "#6B4E0E" },
+  highlight: { borderColor: color.amber, borderWidth: 3 },
+  media: { height: 118, backgroundColor: color.bg },
+  photo: { width: "100%", height: "100%" },
+  guide: { flex: 1, alignItems: "center", justifyContent: "center" },
+  cam: {
     position: "absolute",
-    right: 4,
-    top: 4,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    right: 8,
+    bottom: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: color.amber,
     alignItems: "center",
     justifyContent: "center",
   },
-  hint: { color: color.textMuted, fontSize: 14, lineHeight: 19 },
+  count: { position: "absolute", right: 6, top: 6, backgroundColor: color.overlay, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+  countText: { color: color.text, fontWeight: "800", fontSize: 13 },
+  chip: { position: "absolute", left: 6, top: 6, width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  foot: { flexDirection: "row", alignItems: "flex-start", gap: 6, paddingLeft: space.sm, paddingTop: space.xs, minHeight: 48 },
+  label: { flex: 1, color: color.text, fontSize: 16, fontWeight: "800", lineHeight: 21, paddingTop: 2 },
+  optional: { color: color.textMuted, fontWeight: "600" },
+  action: { flexDirection: "row", alignItems: "center", gap: 4, minHeight: 44, paddingHorizontal: space.sm, borderTopWidth: 1, borderTopColor: color.border },
+  actionText: { color: color.amber, fontWeight: "800", fontSize: 15 },
+  help: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
 });

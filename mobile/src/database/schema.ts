@@ -101,6 +101,9 @@ export const PHOTOS_OPTIONAL_COLUMNS = [
   { name: 'retake_reason', sqlType: 'TEXT' },
   { name: 'quality_status', sqlType: 'TEXT' },
   { name: 'blur_score', sqlType: 'REAL' },
+  { name: 'quality_flags', sqlType: 'TEXT' },
+  { name: 'ahash', sqlType: 'TEXT' },
+  { name: 'markup_json', sqlType: 'TEXT' },
   { name: 'upload_state', sqlType: "TEXT DEFAULT 'local'" },
   { name: 'server_photo_id', sqlType: 'TEXT' },
 ] as const;

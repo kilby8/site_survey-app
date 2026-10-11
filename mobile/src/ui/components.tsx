@@ -83,6 +83,8 @@ export function Button({
     danger: { bg: color.redBg, fg: color.red, border: color.redBorder },
   }[kind];
   const inactive = disabled || busy;
+  // Disabled buttons stay readable in sunlight: muted colours, not faded opacity.
+  const shown = disabled && !busy ? { bg: color.surfaceRaised, fg: color.textDim, border: color.borderStrong } : palette;
   return (
     <Pressable
       testID={testID}
@@ -94,16 +96,16 @@ export function Button({
       accessibilityState={{ disabled: !!inactive, busy: !!busy }}
       style={({ pressed }) => [
         styles.button,
-        { backgroundColor: palette.bg, borderColor: palette.border, opacity: inactive ? 0.45 : pressed ? 0.8 : 1 },
+        { backgroundColor: shown.bg, borderColor: shown.border, opacity: pressed && !inactive ? 0.8 : 1 },
         style,
       ]}
     >
       {busy ? (
-        <ActivityIndicator color={palette.fg} />
+        <ActivityIndicator color={shown.fg} />
       ) : (
         <>
-          {icon ? <Ionicons name={icon} size={22} color={palette.fg} /> : null}
-          <Text style={[styles.buttonText, { color: palette.fg }]}>{label}</Text>
+          {icon ? <Ionicons name={icon} size={22} color={shown.fg} /> : null}
+          <Text style={[styles.buttonText, { color: shown.fg }]}>{label}</Text>
         </>
       )}
     </Pressable>

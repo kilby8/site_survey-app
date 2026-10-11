@@ -8,6 +8,7 @@ import React from "react";
 import { Alert, Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../context/AuthContext";
+import { useBugReport } from "../../context/BugReportContext";
 import { isOnline, onSurveyUploadProgress, onSyncStatusChange, syncPending } from "../../services/SyncManager";
 import { Badge, Button, IconButton, ProgressRing, T } from "../../ui/components";
 import { color, radius, space } from "../../ui/theme";
@@ -30,6 +31,7 @@ export function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
+  const { openBugReport } = useBugReport();
   const [rows, setRows] = React.useState<Row[]>([]);
   const [online, setOnline] = React.useState(isOnline());
   const [refreshing, setRefreshing] = React.useState(false);
@@ -113,6 +115,7 @@ export function HomeScreen() {
             {user?.fullName || user?.email}
           </T>
         </View>
+        <IconButton icon="bug-outline" label="Report a problem with the app" onPress={() => openBugReport()} tint={color.textDim} />
         <IconButton icon="log-out-outline" label="Sign out" onPress={doSignOut} tint={color.textDim} />
       </View>
 

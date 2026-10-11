@@ -105,6 +105,7 @@ export default function RootLayout() {
                   <Stack.Screen name="survey/[id]/index" options={{ headerShown: false }} />
                   <Stack.Screen name="survey/[id]/capture" options={{ headerShown: false, gestureEnabled: false }} />
                   <Stack.Screen name="survey/[id]/photo/[photoId]" options={{ headerShown: false }} />
+                  <Stack.Screen name="survey/[id]/camera" options={{ headerShown: false, animation: 'fade' }} />
                 </Stack>
                 <BugReportFloatingButton />
               </View>

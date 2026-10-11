@@ -18,7 +18,7 @@ export const color = {
   inputBorder: base.inputBorder,
   text: base.textPrimary,
   textDim: "#B4C2DF", // brighter than textSecondary for sunlight legibility
-  textMuted: base.textSecondary,
+  textMuted: "#A3B3D3", // lifted from #93A4C6 for contrast outdoors
   amber: base.primary,
   amberDark: base.primaryDark,
   onAmber: "#1A1203",
@@ -38,7 +38,7 @@ export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
 export const radius = { sm: 8, md: 12, lg: 16, pill: 999 };
 
 export const type = {
-  caption: { fontSize: 13, lineHeight: 18 },
+  caption: { fontSize: 14, lineHeight: 19 },
   small: { fontSize: 15, lineHeight: 20 },
   body: { fontSize: 17, lineHeight: 24 },
   title: { fontSize: 20, lineHeight: 26, fontWeight: "700" as const },
