@@ -14,7 +14,7 @@ import { color, radius, space } from "../../ui/theme";
 import { findSlot } from "../blueprint";
 import { discardMarkupFile, storeMarkup, takePhoto } from "../capture";
 import type { CapturedPhoto } from "../model";
-import { BLUR_THRESHOLD, flagLabels } from "../quality";
+import { BLUR_THRESHOLD, flagLabels, flagMessage } from "../quality";
 import { absPath, loadPhotos, loadSurvey, removePhoto, updatePhoto } from "../repo";
 import { MarkupEditor, type Mark } from "./MarkupEditor";
 
@@ -173,7 +173,12 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
                   <MetaRow
                     icon="eye-outline"
                     label="Content check"
-                    value={(photo.qualityFlags ?? []).some((f) => f === "no_text" || f === "off_subject" || f === "wrong_subject") ? "Flagged — see above" : "Passed"}
+                    value={(() => {
+                      const cf = (photo.qualityFlags ?? []).filter((f) => f === "no_text" || f === "off_subject" || f === "wrong_subject");
+                      const saw = (photo.labels ?? []).slice(0, 3).map((l) => l.text).join(", ");
+                      const verdict = cf.length ? flagMessage(cf, photo.slotId) : "Passed.";
+                      return saw ? `${verdict} Saw: ${saw}.` : verdict;
+                    })()}
                   />
                 ) : null}
                 {photo.retakeReason ? <MetaRow icon="refresh" label="Retake of" value={photo.retakeReason} /> : null}
