@@ -106,11 +106,53 @@ an accessibility label. One floating action area: a bottom bar per screen (no ov
 
 ### Native modules (needs a new binary)
 
-`react-native-svg` (framing guides, markup), `expo-secure-store`, `expo-crypto`, `expo-haptics`.
+`react-native-svg` (framing guides, markup), `expo-secure-store`, `expo-crypto`, `expo-haptics`, `expo-camera`
+(guided camera), `react-native-view-shot` (markup render), `expo-print` (PDF), `@react-native-ml-kit/text-recognition`
+(patched to Latin script only via `patch-package`, run on `postinstall`) and `@react-native-ml-kit/image-labeling`.
 `runtimeVersion` → `2.0.0` so the existing 1.0.0 binaries never receive this JS over the air.
 `jpeg-js` is pure JS.
 
 ## Out of scope (follow-ups)
 
-Office-side live view and comments (website work), drone imagery, PDF export from the app
-(SolarPro already builds the planset), iOS release.
+Office-side live view and team comments (website work), design prefill from SolarPro, real example
+photos per slot, light theme, volume-button shutter, drone imagery, iOS release.
+
+## Gauntlet loop log
+
+Control: SiteCapture + Scanifly combined (best of each per criterion). Rated by one independent reviewer
+agent across rounds, from code, tests and live screenshots (web preview with seed data).
+
+| Round | Rebuild | Control | Behind on | Main fixes that loop |
+|---|---|---|---|---|
+| 1 | 53 | 59 | several | — (first build) |
+| 2 | 61 | 59 | QC 6 vs 8 | guided camera, duplicate/light checks, markup editor, PDF |
+| 3 | 63 | 59 | QC 7 vs 8 | ML Kit text + labels, idempotent photos, edit-after-delivery events |
+| 4 | 63 | 59 | QC 7 vs 8 | visible check status, per-slot subjects, retake keeps original, POST content hash |
+| 5 | 63 | 59 | QC 7 vs 8 | positive subject check; label lists rebuilt from the real ML Kit label map; note edits re-sent |
+| 6 | 62 | 59 | QC 7, Reliability 7 (vs 8) | metadata-only photo PATCH, in-flight edit race, pitch-gauge screens |
+| 7 | **63** | **59** | QC 7 vs 8 — **only on-device proof** | upload passes tied to one submit (re-submit race) |
+
+**Stopping point.** Every remaining gap needs a phone: the ML Kit content check and its thresholds
+(0.5 expected / 0.75 off-subject) have only run against typed-in labels. Device test matrix for the
+EAS build (versionCode 24, closed testing):
+
+| Photo | Slot | Expected |
+|---|---|---|
+| Real roof plane from the ground | Plane, whole | Pass |
+| Shingle close-up | Material close-up | Pass |
+| Phone showing a pitch app | Pitch gauge | Pass |
+| Open breaker panel | Panel, door open | Pass |
+| Bus rating label | Bus rating label | Pass, text read |
+| Digital meter | Meter close-up | Pass, meter number offered |
+| Selfie | Front elevation | Not a site photo |
+| Plate of food | Plane, whole | Not a site photo |
+| Bare sky | Back elevation | Wrong subject |
+| Blank wall | Bus rating label | No readable label |
+| Any | Any | Shutter-to-result time; markup save; confirm `patch-package` ran in `mobile/` |
+
+If a correct photo is flagged, lower `EXPECTED_CONFIDENCE` or add the label ML Kit actually returned
+to that slot's `EXPECTED` list (`mobile/src/survey/content.ts`). Flags are soft: the tech can keep a
+photo with a reason, so a false flag costs a tap, not data.
+
+Open policy question: survey and photo routes give every signed-in user/admin team-wide access (no
+per-survey owner check). New routes follow that policy.
