@@ -7,6 +7,7 @@ import { AppBootstrapProvider, useAppBootstrap } from '../src/context/AppBootstr
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { BugReportProvider, BugReportFloatingButton } from '../src/context/BugReportContext';
 import { solarProTheme } from '../src/theme/solarProTheme';
+import { BrandSplash, SPLASH_BG } from '../src/ui/BrandSplash';
 
 const { colors } = solarProTheme;
 
@@ -22,16 +23,12 @@ function BootstrapGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!ready) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Initialising...</Text>
-      </View>
-    );
-  }
-
-  return <>{children}</>;
+  return (
+    <View style={styles.rootShell}>
+      {ready ? children : <View style={[styles.rootShell, { backgroundColor: SPLASH_BG }]} />}
+      <BrandSplash ready={ready} />
+    </View>
+  );
 }
 
 const PENDING_HANDOFF_KEY = 'site-survey.pending-handoff.v1';
