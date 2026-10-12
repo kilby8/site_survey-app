@@ -193,6 +193,14 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
                 {photo.retakeReason ? <MetaRow icon="refresh" label="Retake of" value={photo.retakeReason} /> : null}
               </View>
 
+              {crewView ? (
+                <View>
+                  <T variant="small" dim style={{ fontWeight: "700", marginBottom: space.xs }}>
+                    Note
+                  </T>
+                  <T dim={!photo.notes}>{photo.notes?.trim() ? photo.notes : `No note from ${photo.crew?.creatorName?.split(" ")[0] ?? "the crew"}`}</T>
+                </View>
+              ) : (
               <View>
                 <T variant="small" dim style={{ fontWeight: "700", marginBottom: space.sm }}>
                   {photo.qualityStatus === "pending_review" ? "Why keep this photo as is? (required)" : isInstall ? "Note for the office" : "Note for the designer"}
@@ -212,6 +220,7 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
                   multiline
                 />
               </View>
+              )}
 
               {crewView ? (
                 <Button

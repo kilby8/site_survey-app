@@ -97,3 +97,16 @@ engineering source of truth. Needs Ray to promote.
 
 Before/after overlay camera, photo comments/threads, public share links,
 video clips, Enphase API pull of commissioning data.
+
+## Loop log (rated by an agent that didn't build it, 9 criteria, out of 90)
+
+| Loop | New | CompanyCam | What failed | What changed |
+|---|---|---|---|---|
+| 1 | 64 | 51 | Behind on crew (6 v 9) and reliability (6 v 8). Retention purge could wipe install-day photos; Finish could race a running sync; one bad photo blocked the rest; crew photos memory-only; delete left markup copies | — |
+| 2 | 69 | 51 | Still behind on crew (7 v 9) and reliability (7 v 8), mainly because there's no multi-phone field proof. Report lacked readable labels | Retention clock starts at final; awaitable sync and DB recount on Finish; per-photo failures; crew list saved on the phone; mid-sync edits kept; "sent" shared; delete scoped to install jobs + markup copy + audit; SolarPro readable titles; per-phase PDF |
+| 3 | — | 51 | Pending a real job | Report never crops photos, sharper label/rating/measurement shots; failing delete no longer blocks uploads; sign-out stops the pass; teammate's note read-only |
+
+Remaining gap: one real job with 2–3 phones alongside CompanyCam. Code can't close
+that, and it's what holds crew collaboration and reliability below the control.
+Also open: page numbers / running header (Chromium print has no page counter),
+deletes not passed to SolarPro, slot list copied in two repos.

@@ -11,6 +11,7 @@
 // ============================================================
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SessionExpiredError } from "../api/session";
 import type { ServerInstallJob, ServerJobPhoto } from "../api/client";
 import type { AnswerValue } from "./blueprint";
 import { findSlot } from "./blueprint";
@@ -305,22 +306,31 @@ export async function syncInstallJob(
   // Deletes made on this phone.
   const deletes = await pendingDeletes(jobId);
   const deleted: string[] = [];
+  let failed = 0;
+  let lastError: unknown = null;
   for (const cid of deletes) {
-    await deps.deletePhoto(jobId, cid);
-    deleted.push(cid);
+    try {
+      await deps.deletePhoto(jobId, cid);
+      deleted.push(cid);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) throw err;
+      // Stays queued for the next pass; uploads still go.
+      failed++;
+      lastError = err;
+    }
   }
   if (deleted.length) await clearDeletes(jobId, deleted);
 
   // Upload this phone's new photos.
   const local = await deps.loadPhotos(jobId);
   let uploaded = 0;
-  let failed = 0;
-  let lastError: unknown = null;
   for (const photo of local) {
     if (photo.uploadState === "uploaded" || photo.qualityStatus === "rejected") continue;
     try {
       if (await sendPhoto(photo)) uploaded++;
     } catch (err) {
+      // Signed out: stop the pass (the app asks to sign in again).
+      if (err instanceof SessionExpiredError) throw err;
       // One photo that won't go (too big, damaged) must not hold up the rest.
       failed++;
       lastError = err;
@@ -376,7 +386,7 @@ export async function syncInstallJob(
   setCrewPhotos(jobId, crew);
   if (failed) {
     const why = lastError instanceof Error ? lastError.message : String(lastError);
-    return { uploaded, crew: crew.length, failed, error: `${failed} photo${failed === 1 ? "" : "s"} couldn't upload (${why}). Will retry.` };
+    return { uploaded, crew: crew.length, failed, error: `${failed} photo${failed === 1 ? "" : "s"} couldn't sync (${why}). Will retry.` };
   }
   return { uploaded, crew: crew.length };
 }

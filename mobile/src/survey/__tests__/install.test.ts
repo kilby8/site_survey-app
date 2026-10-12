@@ -211,7 +211,31 @@ describe("syncInstallJob", () => {
     expect(calls).toContain("upload:good");
     expect(calls).toContain("uploaded:good");
     expect(res.failed).toBe(1);
-    expect(res.error).toMatch(/1 photo couldn't upload \(413 too large\)/);
+    expect(res.error).toMatch(/1 photo couldn't sync \(413 too large\)/);
+  });
+
+  it("a delete the server refuses stays queued and doesn't stop uploads; a sign-out stops the pass", async () => {
+    const survey = { id: installJobId("p-321"), doc: doc(), currentStep: "install_day" } as unknown as StoredSurvey;
+    await queueCrewDelete(survey.id, "gone-1");
+    const { d, calls } = deps({
+      loadPhotos: async () => [photo("a", "inst_feet")],
+      deletePhoto: async () => {
+        throw new Error("500");
+      },
+    });
+    const res = await syncInstallJob(survey, d);
+    expect(calls).toContain("uploaded:a");
+    expect(res.failed).toBe(1);
+
+    const { SessionExpiredError } = jest.requireActual("../../api/session");
+    const { d: d2 } = deps({
+      loadPhotos: async () => [photo("b", "inst_seal")],
+      deletePhoto: async () => ({ deleted: 1 }),
+      uploadPhoto: async () => {
+        throw new SessionExpiredError();
+      },
+    });
+    await expect(syncInstallJob(survey, d2)).rejects.toBeInstanceOf(SessionExpiredError);
   });
 
   it("keeps an answer typed while the sync was on the network", async () => {
@@ -291,5 +315,7 @@ describe("install report", () => {
     expect(isReadableSlot("fin_placard")).toBe(true);
     expect(isReadableSlot("fin_labels_disc")).toBe(true);
     expect(isReadableSlot("inst_feet")).toBe(false);
+    expect(isReadableSlot("fin_cantilever")).toBe(true);
+    expect(isReadableSlot("inst_breaker")).toBe(true);
   });
 });

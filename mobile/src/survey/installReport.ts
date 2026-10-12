@@ -10,7 +10,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import type { SurveyStepId } from "../types/pipeline";
-import { stepsFor } from "./blueprint";
+import { findSlot, stepsFor } from "./blueprint";
 import type { CapturedPhoto, SurveyDoc } from "./model";
 import { photosForSlot, stepProgress } from "./progress";
 import { absPath } from "./repo";
@@ -37,9 +37,11 @@ export interface InstallReportOptions {
   preparedBy?: string;
 }
 
-/** Labels, stickers and screens: printed whole and sharper so the text can be read. */
+/** Labels, ratings, screens and measurements: sent sharper so the text and numbers can be read. */
 export function isReadableSlot(slotId: string | null | undefined): boolean {
-  return !!slotId && /(sticker|label|placard|production|ct_data|commission|compliance|inclinometer)/.test(slotId);
+  if (!slotId) return false;
+  const guide = findSlot(slotId)?.slot.guide;
+  return guide === "label" || guide === "breaker" || /(sticker|placard|production|ct_data|commission|compliance|inclinometer|cantilever|mlpe_mounted)/.test(slotId);
 }
 
 function answerText(v: unknown, unit?: string): string {
@@ -108,7 +110,7 @@ export function installReportHtml(
               const who = p.crew?.creatorName ?? p.creatorName ?? doc.inspectorName;
               return `<figure>
                 <div class="num">${n}</div>
-                ${images[p.id] ? `<img class="${isReadableSlot(p.slotId) ? "whole" : ""}" src="${images[p.id]}"/>` : `<div class="missing">Photo not available offline</div>`}
+                ${images[p.id] ? `<img src="${images[p.id]}"/>` : `<div class="missing">Photo not available offline</div>`}
                 <figcaption><b>${esc(label)}</b>${p.notes ? `<div class="note">${esc(p.notes)}</div>` : ""}
                 <div class="meta">${esc(fmt(p.capturedAt))}${who ? ` · ${esc(who)}` : ""}${p.gps ? ` · ${p.gps.lat.toFixed(5)}, ${p.gps.lng.toFixed(5)}` : ""}</div></figcaption>
               </figure>`;
@@ -143,9 +145,8 @@ export function installReportHtml(
     .secTitle { color: #0B2545; break-after: avoid; page-break-after: avoid; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     figure { box-sizing: border-box; min-width: 0; margin: 0; page-break-inside: avoid; position: relative; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
-    figure img { width: 100%; height: 230px; object-fit: cover; display: block; }
-    figure img.whole { object-fit: contain; background: #f3f4f6; }
-    .missing { height: 230px; display: flex; align-items: center; justify-content: center; background: #f3f4f6; color: #6b7280; }
+    figure img { width: 100%; height: 300px; object-fit: contain; background: #f3f4f6; display: block; }
+    .missing { height: 300px; display: flex; align-items: center; justify-content: center; background: #f3f4f6; color: #6b7280; }
     .num { position: absolute; top: 6px; left: 6px; background: #fff; border-radius: 4px; padding: 1px 6px; font-weight: 700; font-size: 11px; }
     figcaption { padding: 6px 8px 8px; } .note { margin-top: 2px; } .meta { color: #6b7280; margin-top: 3px; font-size: 10px; }
   </style></head><body>
