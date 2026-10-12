@@ -4,7 +4,10 @@ import { deleteFile } from "../utils/storageClient";
 import { incrementMetric } from "./metrics";
 
 interface SurveyCompletePayload {
-  event: "survey.completed";
+  /** survey.completed: a site survey. install.completed: an install/final photo phase. */
+  event: "survey.completed" | "install.completed";
+  /** install.completed only: which phase was finished ("install_day" | "final_inspection"). */
+  phase?: string | null;
   event_id: string;
   occurred_at: string;
   survey_id: string;
@@ -125,12 +128,16 @@ export async function enqueueSurveyCompleteWebhook(params: {
   // Survey naming fields
   project_name?: string | null;
   site_name?: string | null;
+  /** Defaults to survey.completed. */
+  event?: "survey.completed" | "install.completed";
+  phase?: string | null;
 }): Promise<string> {
   await ensureWebhookDeliveriesTable();
 
   const eventId = randomUUID();
   const payload: SurveyCompletePayload = {
-    event: "survey.completed",
+    event: params.event ?? "survey.completed",
+    ...(params.phase ? { phase: params.phase } : {}),
     event_id: eventId,
     occurred_at: new Date().toISOString(),
     survey_id: params.survey_id,

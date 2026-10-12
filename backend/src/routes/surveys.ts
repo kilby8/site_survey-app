@@ -51,6 +51,9 @@ async function ensureSurveySoftDeleteColumn(): Promise<void> {
         // content doesn't count as an edit (and doesn't re-notify SolarPro).
         await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS content_hash TEXT`);
         await pool.query(`ALTER TABLE survey_photos ADD COLUMN IF NOT EXISTS photo_data BYTEA`);
+        // 'survey' (site survey) or 'install' (install-day / final-inspection
+        // photos shared by the whole crew; one per SolarPro project).
+        await pool.query(`ALTER TABLE surveys ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'survey'`);
         // v2 app: per-photo Golden Block + idempotent uploads keyed by the device's photo id.
         await pool.query(`ALTER TABLE survey_photos ADD COLUMN IF NOT EXISTS client_photo_id TEXT`);
         await pool.query(`ALTER TABLE survey_photos ADD COLUMN IF NOT EXISTS meta JSONB`);
@@ -421,7 +424,7 @@ async function fetchSurveyFull(id: string) {
          s.inspector_name, s.inspector_email, s.site_name, s.site_address,
          s.latitude, s.longitude, s.gps_accuracy,
          ST_AsGeoJSON(s.location::geometry)::jsonb AS location_geojson,
-         s.survey_date, s.notes, s.status, s.device_id, s.metadata,
+         s.survey_date, s.notes, s.status, s.device_id, s.metadata, s.kind,
          s.solarpro_user_id, s.solarpro_project_id, s.solarpro_email, s.solarpro_org_id,
          s.synced_at, s.created_at, s.updated_at
        FROM surveys s
@@ -1499,6 +1502,10 @@ router.get("/", async (req: Request, res: Response) => {
     const conditions: string[] = ["s.deleted_at IS NULL"];
     const params: unknown[] = [];
 
+    // Site surveys by default; install jobs only when asked (?kind=install|all).
+    const kind = (req.query as Record<string, string>).kind ?? "survey";
+    if (kind !== "all") conditions.push(`COALESCE(s.kind, 'survey') = $${params.push(kind)}`);
+
     if (project_id) {
       conditions.push(`s.project_id  = $${params.push(project_id)}`);
     }
@@ -2131,6 +2138,169 @@ router.put("/:id", async (req: Request, res: Response) => {
 // ================================================================
 // PHOTO UPLOAD  (multipart/form-data from mobile)
 // ================================================================
+
+// ============================================================
+// Install & final photos (whole crew, one job per SolarPro project).
+// Every phone derives the same job id from the project id, so crews can
+// start offline without creating duplicates.
+// ============================================================
+
+/** Same as mobile/src/survey/installJob.ts. Never change: ids are stored. */
+const INSTALL_JOB_NAMESPACE = "3f6c1d2e-8a4b-4c7d-9e21-5b0a7f4c2d19";
+
+export function installJobId(solarproProjectId: string): string {
+  const ns = Buffer.from(INSTALL_JOB_NAMESPACE.replace(/-/g, ""), "hex");
+  const hash = createHash("sha1").update(Buffer.concat([ns, Buffer.from(`install:${solarproProjectId}`, "utf8")])).digest();
+  const b = Buffer.from(hash.subarray(0, 16));
+  b[6] = (b[6] & 0x0f) | 0x50; // version 5
+  b[8] = (b[8] & 0x3f) | 0x80; // RFC 4122 variant
+  const h = b.toString("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+const INSTALL_PHASES = new Set(["install_day", "final_inspection"]);
+
+/**
+ * PUT /api/surveys/install-jobs/:id — create the crew's install job if it
+ * doesn't exist yet. Never overwrites what another crew member saved.
+ */
+router.put("/install-jobs/:id", async (req: Request, res: Response) => {
+  await ensureSurveySoftDeleteColumn();
+  if (!requireUuidParam(req, res, "id")) return;
+  const id = req.params.id;
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const str = (v: unknown, max = 300) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+  const projectId = str(b.solarpro_project_id, 100);
+  if (!projectId || installJobId(projectId) !== id) {
+    respondValidationError(res, "id must be the install job id for solarpro_project_id", "solarpro_project_id");
+    return;
+  }
+  const projectName = str(b.project_name) ?? "Install";
+  try {
+    await pool.query(
+      `INSERT INTO surveys
+         (id, kind, project_name, inspector_name, site_name, site_address, status, metadata,
+          solarpro_project_id, solarpro_user_id, solarpro_email, solarpro_org_id, survey_date)
+       VALUES ($1, 'install', $2, $3, $2, $4, 'draft', '{"answers":{}}'::jsonb, $5, $6, $7, $8, NOW())
+       ON CONFLICT (id) DO NOTHING`,
+      [id, projectName, str(b.inspector_name) ?? "Crew", str(b.site_address), projectId,
+       str(b.solarpro_user_id, 100), str(b.solarpro_email, 200), str(b.solarpro_org_id, 100)],
+    );
+    // A job deleted earlier comes back when the crew opens it again.
+    await pool.query(`UPDATE surveys SET deleted_at = NULL WHERE id = $1 AND kind = 'install' AND deleted_at IS NOT NULL`, [id]);
+    const full = await fetchSurveyFull(id);
+    if (!full || (full as { kind?: string }).kind !== "install") {
+      res.status(409).json({ error: "That id belongs to a survey, not an install job" });
+      return;
+    }
+    const photos = await mapSurveyPhotosWithRemoteUrls((full.photos as Array<Record<string, unknown>>) ?? []);
+    res.json({ ...full, photos });
+  } catch (err) {
+    console.error("PUT /install-jobs error:", err);
+    res.status(500).json({ error: "Failed to open install job" });
+  }
+});
+
+/** PATCH /api/surveys/install-jobs/:id/answers — merge field answers (other crew's answers are kept). */
+router.patch("/install-jobs/:id/answers", async (req: Request, res: Response) => {
+  await ensureSurveySoftDeleteColumn();
+  if (!requireUuidParam(req, res, "id")) return;
+  const answers = (req.body ?? {}).answers;
+  if (!answers || typeof answers !== "object" || Array.isArray(answers) || JSON.stringify(answers).length > 20000) {
+    respondValidationError(res, "answers must be an object", "answers");
+    return;
+  }
+  try {
+    const { rows } = await pool.query<{ metadata: Record<string, unknown> }>(
+      `UPDATE surveys
+          SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{answers}',
+                COALESCE(metadata->'answers', '{}'::jsonb) || $2::jsonb),
+              content_updated_at = NOW(), updated_at = NOW()
+        WHERE id = $1 AND kind = 'install' AND deleted_at IS NULL
+        RETURNING metadata`,
+      [req.params.id, JSON.stringify(answers)],
+    );
+    if (!rows.length) {
+      res.status(404).json({ error: "Install job not found" });
+      return;
+    }
+    res.json({ answers: (rows[0].metadata?.answers as Record<string, unknown>) ?? {} });
+  } catch (err) {
+    console.error("PATCH install answers error:", err);
+    res.status(500).json({ error: "Failed to save" });
+  }
+});
+
+/** POST /api/surveys/install-jobs/:id/finish {phase} — tell SolarPro a phase is documented. */
+router.post("/install-jobs/:id/finish", async (req: Request, res: Response) => {
+  await ensureSurveySoftDeleteColumn();
+  if (!requireUuidParam(req, res, "id")) return;
+  const phase = (req.body ?? {}).phase;
+  if (typeof phase !== "string" || !INSTALL_PHASES.has(phase)) {
+    respondValidationError(res, "phase must be install_day or final_inspection", "phase");
+    return;
+  }
+  try {
+    const { rows } = await pool.query<{
+      id: string; solarpro_user_id: string | null; solarpro_project_id: string | null; solarpro_email: string | null;
+      solarpro_org_id: string | null; project_name: string | null; site_name: string | null;
+    }>(
+      `UPDATE surveys
+          SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{finished}',
+                COALESCE(metadata->'finished', '{}'::jsonb) || jsonb_build_object($2::text, NOW()::text)),
+              updated_at = NOW()
+        WHERE id = $1 AND kind = 'install' AND deleted_at IS NULL
+        RETURNING id::text, solarpro_user_id, solarpro_project_id, solarpro_email, solarpro_org_id, project_name, site_name`,
+      [req.params.id, phase],
+    );
+    if (!rows.length) {
+      res.status(404).json({ error: "Install job not found" });
+      return;
+    }
+    const job = rows[0];
+    const email = (req as Request & { authUser?: { email?: string } }).authUser?.email ?? null;
+    const eventId = await enqueueSurveyCompleteWebhook({
+      event: "install.completed",
+      phase,
+      survey_id: job.id,
+      status: "submitted",
+      completed_at: new Date().toISOString(),
+      solarpro_user_id: job.solarpro_user_id,
+      solarpro_project_id: job.solarpro_project_id,
+      solarpro_email: job.solarpro_email ?? email,
+      inspector_email: email,
+      solarpro_selected_client_id: job.solarpro_org_id,
+      project_name: job.project_name,
+      site_name: job.site_name,
+    });
+    await processWebhookQueue(10);
+    res.json({ id: job.id, phase, event_id: eventId });
+  } catch (err) {
+    console.error("POST install finish error:", err);
+    res.status(500).json({ error: "Failed to finish" });
+  }
+});
+
+/** DELETE /api/surveys/:id/photos/by-client/:clientPhotoId — remove one photo (crew feed). */
+router.delete("/:id/photos/by-client/:clientPhotoId", async (req: Request, res: Response) => {
+  await ensureSurveySoftDeleteColumn();
+  if (!requireUuidParam(req, res, "id")) return;
+  const { id, clientPhotoId } = req.params;
+  try {
+    const { rows } = await pool.query<{ file_path: string | null }>(
+      `DELETE FROM survey_photos WHERE survey_id = $1 AND client_photo_id = $2 RETURNING file_path`,
+      [id, clientPhotoId],
+    );
+    if (rows.length) {
+      await pool.query(`UPDATE surveys SET content_updated_at = NOW() WHERE id = $1`, [id]);
+      for (const r of rows) if (r.file_path) deleteFile(r.file_path).catch(() => undefined);
+    }
+    res.json({ deleted: rows.length });
+  } catch (err) {
+    console.error("DELETE photo by client id error:", err);
+    res.status(500).json({ error: "Failed to delete photo" });
+  }
+});
 
 /**
  * PATCH /api/surveys/:id/photos/by-client/:clientPhotoId
