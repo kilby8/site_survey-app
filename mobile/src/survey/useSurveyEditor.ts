@@ -37,10 +37,13 @@ export function useSurveyEditor(surveyId: string) {
       }
       docRef.current = loaded.survey.doc;
       stepRef.current = loaded.survey.currentStep;
-      setSurvey(loaded.survey);
-      setDoc(loaded.survey.doc);
+      // Step and photos before the doc: on the old architecture these updates
+      // aren't batched after an await, and the screen renders as soon as the
+      // doc is set, so the doc must arrive with its own step already in place.
       setStepState(loaded.survey.currentStep === "review" ? "review" : loaded.survey.currentStep);
       setPhotos(loaded.photos);
+      setSurvey(loaded.survey);
+      setDoc(loaded.survey.doc);
     })();
     return () => {
       alive = false;

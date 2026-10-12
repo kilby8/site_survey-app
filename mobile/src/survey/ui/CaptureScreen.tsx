@@ -161,7 +161,10 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
     setTimeout(() => setFocusKey(null), 2500);
   };
   const STEPS = stepsFor(ed.doc);
-  const stepIndex = ed.step === "review" ? STEPS.length : STEPS.findIndex((st) => st.id === ed.step);
+  // The step this kind of job actually has. A saved step from the other kind
+  // (or the editor's default before the job's step arrives) must not crash.
+  const curStep: typeof ed.step = ed.step === "review" || STEPS.some((st) => st.id === ed.step) ? ed.step : STEPS[0].id;
+  const stepIndex = curStep === "review" ? STEPS.length : STEPS.findIndex((st) => st.id === curStep);
   const prev = stepIndex > 0 ? (STEPS[stepIndex - 1]?.id ?? null) : null;
   const next = stepIndex < STEPS.length - 1 ? STEPS[stepIndex + 1].id : stepIndex === STEPS.length - 1 ? "review" : null;
 
@@ -263,7 +266,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
   };
 
   const renderStep = () => {
-    const step = STEPS.find((st) => st.id === ed.step)!;
+    const step = STEPS.find((st) => st.id === curStep) ?? STEPS[0];
     const instances = sectionInstances(doc, step);
     const sp = readiness.steps.find((x) => x.step.id === step.id)!;
     const planeSectionCount = instances.filter((i) => i.section.repeat === "plane").length;
@@ -602,7 +605,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
             </T>
           </View>
         </View>
-        <StepTabs readiness={readiness} current={ed.step} onSelect={goTo} />
+        <StepTabs readiness={readiness} current={curStep} onSelect={goTo} />
       </View>
 
       <ScrollView
@@ -611,7 +614,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
         keyboardShouldPersistTaps="handled"
       >
         <View ref={content} collapsable={false}>
-          {ed.step === "review" ? renderReview() : renderStep()}
+          {curStep === "review" ? renderReview() : renderStep()}
         </View>
       </ScrollView>
 
