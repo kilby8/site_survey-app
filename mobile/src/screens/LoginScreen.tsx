@@ -88,11 +88,6 @@ function resolveSolarProRedirectUri(): string {
 }
 
 const SOLARPRO_REDIRECT_URI = resolveSolarProRedirectUri();
-const IS_EXPO_GO = Boolean(
-  Constants.expoConfig?.hostUri ||
-  (Constants as unknown as { executionEnvironment?: string }).executionEnvironment === 'storeClient'
-);
-
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -214,13 +209,18 @@ export default function LoginScreen() {
       console.log('[SSO] Using redirect_uri:', redirectUri);
       setDebugInfo(`redirect_uri=${redirectUri}`);
 
-      // Expo Go on Android can throw java.io exceptions from Custom Tabs.
-      // Use the system browser directly and let deep-link callback complete auth.
-      if (Platform.OS === 'android' && IS_EXPO_GO) {
+      // Android: use the full browser, not an in-app Custom Tab. Signing in to
+      // SolarPro may need a code from an authenticator app; switching to it
+      // closes a Custom Tab (and with it the sign-in). In Chrome the page stays
+      // put, and SolarPro's sitesurvey://login redirect brings the user back to
+      // this screen, where the deep-link handler above finishes sign-in.
+      if (Platform.OS === 'android') {
         await Linking.openURL(authorizeUrl);
         setStatus({
           type: 'success',
-          message: 'Continuing sign-in in browser. Return to app after SolarPro login.',
+          message:
+            'Finish signing in to SolarPro in your browser — it\'s fine to switch to your authenticator app for a code. ' +
+            'If you land on the SolarPro dashboard instead of coming back here, return to this app and tap Open SolarPro again.',
         });
         return;
       }
@@ -249,7 +249,13 @@ export default function LoginScreen() {
       setDebugInfo((prev) => `${prev}\nauth_result=${authResult.type}`);
 
       if (authResult.type !== 'success' || !authResult.url) {
-        throw new Error('Sign-in was cancelled before completion.');
+        // Closed or interrupted (e.g. switching apps). Keep the pending state:
+        // if SolarPro still redirects back, the deep-link handler completes it.
+        setStatus({
+          type: 'error',
+          message: 'Sign-in wasn\'t finished. Tap Open SolarPro to continue.',
+        });
+        return;
       }
 
       setDebugInfo((prev) => `${prev}\ncallback_url=${authResult.url}`);
