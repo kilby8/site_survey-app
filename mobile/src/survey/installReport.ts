@@ -135,8 +135,8 @@ export function installReportHtml(
     .ok { color: #047857; font-weight: 700; } .miss { color: #b91c1c; font-weight: 700; } .skip { color: #92400e; } .muted { color: #9ca3af; }
     .phase { page-break-before: always; }
     .secTitle { color: #0B2545; }
-    .grid { display: flex; flex-wrap: wrap; gap: 10px; }
-    figure { width: calc(50% - 5px); margin: 0; page-break-inside: avoid; position: relative; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    figure { box-sizing: border-box; min-width: 0; margin: 0; page-break-inside: avoid; position: relative; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
     figure img { width: 100%; height: 230px; object-fit: cover; display: block; }
     .missing { height: 230px; display: flex; align-items: center; justify-content: center; background: #f3f4f6; color: #6b7280; }
     .num { position: absolute; top: 6px; left: 6px; background: #fff; border-radius: 4px; padding: 1px 6px; font-weight: 700; font-size: 11px; }
