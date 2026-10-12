@@ -2287,10 +2287,27 @@ router.delete("/:id/photos/by-client/:clientPhotoId", async (req: Request, res: 
   if (!requireUuidParam(req, res, "id")) return;
   const { id, clientPhotoId } = req.params;
   try {
-    const { rows } = await pool.query<{ file_path: string | null }>(
-      `DELETE FROM survey_photos WHERE survey_id = $1 AND client_photo_id = $2 RETURNING file_path`,
+    // Crew feed only: site-survey photos are never removed this way.
+    const { rows: job } = await pool.query<{ kind: string | null }>(
+      `SELECT kind FROM surveys WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+      [id],
+    );
+    if (!job.length) {
+      res.status(404).json({ error: "Job not found" });
+      return;
+    }
+    if ((job[0].kind ?? "survey") !== "install") {
+      res.status(409).json({ error: "Only install job photos can be removed here" });
+      return;
+    }
+    // The photo and its marked-up copy go together.
+    const { rows } = await pool.query<{ file_path: string | null; client_photo_id: string | null }>(
+      `DELETE FROM survey_photos
+        WHERE survey_id = $1 AND (client_photo_id = $2 OR meta->>'markupOf' = $2)
+        RETURNING file_path, client_photo_id`,
       [id, clientPhotoId],
     );
+    console.info(JSON.stringify({ tag: "INSTALL_PHOTO_DELETED", survey_id: id, client_photo_id: clientPhotoId, removed: rows.map((r) => r.client_photo_id), by: req.authUser?.email ?? req.authUser?.userId ?? null }));
     if (rows.length) {
       await pool.query(`UPDATE surveys SET content_updated_at = NOW() WHERE id = $1`, [id]);
       for (const r of rows) if (r.file_path) deleteFile(r.file_path).catch(() => undefined);

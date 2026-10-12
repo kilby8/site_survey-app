@@ -166,10 +166,25 @@ export async function enqueueSurveyCompleteWebhook(params: {
   return eventId;
 }
 
+/**
+ * solarpro_synced_at starts the photo-retention clock (photoRetentionPurge).
+ * An install job's install-day hand-off must not start it: the final
+ * inspection is often 1-3 weeks later and still needs those photos.
+ */
+export function startsRetentionClock(payloadText: string): boolean {
+  try {
+    const p = JSON.parse(payloadText) as { event?: string; phase?: string };
+    return p.event !== "install.completed" || p.phase === "final_inspection";
+  } catch {
+    return true;
+  }
+}
+
 async function markDelivered(
   id: string,
   attemptCount: number,
   surveyId: string,
+  startRetention = true,
 ): Promise<void> {
   await pool.query(
     `UPDATE webhook_deliveries
@@ -182,6 +197,7 @@ async function markDelivered(
     [id, attemptCount],
   );
 
+  if (!startRetention) return;
   await ensureSurveySyncColumn();
   await pool.query(
     `UPDATE surveys
@@ -302,7 +318,7 @@ async function deliverOne(row: WebhookDeliveryRow): Promise<void> {
 
     const nextAttempt = row.attempt_count + 1;
     if (response.ok) {
-      await markDelivered(row.id, nextAttempt, row.survey_id);
+      await markDelivered(row.id, nextAttempt, row.survey_id, startsRetentionClock(payloadText));
       incrementMetric("webhook_delivered_total");
       console.info(
         JSON.stringify({

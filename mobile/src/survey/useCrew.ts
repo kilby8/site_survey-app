@@ -5,7 +5,7 @@
 import { useFocusEffect } from "expo-router";
 import React from "react";
 import { installJobSyncState, onInstallJobSync, syncInstallJobs, type InstallJobSyncState } from "../services/SyncManager";
-import { getCrewPhotos, onCrewPhotos } from "./installJob";
+import { getCrewPhotos, loadCrewPhotos, onCrewPhotos } from "./installJob";
 import type { CapturedPhoto } from "./model";
 
 const POLL_MS = 20_000;
@@ -19,6 +19,8 @@ export function useCrew(jobId: string | null, localPhotoCount: number): { photos
   React.useEffect(() => {
     if (!jobId) return;
     setPhotos(getCrewPhotos(jobId));
+    // Last-known crew photos from the phone until the first sync answers.
+    void loadCrewPhotos(jobId).then((list) => setPhotos((cur) => (cur.length ? cur : list)));
     const a = onCrewPhotos((id) => id === jobId && setPhotos(getCrewPhotos(jobId)));
     const b = onInstallJobSync((id, st) => id === jobId && setState(st));
     return () => {

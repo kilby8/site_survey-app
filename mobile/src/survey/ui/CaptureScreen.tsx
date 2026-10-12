@@ -24,7 +24,7 @@ import { likelyNumber } from "../content";
 import { currentFix, pickFromLibrary, recoverPendingCapture, takePhoto } from "../capture";
 import { fieldKey, slotKey, type CapturedPhoto } from "../model";
 import { photosForSlot, sectionInstances, surveyReadiness, type RequiredItem } from "../progress";
-import { removePhoto, submitSurvey, updatePhoto, type StoredSurvey } from "../repo";
+import { loadPhotos, removePhoto, submitSurvey, updatePhoto, type StoredSurvey } from "../repo";
 import { shareSurveyPdf } from "../report";
 import { shareInstallPdf } from "../installReport";
 import { useCrew } from "../useCrew";
@@ -244,9 +244,13 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
     setFinishing(phase);
     try {
       await ed.flush();
+      // Waits for any sync already running plus one more pass.
       await syncInstallJobs(surveyId);
-      const st = installJobSyncState(surveyId);
-      if (st.waiting > 0) throw new Error(`${st.waiting} photo${st.waiting === 1 ? " is" : "s are"} still uploading. Try again when you have signal.`);
+      const waiting = (await loadPhotos(surveyId)).filter((p) => p.uploadState !== "uploaded" && p.qualityStatus !== "rejected").length;
+      if (waiting > 0) {
+        const why = installJobSyncState(surveyId).error;
+        throw new Error(`${waiting} photo${waiting === 1 ? " is" : "s are"} still uploading. ${why ?? "Try again when you have signal."}`);
+      }
       await finishInstallPhase(surveyId, phase);
       ed.setExtra("finished", { ...((doc.extra?.finished as Record<string, string>) ?? {}), [phase]: new Date().toISOString() });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -522,17 +526,31 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
         icon="document-text-outline"
         kind="secondary"
         busy={pdfBusy}
-        onPress={async () => {
-          setPdfBusy(true);
-          try {
-            await ed.flush();
-            if (isInstall) await shareInstallPdf(doc, photos);
-            else await shareSurveyPdf(doc, ed.photos);
-          } catch (e) {
-            Alert.alert("Report not made", e instanceof Error ? e.message : String(e));
-          } finally {
-            setPdfBusy(false);
-          }
+        onPress={() => {
+          const make = async (phase?: "install_day" | "final_inspection" | null) => {
+            setPdfBusy(true);
+            try {
+              await ed.flush();
+              if (isInstall) await shareInstallPdf(doc, photos, phase ?? null);
+              else await shareSurveyPdf(doc, ed.photos);
+            } catch (e) {
+              Alert.alert("Report not made", e instanceof Error ? e.message : String(e));
+            } finally {
+              setPdfBusy(false);
+            }
+          };
+          if (!isInstall) return void make();
+          // One phase for the inspector, or the whole job for the customer.
+          Alert.alert(
+            "Which report?",
+            undefined,
+            [
+              { text: "Install day", onPress: () => void make("install_day") },
+              { text: "Final inspection", onPress: () => void make("final_inspection") },
+              { text: "Whole job", onPress: () => void make(null) },
+            ],
+            { cancelable: true },
+          );
         }}
       />
 

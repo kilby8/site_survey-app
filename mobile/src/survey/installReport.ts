@@ -37,6 +37,11 @@ export interface InstallReportOptions {
   preparedBy?: string;
 }
 
+/** Labels, stickers and screens: printed whole and sharper so the text can be read. */
+export function isReadableSlot(slotId: string | null | undefined): boolean {
+  return !!slotId && /(sticker|label|placard|production|ct_data|commission|compliance|inclinometer)/.test(slotId);
+}
+
 function answerText(v: unknown, unit?: string): string {
   if (v === true) return "Yes";
   if (v === false) return "No";
@@ -103,7 +108,7 @@ export function installReportHtml(
               const who = p.crew?.creatorName ?? p.creatorName ?? doc.inspectorName;
               return `<figure>
                 <div class="num">${n}</div>
-                ${images[p.id] ? `<img src="${images[p.id]}"/>` : `<div class="missing">Photo not available offline</div>`}
+                ${images[p.id] ? `<img class="${isReadableSlot(p.slotId) ? "whole" : ""}" src="${images[p.id]}"/>` : `<div class="missing">Photo not available offline</div>`}
                 <figcaption><b>${esc(label)}</b>${p.notes ? `<div class="note">${esc(p.notes)}</div>` : ""}
                 <div class="meta">${esc(fmt(p.capturedAt))}${who ? ` · ${esc(who)}` : ""}${p.gps ? ` · ${p.gps.lat.toFixed(5)}, ${p.gps.lng.toFixed(5)}` : ""}</div></figcaption>
               </figure>`;
@@ -111,7 +116,7 @@ export function installReportHtml(
             .join("")}</div>`;
         })
         .join("");
-      return secs ? `<section class="phase"><h2>${esc(step.title)}</h2>${secs}</section>` : "";
+      return secs ? `<section class="phase"><h2>${esc(step.title)} <span class="job">${esc(title)}${address ? ` · ${esc(address)}` : ""}</span></h2>${secs}</section>` : "";
     })
     .join("");
 
@@ -134,10 +139,12 @@ export function installReportHtml(
     tr.sec td { background: #f3f4f6; font-weight: 700; }
     .ok { color: #047857; font-weight: 700; } .miss { color: #b91c1c; font-weight: 700; } .skip { color: #92400e; } .muted { color: #9ca3af; }
     .phase { page-break-before: always; }
-    .secTitle { color: #0B2545; }
+    h2 .job { float: right; font-size: 10px; font-weight: 400; color: #6b7280; margin-top: 6px; }
+    .secTitle { color: #0B2545; break-after: avoid; page-break-after: avoid; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     figure { box-sizing: border-box; min-width: 0; margin: 0; page-break-inside: avoid; position: relative; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
     figure img { width: 100%; height: 230px; object-fit: cover; display: block; }
+    figure img.whole { object-fit: contain; background: #f3f4f6; }
     .missing { height: 230px; display: flex; align-items: center; justify-content: center; background: #f3f4f6; color: #6b7280; }
     .num { position: absolute; top: 6px; left: 6px; background: #fff; border-radius: 4px; padding: 1px 6px; font-weight: 700; font-size: 11px; }
     figcaption { padding: 6px 8px 8px; } .note { margin-top: 2px; } .meta { color: #6b7280; margin-top: 3px; font-size: 10px; }
@@ -156,7 +163,7 @@ export function installReportHtml(
   </body></html>`;
 }
 
-async function toDataUri(uri: string): Promise<string | null> {
+async function toDataUri(uri: string, width = 720, compress = 0.62): Promise<string | null> {
   try {
     let local = uri;
     if (/^https?:\/\//.test(uri)) {
@@ -165,8 +172,8 @@ async function toDataUri(uri: string): Promise<string | null> {
       if (got.status !== 200) return null;
       local = got.uri;
     }
-    const out = await ImageManipulator.manipulateAsync(local, [{ resize: { width: 720 } }], {
-      compress: 0.62,
+    const out = await ImageManipulator.manipulateAsync(local, [{ resize: { width } }], {
+      compress,
       format: ImageManipulator.SaveFormat.JPEG,
       base64: true,
     });
@@ -192,7 +199,8 @@ export async function shareInstallPdf(doc: SurveyDoc, photos: CapturedPhoto[], p
   for (let i = 0; i < list.length; i += 4) {
     await Promise.all(
       list.slice(i, i + 4).map(async (p) => {
-        images[p.id] = await toDataUri(absPath(p.annotatedRelPath ?? p.relPath));
+        const sharp = isReadableSlot(p.slotId);
+        images[p.id] = await toDataUri(absPath(p.annotatedRelPath ?? p.relPath), sharp ? 1200 : 720, sharp ? 0.75 : 0.62);
       }),
     );
   }

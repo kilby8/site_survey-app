@@ -3,6 +3,7 @@ import app from "../index";
 import { pool } from "../database";
 import { closeAuthStoreConnections } from "../services/sqliteAuthStore";
 import { installJobId } from "../routes/surveys";
+import { startsRetentionClock } from "../services/webhookService";
 
 const createdIds: string[] = [];
 let auth = "";
@@ -104,15 +105,33 @@ describe("crew photos", () => {
     expect(again.body.photos[0].remote_url).toBeTruthy();
   });
 
-  it("deletes one photo by its client id", async () => {
+  it("deletes one photo by its client id, with its marked-up copy", async () => {
     const job = (await openJob(project())).body;
     createdIds.push(job.id);
     await sendPhoto(job.id, "x-1", { slotId: "inst_feet" });
+    await sendPhoto(job.id, "x-1-m1", { slotId: "inst_feet", markupOf: "x-1" });
     await sendPhoto(job.id, "x-2", { slotId: "inst_feet" });
     const del = await request(app).delete(`/api/surveys/${job.id}/photos/by-client/x-1`).set("Authorization", auth);
-    expect(del.body.deleted).toBe(1);
+    expect(del.body.deleted).toBe(2);
     const full = await request(app).get(`/api/surveys/${job.id}`).set("Authorization", auth);
     expect(full.body.photos.map((x: { client_photo_id: string }) => x.client_photo_id)).toEqual(["x-2"]);
+  });
+
+  it("won't remove site-survey photos this way", async () => {
+    const job = (await openJob(project())).body;
+    createdIds.push(job.id);
+    await sendPhoto(job.id, "s-1", { slotId: "inst_feet" });
+    await pool.query(`UPDATE surveys SET kind = 'survey' WHERE id = $1`, [job.id]);
+    const del = await request(app).delete(`/api/surveys/${job.id}/photos/by-client/s-1`).set("Authorization", auth);
+    expect(del.status).toBe(409);
+  });
+});
+
+describe("photo retention clock", () => {
+  it("starts on the final inspection, not install day", () => {
+    expect(startsRetentionClock(JSON.stringify({ event: "install.completed", phase: "install_day" }))).toBe(false);
+    expect(startsRetentionClock(JSON.stringify({ event: "install.completed", phase: "final_inspection" }))).toBe(true);
+    expect(startsRetentionClock(JSON.stringify({ event: "survey.completed" }))).toBe(true);
   });
 });
 

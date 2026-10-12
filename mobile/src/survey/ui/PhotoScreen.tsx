@@ -195,7 +195,7 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
 
               <View>
                 <T variant="small" dim style={{ fontWeight: "700", marginBottom: space.sm }}>
-                  {photo.qualityStatus === "pending_review" ? "Why keep this photo as is? (required)" : "Note for the designer"}
+                  {photo.qualityStatus === "pending_review" ? "Why keep this photo as is? (required)" : isInstall ? "Note for the office" : "Note for the designer"}
                 </T>
                 <Input
                   label="Photo note"
@@ -208,7 +208,7 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
                     notesTimer.current = setTimeout(() => void updatePhoto(photo.id, { notes: t }), 300);
                   }}
                   onBlur={() => void updatePhoto(photo.id, { notes })}
-                  placeholder="e.g. 200 A main, label behind the dead front"
+                  placeholder={isInstall ? "e.g. Feet on 48\" centers, butyl under every foot" : "e.g. 200 A main, label behind the dead front"}
                   multiline
                 />
               </View>

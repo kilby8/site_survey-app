@@ -423,7 +423,7 @@ export interface InstallJobSyncState {
   error: string | null;
 }
 
-let _installSyncing = false;
+let _installRun: Promise<void> | null = null;
 let _installRerun = false;
 const _installState = new Map<string, InstallJobSyncState>();
 const _installListeners = new Set<(jobId: string, state: InstallJobSyncState) => void>();
@@ -442,24 +442,44 @@ function _setInstallState(jobId: string, state: InstallJobSyncState) {
   _installListeners.forEach((l) => l(jobId, state));
 }
 
-/** Sync install jobs on this phone (or just one). Safe to call often. */
-export async function syncInstallJobs(onlyId?: string): Promise<void> {
-  if (_installSyncing) {
+/**
+ * Sync install jobs on this phone (or just one). Safe to call often. If a
+ * sync is already running, this waits for it and one more pass, so a caller
+ * that awaits it (Finish) sees every photo taken before the call.
+ */
+export function syncInstallJobs(onlyId?: string): Promise<void> {
+  if (_installRun) {
     _installRerun = true;
-    return;
+    return _installRun;
   }
+  _installRun = (async () => {
+    try {
+      let id = onlyId;
+      do {
+        _installRerun = false;
+        await _syncInstallJobsOnce(id);
+        id = undefined;
+      } while (_installRerun);
+    } finally {
+      _installRun = null;
+    }
+  })();
+  return _installRun;
+}
+
+async function _syncInstallJobsOnce(onlyId?: string): Promise<void> {
   if (!_isOnline) return;
   if (!(await getAccessToken())) return;
-  _installSyncing = true;
-  try {
-    const me = await getCachedUser();
+  const me = await getCachedUser();
+  {
     const ids = onlyId ? [onlyId] : await repo.listInstallJobIds();
     for (const id of ids) {
       const loaded = await repo.loadSurvey(id);
       if (!loaded || loaded.survey.doc.kind !== 'install') continue;
       try {
-        await syncInstallJob(loaded.survey, {
+        const res = await syncInstallJob(loaded.survey, {
           loadPhotos: repo.loadPhotos,
+          loadDoc: async (jobId) => (await repo.loadSurvey(jobId))?.survey.doc ?? null,
           saveDoc: (jobId, doc) => repo.saveDoc(jobId, doc, loaded.survey.currentStep),
           putJob: putInstallJob,
           patchAnswers: patchInstallAnswers,
@@ -473,7 +493,7 @@ export async function syncInstallJobs(onlyId?: string): Promise<void> {
           me: { name: me?.fullName || loaded.survey.doc.inspectorName || 'Crew', email: me?.email ?? null },
         });
         const left = (await repo.loadPhotos(id)).filter((p) => p.uploadState !== 'uploaded' && p.qualityStatus !== 'rejected').length;
-        _setInstallState(id, { lastSyncedAt: new Date().toISOString(), waiting: left, error: null });
+        _setInstallState(id, { lastSyncedAt: new Date().toISOString(), waiting: left, error: res.error ?? null });
       } catch (err) {
         const left = (await repo.loadPhotos(id)).filter((p) => p.uploadState !== 'uploaded').length;
         _setInstallState(id, {
@@ -483,12 +503,6 @@ export async function syncInstallJobs(onlyId?: string): Promise<void> {
         });
         if (err instanceof SessionExpiredError) break;
       }
-    }
-  } finally {
-    _installSyncing = false;
-    if (_installRerun) {
-      _installRerun = false;
-      syncInstallJobs().catch(console.error);
     }
   }
 }

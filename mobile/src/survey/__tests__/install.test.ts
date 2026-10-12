@@ -14,13 +14,14 @@ import {
   dirtyAnswerKeys,
   getCrewPhotos,
   installJobId,
+  loadCrewPhotos,
   markAnswerDirty,
   mergeServerAnswers,
   queueCrewDelete,
   syncInstallJob,
   type InstallSyncDeps,
 } from "../installJob";
-import { installReportHtml } from "../installReport";
+import { installReportHtml, isReadableSlot } from "../installReport";
 import { newInstallDoc, type CapturedPhoto } from "../model";
 import { surveyReadiness } from "../progress";
 import type { StoredSurvey } from "../repo";
@@ -195,7 +196,73 @@ describe("syncInstallJob", () => {
     expect(calls).toContain("meta:b:Butyl under every foot");
     expect(calls.some((c) => c.startsWith("upload:"))).toBe(false);
   });
+
+  it("keeps going past a photo that won't upload, and says so", async () => {
+    const survey = { id: installJobId("p-123"), doc: doc(), currentStep: "install_day" } as unknown as StoredSurvey;
+    const { d, calls } = deps({
+      loadPhotos: async () => [photo("bad", "inst_feet"), photo("good", "inst_seal")],
+      uploadPhoto: async (_id, p) => {
+        if (p.clientId === "bad") throw new Error("413 too large");
+        calls.push(`upload:${p.clientId}`);
+        return { id: `srv-${p.clientId}` };
+      },
+    });
+    const res = await syncInstallJob(survey, d);
+    expect(calls).toContain("upload:good");
+    expect(calls).toContain("uploaded:good");
+    expect(res.failed).toBe(1);
+    expect(res.error).toMatch(/1 photo couldn't upload \(413 too large\)/);
+  });
+
+  it("keeps an answer typed while the sync was on the network", async () => {
+    let d0 = doc();
+    d0 = markAnswerDirty({ ...d0, answers: { ...d0.answers, tilt_deg: 33.7 } }, "tilt_deg");
+    const survey = { id: installJobId("p-123"), doc: d0, currentStep: "install_day" } as unknown as StoredSurvey;
+    // While the patch was in flight the user changed tilt again and typed a cantilever.
+    let typed = markAnswerDirty({ ...d0, answers: { ...d0.answers, tilt_deg: 34, max_cantilever_in: 11 } }, "max_cantilever_in");
+    typed = markAnswerDirty(typed, "tilt_deg");
+    let saved: ReturnType<typeof doc> | null = null;
+    const { d } = deps({
+      loadPhotos: async () => [],
+      loadDoc: async () => typed,
+      saveDoc: async (_id, x) => {
+        saved = x;
+      },
+    });
+    await syncInstallJob(survey, d);
+    expect(saved!.answers.tilt_deg).toBe(34);
+    expect(saved!.answers.max_cantilever_in).toBe(11);
+    expect(saved!.answers.commissioned).toBe(true);
+    expect(dirtyAnswerKeys(saved!).sort()).toEqual(["max_cantilever_in", "tilt_deg"]);
+  });
+
+  it("shows a phase another phone already sent", async () => {
+    const survey = { id: installJobId("p-123"), doc: doc(), currentStep: "install_day" } as unknown as StoredSurvey;
+    let saved: ReturnType<typeof doc> | null = null;
+    const { d } = deps({
+      loadPhotos: async () => [],
+      putJob: async () => ({ ...serverJob([]), metadata: { answers: {}, finished: { install_day: "2026-09-11T20:00:00Z" } } }),
+      saveDoc: async (_id, x) => {
+        saved = x;
+      },
+    });
+    await syncInstallJob(survey, d);
+    expect((saved!.extra.finished as Record<string, string>).install_day).toBe("2026-09-11T20:00:00Z");
+  });
+
+  it("remembers the crew's photos across an app restart", async () => {
+    const survey = { id: installJobId("p-777"), doc: doc(), currentStep: "install_day" } as unknown as StoredSurvey;
+    const { d } = deps({ loadPhotos: async () => [] });
+    await syncInstallJob(survey, d);
+    await new Promise((r) => setTimeout(r, 0));
+    // Saved on the phone, not just held in memory.
+    const AsyncStorage = jest.requireMock("@react-native-async-storage/async-storage");
+    const saved = JSON.parse(await AsyncStorage.getItem(`site-survey.install-crew.${survey.id}`));
+    expect(saved.map((p: { id: string }) => p.id)).toEqual(["ray-1"]);
+    expect((await loadCrewPhotos(survey.id)).map((p) => p.id)).toEqual(["ray-1"]);
+  });
 });
+
 
 describe("install report", () => {
   it("has a cover, a checklist with done / skipped / missing, and captioned photos with who took them", () => {
@@ -217,5 +284,12 @@ describe("install report", () => {
     expect(html).toContain("Cantilever 9&quot;");
     expect(html).toContain("Cody Arnold");
     expect(html).toContain("Photo not available offline");
+  });
+
+  it("prints labels and screens whole so the text can be read", () => {
+    expect(isReadableSlot("inst_sticker_map")).toBe(true);
+    expect(isReadableSlot("fin_placard")).toBe(true);
+    expect(isReadableSlot("fin_labels_disc")).toBe(true);
+    expect(isReadableSlot("inst_feet")).toBe(false);
   });
 });

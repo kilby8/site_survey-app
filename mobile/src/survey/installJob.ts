@@ -141,15 +141,34 @@ export function onCrewPhotos(cb: (jobId: string) => void): () => void {
   return () => crewListeners.delete(cb);
 }
 
-export function setCrewPhotos(jobId: string, photos: CapturedPhoto[]): void {
+const CREW_KEY = (jobId: string) => `site-survey.install-crew.${jobId}`;
+
+export function setCrewPhotos(jobId: string, photos: CapturedPhoto[], persist = true): void {
   crewCache.set(jobId, photos);
   crewListeners.forEach((l) => l(jobId));
+  // Kept on the phone so a restart without signal still shows the crew's
+  // shots and counts them toward completeness.
+  if (persist) AsyncStorage.setItem(CREW_KEY(jobId), JSON.stringify(photos)).catch(() => undefined);
 }
 
-const jobDocListeners = new Set<(jobId: string, answers: SurveyDoc["answers"]) => void>();
+/** Load the last-known crew photos from the phone (once per job per app run). */
+export async function loadCrewPhotos(jobId: string): Promise<CapturedPhoto[]> {
+  if (crewCache.has(jobId)) return crewCache.get(jobId)!;
+  try {
+    const raw = await AsyncStorage.getItem(CREW_KEY(jobId));
+    const list = raw ? (JSON.parse(raw) as CapturedPhoto[]) : [];
+    if (!crewCache.has(jobId)) setCrewPhotos(jobId, Array.isArray(list) ? list : [], false);
+  } catch {
+    // nothing saved yet
+  }
+  return crewCache.get(jobId) ?? [];
+}
+
+type CrewDocListener = (jobId: string, answers: SurveyDoc["answers"], finished?: Record<string, string>) => void;
+const jobDocListeners = new Set<CrewDocListener>();
 
 /** The crew's answers changed (an open editor merges them in). */
-export function onCrewAnswers(cb: (jobId: string, answers: SurveyDoc["answers"]) => void): () => void {
+export function onCrewAnswers(cb: CrewDocListener): () => void {
   jobDocListeners.add(cb);
   return () => jobDocListeners.delete(cb);
 }
@@ -221,6 +240,8 @@ export interface InstallSyncDeps {
     photo: { uri: string; mimeType: string; label: string; clientId: string; capturedAt: string; meta: Record<string, unknown> },
   ) => Promise<{ id: string | null }>;
   markPhotoUploaded: (photoId: string, serverId: string | null, sent: CapturedPhoto) => Promise<void>;
+  /** The doc as saved right now (answers typed while a sync was running). */
+  loadDoc?: (jobId: string) => Promise<SurveyDoc | null>;
   /** Metadata-only update for a photo already on the server (note edited). null = server lacks it. */
   updateMeta?: (jobId: string, clientId: string, label: string, meta: Record<string, unknown>) => Promise<{ id: string } | null>;
   fileExists: (relPath: string) => Promise<boolean>;
@@ -234,7 +255,10 @@ export interface InstallSyncDeps {
  * exists, merge the crew's answers in, send this phone's changes and
  * photos, apply deletes, and refresh the crew photos. Safe to repeat.
  */
-export async function syncInstallJob(survey: StoredSurvey, deps: InstallSyncDeps): Promise<{ uploaded: number; crew: number }> {
+export async function syncInstallJob(
+  survey: StoredSurvey,
+  deps: InstallSyncDeps,
+): Promise<{ uploaded: number; crew: number; failed?: number; error?: string }> {
   const jobId = survey.id;
   let doc = survey.doc;
   const projectId = doc.project.solarproProjectId;
@@ -251,17 +275,31 @@ export async function syncInstallJob(survey: StoredSurvey, deps: InstallSyncDeps
 
   // Send this phone's changed answers, then take everyone's.
   const dirty = dirtyAnswerKeys(doc);
+  const changed: Record<string, unknown> = {};
   if (dirty.length) {
-    const changed: Record<string, unknown> = {};
     for (const k of dirty) changed[k] = doc.answers[k] ?? null;
     const res = await deps.patchAnswers(jobId, changed);
     job = { ...job, metadata: { ...(job.metadata ?? {}), answers: res.answers } };
-    doc = { ...doc, extra: { ...doc.extra, installDirty: [] } };
   }
-  const merged = mergeServerAnswers(doc, (job.metadata?.answers ?? {}) as Record<string, unknown>);
-  if (dirty.length || JSON.stringify(merged.answers) !== JSON.stringify(survey.doc.answers)) {
+  // Start from what's saved now: anything typed while we were on the network
+  // stays this phone's (still unsent) answer.
+  const latest = (deps.loadDoc ? await deps.loadDoc(jobId) : null) ?? doc;
+  const stillDirty = dirtyAnswerKeys(latest).filter(
+    (k) => !(k in changed) || JSON.stringify(latest.answers[k] ?? null) !== JSON.stringify(changed[k]),
+  );
+  doc = { ...latest, extra: { ...latest.extra, installDirty: stillDirty } };
+  let merged = mergeServerAnswers(doc, (job.metadata?.answers ?? {}) as Record<string, unknown>);
+  // Phases another phone already sent show as sent here too.
+  const serverFinished = job.metadata?.finished;
+  if (serverFinished && typeof serverFinished === "object") {
+    const localFinished = (merged.extra?.finished as Record<string, string> | undefined) ?? {};
+    const both = { ...(serverFinished as Record<string, string>), ...localFinished };
+    if (JSON.stringify(both) !== JSON.stringify(localFinished)) merged = { ...merged, extra: { ...merged.extra, finished: both } };
+  }
+  if (dirty.length || JSON.stringify(merged) !== JSON.stringify(latest)) {
     await deps.saveDoc(jobId, merged);
-    jobDocListeners.forEach((l) => l(jobId, merged.answers));
+    const fin = merged.extra?.finished as Record<string, string> | undefined;
+    jobDocListeners.forEach((l) => l(jobId, merged.answers, fin));
   }
 
   // Deletes made on this phone.
@@ -276,17 +314,28 @@ export async function syncInstallJob(survey: StoredSurvey, deps: InstallSyncDeps
   // Upload this phone's new photos.
   const local = await deps.loadPhotos(jobId);
   let uploaded = 0;
+  let failed = 0;
+  let lastError: unknown = null;
   for (const photo of local) {
     if (photo.uploadState === "uploaded" || photo.qualityStatus === "rejected") continue;
-    if (!(await deps.fileExists(photo.relPath))) continue;
+    try {
+      if (await sendPhoto(photo)) uploaded++;
+    } catch (err) {
+      // One photo that won't go (too big, damaged) must not hold up the rest.
+      failed++;
+      lastError = err;
+    }
+  }
+
+  async function sendPhoto(photo: CapturedPhoto): Promise<boolean> {
+    if (!(await deps.fileExists(photo.relPath))) return false;
     const meta = { ...goldenBlock(photo, merged), creatorName: deps.me.name, creatorEmail: deps.me.email };
     const label = photoLabel(photo);
     if (photo.serverPhotoId && deps.updateMeta) {
       const updated = await deps.updateMeta(jobId, photo.id, label, meta);
       if (updated) {
         await deps.markPhotoUploaded(photo.id, updated.id, photo);
-        uploaded++;
-        continue;
+        return true;
       }
     }
     const res = await deps.uploadPhoto(jobId, {
@@ -308,7 +357,7 @@ export async function syncInstallJob(survey: StoredSurvey, deps: InstallSyncDeps
       });
     }
     await deps.markPhotoUploaded(photo.id, res.id, photo);
-    uploaded++;
+    return true;
   }
 
   // Everyone else's photos (refetch only if we changed something).
@@ -325,5 +374,9 @@ export async function syncInstallJob(survey: StoredSurvey, deps: InstallSyncDeps
   const localIds = new Set(local.map((p) => p.id));
   const crew = crewPhotos(job, localIds, deps.photoUrl);
   setCrewPhotos(jobId, crew);
+  if (failed) {
+    const why = lastError instanceof Error ? lastError.message : String(lastError);
+    return { uploaded, crew: crew.length, failed, error: `${failed} photo${failed === 1 ? "" : "s"} couldn't upload (${why}). Will retry.` };
+  }
   return { uploaded, crew: crew.length };
 }

@@ -109,9 +109,10 @@ export function useSurveyEditor(surveyId: string) {
   // Install jobs: answers a crew mate entered arrive from sync.
   useEffect(
     () =>
-      onCrewAnswers((jobId, answers) => {
+      onCrewAnswers((jobId, answers, finished) => {
         if (jobId !== surveyId || !docRef.current) return;
-        const next = mergeServerAnswers(docRef.current, answers);
+        let next = mergeServerAnswers(docRef.current, answers);
+        if (finished) next = { ...next, extra: { ...next.extra, finished: { ...finished, ...((next.extra?.finished as Record<string, string>) ?? {}) } } };
         docRef.current = next;
         setDoc(next);
       }),
