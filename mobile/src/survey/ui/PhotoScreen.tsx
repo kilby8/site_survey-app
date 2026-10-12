@@ -16,6 +16,8 @@ import { discardMarkupFile, storeMarkup, takePhoto } from "../capture";
 import type { CapturedPhoto } from "../model";
 import { BLUR_THRESHOLD, flagLabels, flagMessage } from "../quality";
 import { absPath, loadPhotos, loadSurvey, removePhoto, updatePhoto } from "../repo";
+import { getCrewPhotos, queueCrewDelete } from "../installJob";
+import { syncInstallJobs } from "../../services/SyncManager";
 import { MarkupEditor, type Mark } from "./MarkupEditor";
 
 const RETAKE_REASONS = ["Blurry", "Wrong framing", "Glare", "Missed detail"];
@@ -36,6 +38,9 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
   const [editing, setEditing] = React.useState(false);
   const [notes, setNotes] = React.useState("");
   const [retakeOpen, setRetakeOpen] = React.useState(false);
+  /** A crew mate's photo (install jobs): view only. */
+  const [crewView, setCrewView] = React.useState(false);
+  const [isInstall, setIsInstall] = React.useState(false);
 
   const notesTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const notesRef = React.useRef("");
@@ -53,9 +58,12 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
 
   const load = React.useCallback(async () => {
     const [all, s] = await Promise.all([loadPhotos(surveyId), loadSurvey(surveyId)]);
-    const p = all.find((x) => x.id === photoId) ?? null;
+    const local = all.find((x) => x.id === photoId) ?? null;
+    const p = local ?? getCrewPhotos(surveyId).find((x) => x.id === photoId) ?? null;
     setPhoto(p);
-    setLocked(s?.survey.status === "submitted");
+    setCrewView(!local && !!p);
+    setIsInstall(s?.survey.doc.kind === "install");
+    setLocked(s?.survey.status === "submitted" || (!local && !!p));
     if (p) {
       setNotes(p.notes);
       Image.getSize(absPath(p.relPath), (w, h) => w && h && setSize({ w, h }), () => undefined);
@@ -181,6 +189,7 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
                     })()}
                   />
                 ) : null}
+                {photo.crew?.creatorName ? <MetaRow icon="person-outline" label="Taken by" value={photo.crew.creatorName} /> : null}
                 {photo.retakeReason ? <MetaRow icon="refresh" label="Retake of" value={photo.retakeReason} /> : null}
               </View>
 
@@ -204,6 +213,27 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
                 />
               </View>
 
+              {crewView ? (
+                <Button
+                  label="Delete from the job"
+                  icon="trash-outline"
+                  kind="danger"
+                  onPress={() =>
+                    Alert.alert("Delete this photo for the whole crew?", `${photo.crew?.creatorName ?? "A crew member"} took it. It's removed from the job for everyone.`, [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Delete",
+                        style: "destructive",
+                        onPress: async () => {
+                          await queueCrewDelete(surveyId, photo.id);
+                          await syncInstallJobs(surveyId);
+                          router.back();
+                        },
+                      },
+                    ])
+                  }
+                />
+              ) : null}
               {!locked ? (
                 <View style={{ gap: space.sm }}>
                   <Button
@@ -224,7 +254,9 @@ export function PhotoScreen({ surveyId, photoId }: { surveyId: string; photoId: 
                           text: "Delete",
                           style: "destructive",
                           onPress: async () => {
-                            await removePhoto(photo);
+                            await removePhoto(photo); // also queues removal from a crew job
+
+                            if (isInstall) void syncInstallJobs(surveyId);
                             router.back();
                           },
                         },

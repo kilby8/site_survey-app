@@ -18,7 +18,10 @@ export type SurveyStepId =
   | "site_walkaround"
   | "utility_service"
   | "electrical_equipment"
-  | "roof_array";
+  | "roof_array"
+  // Install & final photos (kind "install")
+  | "install_day"
+  | "final_inspection";
 
 /** Top-level evidence category — matches the step the photo belongs to. */
 export type EvidenceCategory =
@@ -26,7 +29,9 @@ export type EvidenceCategory =
   | "site_walkaround"
   | "utility_service"
   | "electrical_equipment"
-  | "roof_array";
+  | "roof_array"
+  | "install_day"
+  | "final_inspection";
 
 /**
  * Where this photo/data point lands in the final SolarPro planset.
@@ -40,7 +45,8 @@ export type SolarProUsageMapping =
   | "CAD Layout"
   | "Interconnection"
   | "Structural Engineering"
-  | "General Documentation";
+  | "General Documentation"
+  | "Inspection";
 
 /** Quality gate result for a captured photo. */
 export type PhotoQualityStatus = "accepted" | "rejected" | "pending_review";

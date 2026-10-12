@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isOnline, onSurveyUploadProgress, onSyncStatusChange, syncPending } from "../../services/SyncManager";
 import { Button, Card, IconButton, T } from "../../ui/components";
 import { color, radius, space } from "../../ui/theme";
-import { STEPS } from "../blueprint";
+import { stepsFor } from "../blueprint";
 import type { CapturedPhoto } from "../model";
 import { checklistFromDoc } from "../payload";
 import { absPath, deleteSurveyAndFiles, loadSurvey, reopenSurvey, type StoredSurvey } from "../repo";
@@ -126,7 +126,7 @@ export function SurveyStatusScreen({ surveyId }: { surveyId: string }) {
         </View>
 
         {summary.map((row, i) => {
-          const step = STEPS[i];
+          const step = stepsFor(survey.doc)[i];
           const stepPhotos = photos.filter((p) => p.stepId === step.id && p.qualityStatus !== "rejected");
           return (
             <Card key={row.label} style={{ gap: space.sm }}>

@@ -9,6 +9,7 @@
 // shipped, because captured photos and answers are stored by id.
 // ============================================================
 
+import { INSTALL_STEPS } from "./installBlueprint";
 import type {
   EvidenceCategory,
   SolarProUsageMapping,
@@ -376,8 +377,16 @@ export const STEPS: StepDef[] = [
 
 export const STEP_IDS = STEPS.map((s) => s.id);
 
+/** Every step of every job kind (slot ids are unique across them). */
+export const ALL_STEPS: StepDef[] = [...STEPS, ...INSTALL_STEPS];
+
+/** The steps a document walks through: site survey, or install & final photos. */
+export function stepsFor(doc: { kind?: "survey" | "install" } | null | undefined): StepDef[] {
+  return doc?.kind === "install" ? INSTALL_STEPS : STEPS;
+}
+
 export function getStep(id: SurveyStepId): StepDef {
-  const step = STEPS.find((s) => s.id === id);
+  const step = ALL_STEPS.find((s) => s.id === id);
   if (!step) throw new Error(`Unknown step ${id}`);
   return step;
 }
@@ -386,7 +395,7 @@ export function getStep(id: SurveyStepId): StepDef {
 export function findSlot(
   slotId: string,
 ): { step: StepDef; section: SectionDef; slot: SlotDef; order: number } | null {
-  for (const step of STEPS) {
+  for (const step of ALL_STEPS) {
     for (const section of step.sections) {
       const index = section.slots.findIndex((s) => s.id === slotId);
       if (index >= 0) {

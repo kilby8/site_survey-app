@@ -12,13 +12,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fetchHandoffToken } from "../../api/client";
 import { useAppBootstrap } from "../../context/AppBootstrapContext";
 import { useAuth } from "../../context/AuthContext";
-import { isOnline } from "../../services/SyncManager";
+import { isOnline, syncInstallJobs } from "../../services/SyncManager";
 import { Button, Card, IconButton, Input, T } from "../../ui/components";
 import { color, radius, space } from "../../ui/theme";
 import { INSTALL_TYPES, type AnswerValue, type InstallType } from "../blueprint";
-import { newSurveyDoc, type ProjectLink } from "../model";
+import { newInstallDoc, newSurveyDoc, type ProjectLink } from "../model";
+import { installJobId } from "../installJob";
 import { loadProjectIndex, refreshProjectIndex, searchProjects, type IndexedProject, type ProjectIndex } from "../projectIndex";
-import { createSurveyDraft, findDraftForProject } from "../repo";
+import { createSurveyDraft, findDraftForProject, loadSurvey } from "../repo";
 
 const NO_PROJECT = "__none__";
 
@@ -41,7 +42,8 @@ export function answersFromHandoff(meta: Record<string, unknown> | null): Record
   return out;
 }
 
-export function StartSurveyScreen({ handoffToken }: { handoffToken?: string }) {
+export function StartSurveyScreen({ handoffToken, mode = "survey" }: { handoffToken?: string; mode?: "survey" | "install" }) {
+  const installMode = mode === "install";
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
@@ -127,7 +129,33 @@ export function StartSurveyScreen({ handoffToken }: { handoffToken?: string }) {
     if (p !== NO_PROJECT && p.installType) setInstallType(p.installType);
   };
 
+  /** Install & final photos: open (or join) the crew's job for this project. */
+  const openInstall = async () => {
+    if (!picked || picked === NO_PROJECT) return;
+    setStarting(true);
+    try {
+      const id = installJobId(picked.id);
+      const existing = await loadSurvey(id);
+      if (!existing) {
+        const doc = newInstallDoc({
+          installType: picked.installType ?? "roof_mount",
+          project: { solarproProjectId: picked.id, solarproClientId: picked.clientId, projectName: picked.name, clientName: picked.clientName },
+          inspectorName: user?.fullName || "",
+          siteAddress: picked.address || undefined,
+        });
+        await createSurveyDraft({ doc, deviceId, ownerEmail: user?.email ?? null, id });
+      }
+      // Pull the crew's photos and answers right away if there's signal.
+      void syncInstallJobs(id);
+      router.replace(`/survey/${id}/capture`);
+    } catch (e) {
+      setStarting(false);
+      Alert.alert("Couldn't open the job", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const start = async () => {
+    if (installMode) return openInstall();
     if (!picked || !installType) return;
     if (picked !== NO_PROJECT) {
       const existing = await findDraftForProject(picked.id);
@@ -178,9 +206,13 @@ export function StartSurveyScreen({ handoffToken }: { handoffToken?: string }) {
     <View style={{ gap: space.lg, paddingBottom: space.md }}>
       <View>
         <T variant="heading" accessibilityRole="header">
-          New survey
+          {installMode ? "Install & final photos" : "New survey"}
         </T>
-        <T dim>Find the SolarPro project, or start without one and link it in the office.</T>
+        <T dim>
+          {installMode
+            ? "Pick the project. Everyone on the crew who opens it adds to the same photo set."
+            : "Find the SolarPro project, or start without one and link it in the office."}
+        </T>
       </View>
       <View>
         <Input
@@ -215,13 +247,15 @@ export function StartSurveyScreen({ handoffToken }: { handoffToken?: string }) {
           )}
         </View>
       </View>
-      <ProjectRow
-        title="Start without a project"
-        subtitle="Link it to a SolarPro project later"
-        icon="add-circle-outline"
-        selected={picked === NO_PROJECT}
-        onPress={() => choose(NO_PROJECT)}
-      />
+      {installMode ? null : (
+        <ProjectRow
+          title="Start without a project"
+          subtitle="Link it to a SolarPro project later"
+          icon="add-circle-outline"
+          selected={picked === NO_PROJECT}
+          onPress={() => choose(NO_PROJECT)}
+        />
+      )}
     </View>
   );
 
@@ -266,7 +300,7 @@ export function StartSurveyScreen({ handoffToken }: { handoffToken?: string }) {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: space.lg, paddingBottom: 140 }}
         ListHeaderComponent={header}
-        ListFooterComponent={footer}
+        ListFooterComponent={installMode ? null : footer}
         ItemSeparatorComponent={() => <View style={{ height: space.sm }} />}
         ListEmptyComponent={
           query ? (
@@ -288,9 +322,13 @@ export function StartSurveyScreen({ handoffToken }: { handoffToken?: string }) {
       <View style={[s.bottom, { paddingBottom: insets.bottom + space.sm }]}>
         <Button
           testID="start-survey"
-          label={!picked ? "Pick a project" : !installType ? "Pick an install type" : "Start survey"}
-          icon={picked && installType ? "arrow-forward" : undefined}
-          disabled={!picked || !installType}
+          label={
+            installMode
+              ? picked ? "Open install photos" : "Pick a project"
+              : !picked ? "Pick a project" : !installType ? "Pick an install type" : "Start survey"
+          }
+          icon={picked && (installType || installMode) ? "arrow-forward" : undefined}
+          disabled={!picked || (!installType && !installMode)}
           busy={starting}
           onPress={() => void start()}
         />

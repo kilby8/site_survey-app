@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import type { AnswerValue } from "./blueprint";
+import { markAnswerDirty, mergeServerAnswers, onCrewAnswers } from "./installJob";
 import { nextPlaneId, planeSeqAfter, type CapturedPhoto, type SurveyDoc } from "./model";
 import { loadPhotos, loadSurvey, removePhoto, saveDoc, type StoredSurvey } from "./repo";
 
@@ -98,9 +99,23 @@ export function useSurveyEditor(surveyId: string) {
               ...d,
               planes: d.planes.map((p) => (p.id === planeId ? { ...p, answers: { ...p.answers, [fieldId]: value } } : p)),
             }
-          : { ...d, answers: { ...d.answers, [fieldId]: value } },
+          : d.kind === "install"
+            ? markAnswerDirty({ ...d, answers: { ...d.answers, [fieldId]: value } }, fieldId)
+            : { ...d, answers: { ...d.answers, [fieldId]: value } },
       ),
     [update],
+  );
+
+  // Install jobs: answers a crew mate entered arrive from sync.
+  useEffect(
+    () =>
+      onCrewAnswers((jobId, answers) => {
+        if (jobId !== surveyId || !docRef.current) return;
+        const next = mergeServerAnswers(docRef.current, answers);
+        docRef.current = next;
+        setDoc(next);
+      }),
+    [surveyId],
   );
 
   const addPlane = useCallback(() => {
@@ -140,6 +155,7 @@ export function useSurveyEditor(surveyId: string) {
   );
 
   const setNotes = useCallback((notes: string) => update((d) => ({ ...d, notes })), [update]);
+  const setExtra = useCallback((key: string, value: unknown) => update((d) => ({ ...d, extra: { ...d.extra, [key]: value } })), [update]);
 
   const setGps = useCallback((gps: SurveyDoc["gps"]) => update((d) => ({ ...d, gps })), [update]);
 
@@ -169,6 +185,7 @@ export function useSurveyEditor(surveyId: string) {
     removePlane,
     setOverride,
     setNotes,
+    setExtra,
     setGps,
     setStep,
     setPhotos,

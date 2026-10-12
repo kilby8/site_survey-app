@@ -5,7 +5,7 @@
 
 import type { SurveyStepId } from "../types/pipeline";
 import {
-  STEPS,
+  stepsFor,
   type AnswerValue,
   type Condition,
   type FieldDef,
@@ -135,7 +135,7 @@ export function stepProgress(
   photos: CapturedPhoto[],
   stepId: SurveyStepId,
 ): StepProgress {
-  const step = STEPS.find((s) => s.id === stepId)!;
+  const step = stepsFor(doc).find((s) => s.id === stepId)!;
   const overridden = new Set(doc.overrides.map((o) => o.key));
   const items: RequiredItem[] = [];
   const sections: SectionProgress[] = [];
@@ -204,7 +204,7 @@ export interface SurveyReadiness {
 }
 
 export function surveyReadiness(doc: SurveyDoc, photos: CapturedPhoto[]): SurveyReadiness {
-  const steps = STEPS.map((s) => stepProgress(doc, photos, s.id));
+  const steps = stepsFor(doc).map((s) => stepProgress(doc, photos, s.id));
   const items = steps.flatMap((s) => s.items);
   const missing = items.filter((i) => !i.done && !i.overridden);
   const unexplainedBlurry = photos.filter(
@@ -236,7 +236,7 @@ export interface ShotTarget {
  * Drives the guided camera: it walks the empty required slots in order.
  */
 export function stepShots(doc: SurveyDoc, photos: CapturedPhoto[], stepId: SurveyStepId): Array<ShotTarget & { filled: number; needed: boolean }> {
-  const step = STEPS.find((s) => s.id === stepId)!;
+  const step = stepsFor(doc).find((s) => s.id === stepId)!;
   const overridden = new Set(doc.overrides.map((o) => o.key));
   const out: Array<ShotTarget & { filled: number; needed: boolean }> = [];
   for (const inst of sectionInstances(doc, step)) {

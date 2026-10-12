@@ -21,6 +21,8 @@ import type { CapturedPhoto, SurveyDoc } from "../model";
 import { nextNeededShot, photosForSlot, stepShots, type ShotTarget } from "../progress";
 import { flagMessage } from "../quality";
 import { loadPhotos, loadSurvey, removePhoto, updatePhoto } from "../repo";
+import { getCrewPhotos } from "../installJob";
+import { syncInstallJobs } from "../../services/SyncManager";
 
 // expo-camera zoom is a fraction of each phone's maximum, so label by intent.
 const ZOOMS = [
@@ -91,7 +93,7 @@ export function GuidedCameraScreen({
       const loaded = await loadSurvey(surveyId);
       if (!loaded) return;
       setDoc(loaded.survey.doc);
-      setPhotos(loaded.photos);
+      setPhotos([...loaded.photos, ...getCrewPhotos(surveyId)]);
       const found = findSlot(slotId);
       if (found) {
         setTarget({
@@ -159,8 +161,10 @@ export function GuidedCameraScreen({
         await removePhoto(retakeOf.current.photo).catch(() => undefined);
         retakeOf.current = null;
       }
-      const latest = await loadPhotos(surveyId);
+      const latest = [...(await loadPhotos(surveyId)), ...getCrewPhotos(surveyId)];
       setPhotos(latest);
+      // Install jobs: send it to the crew now (no-op for site surveys).
+      void syncInstallJobs(surveyId);
       setShotCount((n) => n + 1);
       setResult(filed);
       void Haptics.notificationAsync(
@@ -190,7 +194,7 @@ export function GuidedCameraScreen({
     if (!result) return;
     setKeepOpen(false);
     await updatePhoto(result.photo.id, { qualityStatus: "pending_review", notes: reason });
-    goNext(await loadPhotos(surveyId));
+    goNext([...(await loadPhotos(surveyId)), ...getCrewPhotos(surveyId)]);
   };
 
   return (

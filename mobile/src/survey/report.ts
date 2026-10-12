@@ -8,7 +8,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import { INSTALL_TYPES, STEPS } from "./blueprint";
+import { INSTALL_TYPES, stepsFor } from "./blueprint";
 import type { CapturedPhoto, SurveyDoc } from "./model";
 import { checklistFromDoc, photoLabel, photosToSend } from "./payload";
 import { surveyReadiness } from "./progress";
@@ -39,7 +39,7 @@ export function reportHtml(doc: SurveyDoc, photos: CapturedPhoto[], images: Reco
   const rows = checklistFromDoc(doc, photos);
   const install = INSTALL_TYPES.find((t) => t.id === doc.installType)?.label ?? doc.installType;
   const title = doc.project.projectName || (typeof doc.answers.site_address === "string" ? doc.answers.site_address : "Site survey");
-  const steps = STEPS.map((step, i) => {
+  const steps = stepsFor(doc).map((step, i) => {
     const stepPhotos = photos.filter((p) => p.stepId === step.id);
     const lines = rows[i].notes.split("\n").filter(Boolean);
     return `

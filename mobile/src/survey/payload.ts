@@ -6,7 +6,7 @@
 // and adds metadata.survey_v2 with the full structured document.
 // ============================================================
 
-import { findSlot, INSTALL_TYPES, STEPS, type AnswerValue } from "./blueprint";
+import { findSlot, INSTALL_TYPES, stepsFor, type AnswerValue } from "./blueprint";
 import type { CapturedPhoto, SurveyDoc } from "./model";
 import { sectionInstances, surveyReadiness } from "./progress";
 import { slotKey } from "./model";
@@ -156,7 +156,7 @@ export function checklistFromDoc(doc: SurveyDoc, photos: CapturedPhoto[]): Serve
 /** Photos that belong in the upload: in a slot that is still shown, and not rejected. */
 export function photosToSend(doc: SurveyDoc, photos: CapturedPhoto[]): CapturedPhoto[] {
   const visible = new Set<string>();
-  for (const step of STEPS) {
+  for (const step of stepsFor(doc)) {
     for (const inst of sectionInstances(doc, step)) {
       for (const slot of inst.slots) visible.add(slotKey(slot.id, inst.planeId));
     }
@@ -251,7 +251,7 @@ export function buildSurveyPayload(input: {
         answers: doc.answers,
         planes: doc.planes,
         overrides: doc.overrides,
-        steps: STEPS.map((s) => s.id),
+        steps: stepsFor(doc).map((s) => s.id),
       },
     },
     checklist: checklistFromDoc(doc, input.photos),

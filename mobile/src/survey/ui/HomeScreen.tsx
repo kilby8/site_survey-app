@@ -12,7 +12,7 @@ import { useBugReport } from "../../context/BugReportContext";
 import { isOnline, onSurveyUploadProgress, onSyncStatusChange, syncPending } from "../../services/SyncManager";
 import { Badge, Button, IconButton, ProgressRing, T } from "../../ui/components";
 import { color, radius, space } from "../../ui/theme";
-import { INSTALL_TYPES, STEPS } from "../blueprint";
+import { ALL_STEPS, INSTALL_TYPES } from "../blueprint";
 import { surveyReadiness } from "../progress";
 import { listSurveySummaries, loadSurvey, type SurveySummary } from "../repo";
 
@@ -74,11 +74,13 @@ export function HomeScreen() {
     };
   }, [load]);
 
-  const drafts = rows.filter((r) => r.status === "draft");
+  const installs = rows.filter((r) => r.kind === "install");
+  const drafts = rows.filter((r) => r.status === "draft" && r.kind !== "install");
   const waiting = rows.filter((r) => r.status === "submitted" && r.syncStatus !== "synced");
   const done = rows.filter((r) => r.status === "submitted" && r.syncStatus === "synced").slice(0, 30);
 
   const sections = [
+    { key: "install", title: "Install & final photos", data: installs },
     { key: "draft", title: "In progress", data: drafts },
     { key: "waiting", title: "Waiting to upload", data: waiting },
     { key: "done", title: "Uploaded", data: done },
@@ -174,11 +176,19 @@ export function HomeScreen() {
           />
         ) : null}
         <Button
+          testID="install-photos"
+          label="Install photos"
+          icon="construct-outline"
+          kind="secondary"
+          onPress={() => router.push({ pathname: "/new-survey", params: { mode: "install" } })}
+          style={{ flex: 1 }}
+        />
+        <Button
           testID="new-survey"
           label="Start a survey"
           icon="add"
           onPress={() => router.push("/new-survey")}
-          style={{ flex: 1.4 }}
+          style={{ flex: 1.2 }}
         />
       </View>
     </View>
@@ -197,10 +207,17 @@ function SurveyRow({
   onPress: () => void;
 }) {
   const someoneElse = !!row.ownerEmail && !!me && row.ownerEmail.toLowerCase() !== me.toLowerCase();
-  const install = INSTALL_TYPES.find((t) => t.id === row.installType)?.label;
+  const install = row.kind === "install" ? "Install & final photos · shared with the crew" : INSTALL_TYPES.find((t) => t.id === row.installType)?.label;
   let status: React.ReactNode = null;
-  if (row.status === "draft") {
-    const step = STEPS.find((st) => st.id === row.currentStep);
+  if (row.kind === "install") {
+    const waitingUp = row.photoCount - row.uploadedCount;
+    status = (
+      <T variant="small" dim>
+        {row.photoCount} of your photos{waitingUp ? ` · ${waitingUp} to upload` : row.photoCount ? " · all sent" : ""} · {timeAgo(row.updatedAt)}
+      </T>
+    );
+  } else if (row.status === "draft") {
+    const step = ALL_STEPS.find((st) => st.id === row.currentStep);
     status = (
       <T variant="small" dim>
         {step ? `On step ${step.number}: ${step.short}` : "Ready to review"} · saved {timeAgo(row.updatedAt)}

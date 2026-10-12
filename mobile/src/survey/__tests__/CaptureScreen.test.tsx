@@ -19,7 +19,14 @@ jest.mock("expo-haptics", () => ({
   NotificationFeedbackType: { Success: "s", Warning: "w" },
 }));
 jest.mock("expo-location", () => ({ requestForegroundPermissionsAsync: jest.fn(async () => ({ granted: false })) }));
-jest.mock("../../services/SyncManager", () => ({ syncPending: jest.fn(async () => undefined) }));
+jest.mock("../../api/client", () => ({ finishInstallPhase: jest.fn(async () => ({ event_id: "e" })) }));
+jest.mock("@react-native-async-storage/async-storage", () => require("@react-native-async-storage/async-storage/jest/async-storage-mock"));
+jest.mock("../../services/SyncManager", () => ({
+  syncPending: jest.fn(async () => undefined),
+  syncInstallJobs: jest.fn(async () => undefined),
+  installJobSyncState: () => ({ lastSyncedAt: null, waiting: 0, error: null }),
+  onInstallJobSync: () => () => undefined,
+}));
 jest.mock("../../context/BugReportContext", () => ({ useBugReport: () => ({ openBugReport: jest.fn() }) }));
 jest.mock("../report", () => ({ shareSurveyPdf: jest.fn() }));
 jest.mock("../capture", () => ({

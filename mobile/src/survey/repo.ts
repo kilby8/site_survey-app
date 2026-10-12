@@ -20,7 +20,7 @@ export function newId(): string {
 }
 
 export function absPath(relPath: string): string {
-  if (relPath.startsWith("file://") || relPath.startsWith("/")) return relPath;
+  if (relPath.startsWith("file://") || relPath.startsWith("/") || /^https?:\/\//.test(relPath)) return relPath;
   return `${FileSystem.documentDirectory ?? ""}${relPath}`;
 }
 
@@ -170,9 +170,11 @@ export async function createSurveyDraft(input: {
   doc: SurveyDoc;
   deviceId: string | null;
   ownerEmail: string | null;
+  /** Use this id (install jobs: the crew-wide job id). */
+  id?: string;
 }): Promise<string> {
   const db = getDb();
-  const id = newId();
+  const id = input.id ?? newId();
   const now = new Date().toISOString();
   const c = listingColumns(input.doc);
   await db.runAsync(
@@ -186,7 +188,7 @@ export async function createSurveyDraft(input: {
       id, c.project_name, c.category_id, c.category_name, c.inspector_name, c.site_name, c.site_address,
       c.latitude, c.longitude, c.gps_accuracy, input.doc.arrivedAt, c.notes, input.deviceId,
       c.solarpro_user_id, c.solarpro_project_id, c.solarpro_email, c.solarpro_org_id,
-      JSON.stringify(input.doc), "project_arrival", input.ownerEmail, now, now,
+      JSON.stringify(input.doc), input.doc.kind === "install" ? "install_day" : "project_arrival", input.ownerEmail, now, now,
     ],
   );
   return id;
@@ -300,6 +302,20 @@ export async function updatePhoto(
 /** Remove a photo row and its files. */
 export async function removePhoto(photo: CapturedPhoto): Promise<void> {
   const db = getDb();
+  // Install jobs are shared: a photo already sent to the crew job is also
+  // removed there (on the next sync).
+  if (photo.uploadState === "uploaded") {
+    const row = await db.getFirstAsync<{ kind: string | null }>(
+      "SELECT json_extract(doc, '$.kind') AS kind FROM surveys WHERE id = ?",
+      [photo.surveyId],
+    );
+    if (row?.kind === "install") {
+      const { queueCrewDelete } = await import("./installJob");
+      const { markupClientId } = await import("./payload");
+      await queueCrewDelete(photo.surveyId, photo.id);
+      if (photo.annotatedRelPath) await queueCrewDelete(photo.surveyId, markupClientId(photo));
+    }
+  }
   await db.runAsync("DELETE FROM survey_photos WHERE id = ?", [photo.id]);
   for (const rel of [photo.relPath, photo.annotatedRelPath]) {
     if (!rel) continue;
@@ -465,6 +481,8 @@ export interface SurveySummary {
   updatedAt: string;
   ownerEmail: string | null;
   legacy: boolean;
+  /** "install": crew install & final photos job. */
+  kind: "survey" | "install";
 }
 
 export async function listSurveySummaries(): Promise<SurveySummary[]> {
@@ -472,10 +490,11 @@ export async function listSurveySummaries(): Promise<SurveySummary[]> {
     id: string; project_name: string; site_address: string; category_id: string | null;
     status: string; sync_status: string; sync_error: string | null; next_retry_at: string | null;
     current_step: string | null; doc: string | null; updated_at: string; owner_email: string | null;
-    photo_count: number; uploaded_count: number;
+    photo_count: number; uploaded_count: number; kind: string | null;
   }>(
     `SELECT s.id, s.project_name, s.site_address, s.category_id, s.status, s.sync_status, s.sync_error,
             s.next_retry_at, s.current_step, s.doc IS NOT NULL AS doc, s.updated_at, s.owner_email,
+            json_extract(s.doc, '$.kind') AS kind,
             (SELECT COUNT(*) FROM survey_photos p WHERE p.survey_id = s.id) AS photo_count,
             (SELECT COUNT(*) FROM survey_photos p WHERE p.survey_id = s.id AND p.upload_state = 'uploaded') AS uploaded_count
        FROM surveys s
@@ -496,5 +515,14 @@ export async function listSurveySummaries(): Promise<SurveySummary[]> {
     updatedAt: r.updated_at,
     ownerEmail: r.owner_email,
     legacy: !r.doc,
+    kind: r.kind === "install" ? "install" : "survey",
   }));
+}
+
+/** Local install & final photo jobs (shared crew jobs). */
+export async function listInstallJobIds(): Promise<string[]> {
+  const rows = await getDb().getAllAsync<{ id: string }>(
+    `SELECT id FROM surveys WHERE doc IS NOT NULL AND json_extract(doc, '$.kind') = 'install' ORDER BY updated_at DESC`,
+  );
+  return rows.map((r) => r.id);
 }

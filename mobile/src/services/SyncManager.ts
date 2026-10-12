@@ -33,11 +33,16 @@ import {
   uploadSurveyPhotoV2,
   updateSurveyPhotoMetaV2,
   completeSurveyV2,
+  putInstallJob,
+  patchInstallAnswers,
+  deleteJobPhoto,
+  serverPhotoUrl,
 } from '../api/client';
 import { getAccessToken, getCachedUser, SessionExpiredError } from '../api/session';
 import type { Survey } from '../types';
 import * as repo from '../survey/repo';
 import { syncSurveyV2, WAIT_FOR_LOGIN, type SyncDeps } from '../survey/sync';
+import { syncInstallJob } from '../survey/installJob';
 
 // ----------------------------------------------------------------
 // Sync state callback type
@@ -110,6 +115,7 @@ export async function initSyncManager(deviceId: string): Promise<void> {
     // Auto-trigger sync when connectivity is restored
     if (wasOffline && _isOnline) {
       syncPending({ force: true }).catch(console.error);
+      syncInstallJobs().catch(console.error);
     }
     _notifyCallbacks();
   });
@@ -117,12 +123,16 @@ export async function initSyncManager(deviceId: string): Promise<void> {
   // Coming back to the app is a good moment to retry.
   if (_appStateSub) _appStateSub.remove();
   _appStateSub = AppState.addEventListener('change', (next: AppStateStatus) => {
-    if (next === 'active') syncPending({ force: true }).catch(console.error);
+    if (next === 'active') {
+      syncPending({ force: true }).catch(console.error);
+      syncInstallJobs().catch(console.error);
+    }
   });
 
   // Attempt an initial sync if already online
   if (_isOnline) {
     syncPending({ force: true }).catch(console.error);
+    syncInstallJobs().catch(console.error);
   }
 }
 
@@ -400,4 +410,85 @@ async function _notifyCallbacks(): Promise<void> {
     const payload = { ...counts, isOnline: _isOnline };
     _statusCallbacks.forEach(cb => cb(payload));
   } catch { /* DB may not be ready yet */ }
+}
+
+// ----------------------------------------------------------------
+// Install & final photos: shared crew jobs sync continuously (photos go
+// up as they're taken; crew photos and answers come down).
+// ----------------------------------------------------------------
+
+export interface InstallJobSyncState {
+  lastSyncedAt: string | null;
+  waiting: number;
+  error: string | null;
+}
+
+let _installSyncing = false;
+let _installRerun = false;
+const _installState = new Map<string, InstallJobSyncState>();
+const _installListeners = new Set<(jobId: string, state: InstallJobSyncState) => void>();
+
+export function installJobSyncState(jobId: string): InstallJobSyncState {
+  return _installState.get(jobId) ?? { lastSyncedAt: null, waiting: 0, error: null };
+}
+
+export function onInstallJobSync(cb: (jobId: string, state: InstallJobSyncState) => void): () => void {
+  _installListeners.add(cb);
+  return () => _installListeners.delete(cb);
+}
+
+function _setInstallState(jobId: string, state: InstallJobSyncState) {
+  _installState.set(jobId, state);
+  _installListeners.forEach((l) => l(jobId, state));
+}
+
+/** Sync install jobs on this phone (or just one). Safe to call often. */
+export async function syncInstallJobs(onlyId?: string): Promise<void> {
+  if (_installSyncing) {
+    _installRerun = true;
+    return;
+  }
+  if (!_isOnline) return;
+  if (!(await getAccessToken())) return;
+  _installSyncing = true;
+  try {
+    const me = await getCachedUser();
+    const ids = onlyId ? [onlyId] : await repo.listInstallJobIds();
+    for (const id of ids) {
+      const loaded = await repo.loadSurvey(id);
+      if (!loaded || loaded.survey.doc.kind !== 'install') continue;
+      try {
+        await syncInstallJob(loaded.survey, {
+          loadPhotos: repo.loadPhotos,
+          saveDoc: (jobId, doc) => repo.saveDoc(jobId, doc, loaded.survey.currentStep),
+          putJob: putInstallJob,
+          patchAnswers: patchInstallAnswers,
+          deletePhoto: deleteJobPhoto,
+          uploadPhoto: uploadSurveyPhotoV2,
+          markPhotoUploaded: repo.markPhotoUploaded,
+          updateMeta: updateSurveyPhotoMetaV2,
+          fileExists: _v2Deps.fileExists,
+          fileUri: repo.absPath,
+          photoUrl: (p) => serverPhotoUrl(p.remote_url, p.id),
+          me: { name: me?.fullName || loaded.survey.doc.inspectorName || 'Crew', email: me?.email ?? null },
+        });
+        const left = (await repo.loadPhotos(id)).filter((p) => p.uploadState !== 'uploaded' && p.qualityStatus !== 'rejected').length;
+        _setInstallState(id, { lastSyncedAt: new Date().toISOString(), waiting: left, error: null });
+      } catch (err) {
+        const left = (await repo.loadPhotos(id)).filter((p) => p.uploadState !== 'uploaded').length;
+        _setInstallState(id, {
+          lastSyncedAt: installJobSyncState(id).lastSyncedAt,
+          waiting: left,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        if (err instanceof SessionExpiredError) break;
+      }
+    }
+  } finally {
+    _installSyncing = false;
+    if (_installRerun) {
+      _installRerun = false;
+      syncInstallJobs().catch(console.error);
+    }
+  }
 }

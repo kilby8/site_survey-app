@@ -31,7 +31,7 @@ export const OFF_SUBJECT = new Set([
 /** Screens: off-subject except on meter/electrical slots (digital meters, inverter displays). */
 export const SCREEN_LABELS = new Set(["Screenshot", "Web page", "Television", "Computer", "Mobile phone"]);
 /** Slot prefixes where a screen is a legitimate subject (digital meters, inverter displays, a pitch app). */
-const DISPLAY_OK_STEPS = ["utility_", "elec_", "roof_pitch"];
+const DISPLAY_OK_STEPS = ["utility_", "elec_", "roof_pitch", "fin_production", "fin_ct_data", "fin_commission", "fin_compliance", "fin_inclinometer"];
 
 const BUILT = ["Building", "Roof", "Wall", "Brick", "Tile", "Metal", "Infrastructure", "Construction"];
 const LAND = ["Field", "Soil", "Prairie", "Plant", "Flora", "Forest", "Garden", "Farm", "Ranch", "Rock", "Sand", "Road"];

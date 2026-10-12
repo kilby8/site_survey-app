@@ -928,3 +928,69 @@ export async function completeSurveyV2(surveyId: string): Promise<{ event_id: st
   );
   return handleResponse<{ event_id: string }>(res);
 }
+
+// ----------------------------------------------------------------
+// Install & final photos (shared crew job per SolarPro project)
+// ----------------------------------------------------------------
+
+/** A photo in a crew job as the server returns it. */
+export interface ServerJobPhoto {
+  id: string;
+  client_photo_id: string | null;
+  label: string | null;
+  captured_at: string | null;
+  remote_url?: string | null;
+  meta: Record<string, unknown> | null;
+}
+
+export interface ServerInstallJob {
+  id: string;
+  kind: string;
+  project_name: string | null;
+  metadata: { answers?: Record<string, unknown>; finished?: Record<string, string> } | null;
+  photos: ServerJobPhoto[];
+}
+
+async function jsonCall<T>(path: string, method: string, body?: unknown): Promise<T> {
+  const authHeaders = await getAuthHeaders();
+  const res = await fetchWithAuthRetry(path, {
+    method,
+    headers: { "Content-Type": "application/json", ...authHeaders },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return handleResponse<T>(res);
+}
+
+/** Create the crew job if it doesn't exist yet (never overwrites); returns it with every crew photo. */
+export function putInstallJob(
+  jobId: string,
+  fields: {
+    solarpro_project_id: string;
+    project_name: string;
+    site_address: string | null;
+    inspector_name: string;
+    solarpro_org_id: string | null;
+    solarpro_email: string | null;
+  },
+): Promise<ServerInstallJob> {
+  return jsonCall(`/api/surveys/install-jobs/${jobId}`, "PUT", fields);
+}
+
+export function patchInstallAnswers(jobId: string, answers: Record<string, unknown>): Promise<{ answers: Record<string, unknown> }> {
+  return jsonCall(`/api/surveys/install-jobs/${jobId}/answers`, "PATCH", { answers });
+}
+
+export function finishInstallPhase(jobId: string, phase: "install_day" | "final_inspection"): Promise<{ event_id: string }> {
+  return jsonCall(`/api/surveys/install-jobs/${jobId}/finish`, "POST", { phase });
+}
+
+export function deleteJobPhoto(jobId: string, clientPhotoId: string): Promise<{ deleted: number }> {
+  return jsonCall(`/api/surveys/${jobId}/photos/by-client/${encodeURIComponent(clientPhotoId)}`, "DELETE");
+}
+
+/** Absolute URL for a server photo (the photo endpoint needs no auth header). */
+export function serverPhotoUrl(remoteUrl: string | null | undefined, photoId: string): string {
+  if (remoteUrl && /^https?:\/\//.test(remoteUrl)) return remoteUrl;
+  if (remoteUrl && remoteUrl.startsWith("/")) return `${API_URL}${remoteUrl}`;
+  return `${API_URL}/api/surveys/photos/${photoId}`;
+}

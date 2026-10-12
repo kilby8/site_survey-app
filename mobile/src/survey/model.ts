@@ -37,6 +37,8 @@ export interface ProjectLink {
 
 export interface SurveyDoc {
   version: 2;
+  /** "survey" (default): site survey. "install": install-day & final photos, shared by the crew. */
+  kind?: "survey" | "install";
   installType: InstallType;
   project: ProjectLink;
   inspectorName: string;
@@ -97,6 +99,13 @@ export interface CapturedPhoto {
   /** Editable markup vectors (MarkupEditor marks); the rendered copy is annotatedRelPath. */
   markup?: unknown[] | null;
   uploadState: UploadState;
+  /**
+   * Set on photos another crew member took (install jobs): shown in the
+   * slots, not stored on this phone. relPath is then the server URL.
+   */
+  crew?: { creatorName: string | null; creatorEmail: string | null } | null;
+  /** Who took it (install jobs; sent in the Golden Block). */
+  creatorName?: string | null;
   serverPhotoId: string | null;
 }
 
@@ -128,6 +137,23 @@ export function planeSeqAfter(id: string): number {
   if (/^[A-Z]$/.test(id)) return id.charCodeAt(0) - 64;
   const m = /^P(\d+)$/.exec(id);
   return m ? Number(m[1]) : 0;
+}
+
+/** A crew install job for one SolarPro project (install day + final). */
+export function newInstallDoc(input: {
+  installType: InstallType;
+  project: ProjectLink;
+  inspectorName: string;
+  siteAddress?: string;
+  now?: string;
+}): SurveyDoc {
+  return {
+    ...newSurveyDoc({ ...input }),
+    kind: "install",
+    answers: input.siteAddress ? { site_address: input.siteAddress } : {},
+    planes: [],
+    planeSeq: 0,
+  };
 }
 
 export function newSurveyDoc(input: {

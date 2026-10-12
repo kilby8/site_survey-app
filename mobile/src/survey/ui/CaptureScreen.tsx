@@ -12,11 +12,12 @@ import React from "react";
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBugReport } from "../../context/BugReportContext";
-import { syncPending } from "../../services/SyncManager";
+import { installJobSyncState, syncInstallJobs, syncPending } from "../../services/SyncManager";
+import { finishInstallPhase } from "../../api/client";
 import { Badge, Button, Card, IconButton, ReasonSheet, Sheet, T } from "../../ui/components";
 import { FramingGuide } from "../../ui/FramingGuide";
 import { color, radius, space } from "../../ui/theme";
-import { STEPS, type SlotDef } from "../blueprint";
+import { stepsFor, type SlotDef } from "../blueprint";
 import { photoLabel } from "../payload";
 import { flagMessage } from "../quality";
 import { likelyNumber } from "../content";
@@ -25,10 +26,21 @@ import { fieldKey, slotKey, type CapturedPhoto } from "../model";
 import { photosForSlot, sectionInstances, surveyReadiness, type RequiredItem } from "../progress";
 import { removePhoto, submitSurvey, updatePhoto, type StoredSurvey } from "../repo";
 import { shareSurveyPdf } from "../report";
+import { shareInstallPdf } from "../installReport";
+import { useCrew } from "../useCrew";
 import { useSurveyEditor } from "../useSurveyEditor";
 import { FieldInput } from "./FieldInput";
 import { SlotTile } from "./SlotTile";
 import { StepTabs } from "./StepTabs";
+
+/** One line for install jobs: what's uploading and who else is shooting. */
+function crewLine(state: { lastSyncedAt: string | null; waiting: number; error: string | null }, crew: CapturedPhoto[]): string {
+  const names = [...new Set(crew.map((p) => p.crew?.creatorName?.split(" ")[0]).filter(Boolean))];
+  const who = names.length ? ` · ${crew.length} from ${names.slice(0, 2).join(", ")}${names.length > 2 ? " +" + (names.length - 2) : ""}` : "";
+  if (state.waiting > 0) return `${state.waiting} uploading${state.error ? " when signal returns" : "…"}${who}`;
+  if (state.error && !state.lastSyncedAt) return `Saved on this phone · uploads when online${who}`;
+  return state.lastSyncedAt ? `Crew up to date${who}` : `Saved on this phone${who}`;
+}
 
 const BLUR_REASONS = ["Best possible in this light", "Label is still readable", "Couldn't get closer", "Different angle on purpose"];
 const SKIP_REASONS = ["No access", "Customer declined", "Not present at this site", "Unsafe to reach"];
@@ -39,6 +51,9 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const ed = useSurveyEditor(surveyId);
+  // Install jobs: the rest of the crew's photos, synced live.
+  const crew = useCrew(ed.doc?.kind === "install" ? surveyId : null, ed.photos.length);
+  const [finishing, setFinishing] = React.useState<string | null>(null);
   const { openBugReport } = useBugReport();
   const scroller = React.useRef<ScrollView>(null);
   // Jump-to-item from Review: positions of each field/slot inside the scroll content.
@@ -105,7 +120,10 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
   }
 
   const doc = ed.doc;
-  const readiness = surveyReadiness(doc, ed.photos);
+  const isInstall = doc.kind === "install";
+  // Everything shown in the slots: this phone's photos plus the crew's.
+  const photos = isInstall ? [...ed.photos, ...crew.photos] : ed.photos;
+  const readiness = surveyReadiness(doc, photos);
   // Meter number read from the meter close-up (on-device text recognition).
   const meterHint = (() => {
     // Most recent close-up first (a retake supersedes an earlier read).
@@ -142,6 +160,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
     }, 120);
     setTimeout(() => setFocusKey(null), 2500);
   };
+  const STEPS = stepsFor(ed.doc);
   const stepIndex = ed.step === "review" ? STEPS.length : STEPS.findIndex((st) => st.id === ed.step);
   const prev = stepIndex > 0 ? (STEPS[stepIndex - 1]?.id ?? null) : null;
   const next = stepIndex < STEPS.length - 1 ? STEPS[stepIndex + 1].id : stepIndex === STEPS.length - 1 ? "review" : null;
@@ -162,7 +181,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
     const key = slotKey(target.slot.id, target.planeId);
     setBusySlot(key);
     try {
-      const res = await takePhoto({ surveyId, slotId: target.slot.id, planeId: target.planeId }, ed.photos);
+      const res = await takePhoto({ surveyId, slotId: target.slot.id, planeId: target.planeId }, photos);
       if (res.kind === "denied") {
         Alert.alert("Camera blocked", "Allow camera access in Settings to take survey photos.");
         return;
@@ -184,7 +203,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
   };
 
   const fromLibrary = async (target: SlotTarget) => {
-    const existing = photosForSlot(ed.photos, target.slot.id, target.planeId).filter((p) => p.qualityStatus !== "rejected");
+    const existing = photosForSlot(photos, target.slot.id, target.planeId).filter((p) => p.qualityStatus !== "rejected");
     const room = (target.slot.max ?? 1) - existing.length;
     if (room <= 0) {
       Alert.alert("Slot is full", `${target.slot.label} takes up to ${target.slot.max ?? 1} photo${(target.slot.max ?? 1) === 1 ? "" : "s"}.`);
@@ -193,7 +212,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
     const key = slotKey(target.slot.id, target.planeId);
     setBusySlot(key);
     try {
-      const filed = await pickFromLibrary({ surveyId, slotId: target.slot.id, planeId: target.planeId }, ed.photos, room);
+      const filed = await pickFromLibrary({ surveyId, slotId: target.slot.id, planeId: target.planeId }, photos, room);
       await ed.reloadPhotos();
       const firstBlurry = filed.find((f) => f.blurry);
       if (firstBlurry) setBlurry(firstBlurry.photo);
@@ -220,6 +239,25 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
     }
   };
 
+  /** Install jobs: tell SolarPro a phase is documented (photos are already up). */
+  const finishPhase = async (phase: "install_day" | "final_inspection") => {
+    setFinishing(phase);
+    try {
+      await ed.flush();
+      await syncInstallJobs(surveyId);
+      const st = installJobSyncState(surveyId);
+      if (st.waiting > 0) throw new Error(`${st.waiting} photo${st.waiting === 1 ? " is" : "s are"} still uploading. Try again when you have signal.`);
+      await finishInstallPhase(surveyId, phase);
+      ed.setExtra("finished", { ...((doc.extra?.finished as Record<string, string>) ?? {}), [phase]: new Date().toISOString() });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Sent to SolarPro", "The office can see this phase's photos in the project.");
+    } catch (e) {
+      Alert.alert("Not sent yet", e instanceof Error ? e.message : String(e));
+    } finally {
+      setFinishing(null);
+    }
+  };
+
   const renderStep = () => {
     const step = STEPS.find((st) => st.id === ed.step)!;
     const instances = sectionInstances(doc, step);
@@ -229,7 +267,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
       <View style={{ gap: space.lg }}>
         <View>
           <T variant="caption" muted>
-            STEP {step.number} OF 5
+            STEP {step.number} OF {STEPS.length}
           </T>
           <T variant="heading" accessibilityRole="header">
             {step.title}
@@ -328,7 +366,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
                         >
                           <SlotTile
                             slot={slot}
-                            photos={photosForSlot(ed.photos, slot.id, inst.planeId)}
+                            photos={photosForSlot(photos, slot.id, inst.planeId)}
                             overridden={overridden.has(key)}
                             highlighted={focusKey === key}
                             onCapture={() => capture({ slot, planeId: inst.planeId })}
@@ -368,12 +406,14 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
           FINISH
         </T>
         <T variant="heading" accessibilityRole="header">
-          Review & submit
+          {isInstall ? "Review & finish" : "Review & submit"}
         </T>
         <T dim>
-          {readiness.ready
-            ? "Everything required is captured. Submit to upload to SolarPro."
-            : "Fill or skip (with a reason) each item below to submit."}
+          {isInstall
+            ? "Photos upload as you take them. When a phase is complete, finish it to send it to SolarPro."
+            : readiness.ready
+              ? "Everything required is captured. Submit to upload to SolarPro."
+              : "Fill or skip (with a reason) each item below to submit."}
         </T>
       </View>
 
@@ -447,18 +487,38 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
       })}
 
       <Card style={{ gap: space.sm }}>
-        <T variant="title">Notes for the design team</T>
+        <T variant="title">{isInstall ? "Job notes" : "Notes for the design team"}</T>
         <View pointerEvents={locked ? "none" : "auto"}>
           <FieldInput
-            field={{ id: "notes", label: "Survey notes", kind: "multiline", placeholder: "Anything the designer should know" }}
+            field={{ id: "notes", label: isInstall ? "Notes" : "Survey notes", kind: "multiline", placeholder: isInstall ? "Anything the office or inspector should know" : "Anything the designer should know" }}
             value={doc.notes}
             onChange={(v) => ed.setNotes(typeof v === "string" ? v : "")}
           />
         </View>
       </Card>
 
+      {isInstall
+        ? readiness.steps.map((sp) => {
+            const phase = sp.step.id as "install_day" | "final_inspection";
+            const left = sp.items.filter((i) => !i.done && !i.overridden).length + sp.flagged.filter((p) => !(p.notes ?? "").trim()).length;
+            const sentAt = (doc.extra?.finished as Record<string, string> | undefined)?.[phase];
+            return (
+              <Button
+                key={phase}
+                testID={`finish-${phase}`}
+                label={left ? `${sp.step.short}: ${left} item${left === 1 ? "" : "s"} left` : sentAt ? `${sp.step.short} sent — send again` : `Finish ${sp.step.short.toLowerCase()}`}
+                icon={left ? undefined : "cloud-upload-outline"}
+                kind={sentAt ? "secondary" : "primary"}
+                disabled={left > 0}
+                busy={finishing === phase}
+                onPress={() => void finishPhase(phase)}
+              />
+            );
+          })
+        : null}
+
       <Button
-        label="Preview PDF report"
+        label={isInstall ? "Share photo report (PDF)" : "Preview PDF report"}
         icon="document-text-outline"
         kind="secondary"
         busy={pdfBusy}
@@ -466,7 +526,8 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
           setPdfBusy(true);
           try {
             await ed.flush();
-            await shareSurveyPdf(doc, ed.photos);
+            if (isInstall) await shareInstallPdf(doc, photos);
+            else await shareSurveyPdf(doc, ed.photos);
           } catch (e) {
             Alert.alert("Report not made", e instanceof Error ? e.message : String(e));
           } finally {
@@ -475,7 +536,7 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
         }}
       />
 
-      {!locked ? (
+      {!locked && !isInstall ? (
         <Button
           testID="submit-survey"
           label={readiness.ready ? "Submit survey" : `${readiness.missing.length + readiness.unexplainedBlurry.length} items left`}
@@ -504,7 +565,15 @@ export function CaptureScreen({ surveyId }: { surveyId: string }) {
                 color={ed.saveState === "error" ? color.red : color.textMuted}
               />
               <T variant="caption" muted>
-                {locked ? "Submitted · read only" : ed.saveState === "error" ? "Not saved — retrying" : ed.saveState === "saving" ? "Saving…" : "Saved on this phone"}
+                {locked
+                  ? "Submitted · read only"
+                  : ed.saveState === "error"
+                    ? "Not saved — retrying"
+                    : isInstall
+                      ? crewLine(crew.state, crew.photos)
+                      : ed.saveState === "saving"
+                        ? "Saving…"
+                        : "Saved on this phone"}
               </T>
             </View>
           </View>

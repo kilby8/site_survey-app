@@ -54,7 +54,7 @@ export function SlotTile({
         accessibilityRole="button"
         accessibilityLabel={
           first
-            ? `${slot.label}: ${ui.text}. Open photo${flagged ? `, flagged ${flagLabels(first.qualityFlags?.length ? first.qualityFlags : ["blurry"])}` : ""}`
+            ? `${slot.label}: ${ui.text}. Open photo${first.crew?.creatorName ? ` taken by ${first.crew.creatorName}` : ""}${flagged ? `, flagged ${flagLabels(first.qualityFlags?.length ? first.qualityFlags : ["blurry"])}` : ""}`
             : `Take ${slot.label} photo. ${slot.hint}`
         }
         style={({ pressed }) => [s.media, pressed && { opacity: 0.8 }]}
@@ -73,6 +73,13 @@ export function SlotTile({
           <View style={s.count}>
             <Text style={s.countText}>
               {usable.length}/{max}
+            </Text>
+          </View>
+        ) : null}
+        {first?.crew?.creatorName ? (
+          <View style={s.by} accessibilityElementsHidden>
+            <Text style={s.byText} numberOfLines={1}>
+              {first.crew.creatorName.split(" ")[0]}
             </Text>
           </View>
         ) : null}
@@ -150,6 +157,8 @@ const s = StyleSheet.create({
   },
   count: { position: "absolute", right: 6, top: 6, backgroundColor: color.overlay, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
   countText: { color: color.text, fontWeight: "800", fontSize: 13 },
+  by: { position: "absolute", left: 6, bottom: 6, maxWidth: "70%", backgroundColor: color.overlay, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+  byText: { color: color.text, fontWeight: "700", fontSize: 12 },
   chip: { position: "absolute", left: 6, top: 6, width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
   strip: { flexDirection: "row", flexWrap: "wrap", gap: 4, paddingHorizontal: space.sm, paddingTop: space.sm },
   mini: { width: 48, height: 48, borderRadius: 6, overflow: "hidden", borderWidth: 2, borderColor: color.border },
