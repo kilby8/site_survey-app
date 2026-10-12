@@ -221,6 +221,6 @@ export const SURVEY_CATEGORIES = [
   // Solar installation categories — trigger category-specific metadata sections
   { id: "ground_mount", name: "Ground Mount" },
   { id: "roof_mount", name: "Roof Mount" },
-  { id: "solar_fencing", name: "Solar Fencing" },
+  { id: "solar_fencing", name: "Solfence" },
   { id: "commercial_3phase", name: "Commercial 3-Phase Solar" },
 ];

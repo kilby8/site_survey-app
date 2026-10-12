@@ -159,7 +159,7 @@ function evaluateSolarFencing(meta: SolarFencingMeta): ReportFlag[] {
   if (meta.lower_shade_risk === true) {
     flags.push({
       priority: 'High',
-      category: 'Solar Fencing',
+      category: 'Solfence',
       field:    'lower_shade_risk',
       message:  'Low-lying obstructions present — shade impact must be modelled at design stage. ' +
                 'String sizing and production estimates will be affected.',
