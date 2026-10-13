@@ -39,7 +39,7 @@ interface BugReportContextValue {
 const BugReportContext = React.createContext<BugReportContextValue | undefined>(undefined);
 
 function getAppVersionLabel(): string {
-  const appName = applicationName || 'Site Survey';
+  const appName = applicationName || 'SolarPro Capture';
   const version = nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'unknown';
   const build = nativeBuildVersion
     ?? (Platform.OS === 'android'

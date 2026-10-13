@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Site Survey",
+    "name": "SPC",
     "slug": "site-survey-app",
     "version": "2.0.0",
     "scheme": "sitesurvey",
@@ -18,9 +18,9 @@
         "googleMapsApiKey": "AIzaSyBcXQC-i7s2TJz8PNOM1OhiU-sEhPR41wE"
       },
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Site Survey needs your location to record GPS coordinates for each survey.",
-        "NSCameraUsageDescription": "Site Survey needs camera access to capture site photos.",
-        "NSPhotoLibraryUsageDescription": "Site Survey needs photo library access to attach photos to surveys.",
+        "NSLocationWhenInUseUsageDescription": "SolarPro Capture needs your location to record GPS coordinates for each survey.",
+        "NSCameraUsageDescription": "SolarPro Capture needs camera access to capture site photos.",
+        "NSPhotoLibraryUsageDescription": "SolarPro Capture needs photo library access to attach photos to surveys.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -62,8 +62,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Site Survey needs photo library access.",
-          "cameraPermission": "Site Survey needs camera access."
+          "photosPermission": "SolarPro Capture needs photo library access.",
+          "cameraPermission": "SolarPro Capture needs camera access."
         }
       ],
       "expo-secure-store",

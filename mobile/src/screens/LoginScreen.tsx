@@ -297,7 +297,7 @@ export default function LoginScreen() {
               <View style={styles.logoWrap}>
                 <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
               </View>
-              <Text style={styles.title}>Site Survey</Text>
+              <Text style={styles.title}>SolarPro Capture</Text>
               <Text style={styles.subtitle}>Use your SolarPro account to sign in</Text>
               <Text style={styles.helperText}>Sign in once with SolarPro. After that the app opens and saves surveys even with no signal.</Text>
 

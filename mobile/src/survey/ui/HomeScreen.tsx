@@ -111,7 +111,7 @@ export function HomeScreen() {
       <View style={s.header}>
         <View style={{ flex: 1 }}>
           <T variant="heading" accessibilityRole="header">
-            Site Surveys
+            SolarPro Capture
           </T>
           <T dim numberOfLines={1}>
             {user?.fullName || user?.email}

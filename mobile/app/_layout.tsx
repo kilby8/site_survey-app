@@ -95,7 +95,7 @@ export default function RootLayout() {
                     contentStyle: { backgroundColor: colors.background },
                   }}
                 >
-                  <Stack.Screen name="index" options={{ title: 'Site Surveys', headerShown: false }} />
+                  <Stack.Screen name="index" options={{ title: 'SolarPro Capture', headerShown: false }} />
                   <Stack.Screen name="login" options={{ title: 'Sign In', headerShown: false }} />
                   <Stack.Screen name="new-survey" options={{ title: 'New Survey', headerShown: false }} />
                   <Stack.Screen name="map" options={{ title: 'Survey Map', headerShown: true }} />
