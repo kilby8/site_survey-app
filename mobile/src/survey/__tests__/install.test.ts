@@ -137,6 +137,11 @@ describe("install checklist v2 — per job type (CompanyCam UTS templates, 2026-
     expect(list.some((s) => s.id === "uts_tesla_rem")).toBe(false);
   });
 
+  it("offers only the job types that have a checklist, so nobody opens an empty one", () => {
+    const field = INSTALL_V2_STEPS[0].sections[0].fields.find((f) => f.id === "job_type")!;
+    expect(field.options).toEqual(["Solar only", "Solar + Battery"]);
+  });
+
   it("every item cites its LightReach / Solrite / IL / AHJ source, and IF items are never required", () => {
     for (const s of INSTALL_V2_STEPS.flatMap((st) => st.sections.flatMap((sec) => sec.slots))) {
       expect(s.requirementId).toMatch(/LR|SR|IL|AHJ/);

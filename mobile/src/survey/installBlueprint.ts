@@ -169,6 +169,11 @@ export const INSTALL_STEPS: StepDef[] = [
 
 export const JOB_TYPES = ["Solar only", "Solar + Battery", "Battery only", "Solar R&R", "Service call"] as const;
 export type JobType = (typeof JOB_TYPES)[number];
+/**
+ * Job types the crew can pick today. Battery only, R&R and Service join this list
+ * when their checklists are built, so nobody opens an empty checklist in the field.
+ */
+export const OFFERED_JOB_TYPES: JobType[] = ["Solar only", "Solar + Battery"];
 
 const SOLAR_JOBS: JobType[] = ["Solar only", "Solar + Battery"];
 const onlyFor = (...types: JobType[]) => ({ field: "job_type", oneOf: types });
@@ -192,7 +197,7 @@ export const INSTALL_V2_STEPS: StepDef[] = [
         id: "v2_job",
         title: "Job type",
         fields: [
-          { id: "job_type", label: "Job type", kind: "choice", required: true, options: [...JOB_TYPES], help: "Loads the photo checklist for this kind of job. Anyone on the crew can set it." },
+          { id: "job_type", label: "Job type", kind: "choice", required: true, options: [...OFFERED_JOB_TYPES], help: "Loads the photo checklist for this kind of job. Anyone on the crew can set it. Battery only, R&R and Service jobs: use the old checklist in CompanyCam for now." },
           { id: "equipment_brand", label: "Equipment", kind: "choice", required: true, options: ["Enphase", "Tesla"], showIf: onlyFor(...SOLAR_JOBS) },
           { id: "financier", label: "Financing", kind: "choice", options: ["LightReach", "Solrite", "Cash / other"], showIf: onlyFor(...SOLAR_JOBS) },
         ],
