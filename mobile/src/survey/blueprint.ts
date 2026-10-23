@@ -9,7 +9,7 @@
 // shipped, because captured photos and answers are stored by id.
 // ============================================================
 
-import { INSTALL_STEPS } from "./installBlueprint";
+import { INSTALL_STEPS, INSTALL_V2_STEPS } from "./installBlueprint";
 import type {
   EvidenceCategory,
   SolarProUsageMapping,
@@ -46,6 +46,8 @@ export interface Condition {
   /** Field id (same scope: plane fields for plane items, survey fields otherwise). */
   field?: string;
   equals?: string | boolean;
+  /** For single-choice answers: true when the answer is one of these. */
+  oneOf?: string[];
   notEquals?: string | boolean;
   /** For multichoice answers: true when the answer includes any of these. */
   includesAny?: string[];
@@ -378,11 +380,16 @@ export const STEPS: StepDef[] = [
 export const STEP_IDS = STEPS.map((s) => s.id);
 
 /** Every step of every job kind (slot ids are unique across them). */
-export const ALL_STEPS: StepDef[] = [...STEPS, ...INSTALL_STEPS];
+export const ALL_STEPS: StepDef[] = [...STEPS, ...INSTALL_STEPS, ...INSTALL_V2_STEPS];
 
-/** The steps a document walks through: site survey, or install & final photos. */
-export function stepsFor(doc: { kind?: "survey" | "install" } | null | undefined): StepDef[] {
-  return doc?.kind === "install" ? INSTALL_STEPS : STEPS;
+/**
+ * The steps a document walks through: site survey, or install & final photos.
+ * Install jobs started since the per-job-type checklists (installChecklist 2)
+ * use INSTALL_V2_STEPS; older jobs keep the checklist they were started on.
+ */
+export function stepsFor(doc: { kind?: "survey" | "install"; installChecklist?: number } | null | undefined): StepDef[] {
+  if (doc?.kind !== "install") return STEPS;
+  return doc.installChecklist === 2 ? INSTALL_V2_STEPS : INSTALL_STEPS;
 }
 
 export function getStep(id: SurveyStepId): StepDef {

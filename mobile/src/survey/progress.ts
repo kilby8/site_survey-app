@@ -45,6 +45,7 @@ export function conditionHolds(
   if (!cond.field) return true;
   const value = answers[cond.field];
   if (cond.equals !== undefined && value !== cond.equals) return false;
+  if (cond.oneOf && (typeof value !== "string" || !cond.oneOf.includes(value))) return false;
   if (cond.notEquals !== undefined && (value === cond.notEquals || !isAnswered(value))) return false;
   if (cond.includesAny) {
     if (!Array.isArray(value) || !value.some((v) => cond.includesAny!.includes(v))) return false;

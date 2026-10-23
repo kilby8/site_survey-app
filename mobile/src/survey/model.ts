@@ -39,6 +39,8 @@ export interface SurveyDoc {
   version: 2;
   /** "survey" (default): site survey. "install": install-day & final photos, shared by the crew. */
   kind?: "survey" | "install";
+  /** Install jobs: 2 = per-job-type checklists (2026-10-22); absent = the first checklist. */
+  installChecklist?: 2;
   installType: InstallType;
   project: ProjectLink;
   inspectorName: string;
@@ -150,6 +152,7 @@ export function newInstallDoc(input: {
   return {
     ...newSurveyDoc({ ...input }),
     kind: "install",
+    installChecklist: 2,
     answers: input.siteAddress ? { site_address: input.siteAddress } : {},
     planes: [],
     planeSeq: 0,

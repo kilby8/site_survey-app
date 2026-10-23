@@ -8,7 +8,7 @@ jest.mock("expo-crypto", () => ({ randomUUID: () => "uuid" }));
 
 import type { ServerInstallJob } from "../../api/client";
 import { ALL_STEPS, findSlot, STEPS, stepsFor } from "../blueprint";
-import { INSTALL_STEPS } from "../installBlueprint";
+import { INSTALL_STEPS, INSTALL_V2_STEPS } from "../installBlueprint";
 import {
   crewPhotos,
   dirtyAnswerKeys,
@@ -23,13 +23,23 @@ import {
 } from "../installJob";
 import { installReportHtml, isReadableSlot } from "../installReport";
 import { newInstallDoc, type CapturedPhoto } from "../model";
-import { surveyReadiness } from "../progress";
+import { sectionInstances, surveyReadiness } from "../progress";
 import type { StoredSurvey } from "../repo";
 
 const project = { solarproProjectId: "p-123", solarproClientId: "c-1", projectName: "Andrew Lindsey", clientName: "Andrew Lindsey" };
 
+/** A job started on the first install checklist (the tests below were written for it). */
 function doc() {
-  return newInstallDoc({ installType: "roof_mount", project, inspectorName: "James Carpenter", siteAddress: "27 Oak Ct, Peru IL" });
+  const d = newInstallDoc({ installType: "roof_mount", project, inspectorName: "James Carpenter", siteAddress: "27 Oak Ct, Peru IL" });
+  delete d.installChecklist;
+  return d;
+}
+
+/** A job started now: per-job-type checklists. */
+function v2Doc(answers: Record<string, string> = {}) {
+  const d = newInstallDoc({ installType: "roof_mount", project, inspectorName: "James Carpenter", siteAddress: "27 Oak Ct, Peru IL" });
+  d.answers = { ...d.answers, ...answers };
+  return d;
 }
 
 function photo(id: string, slotId: string, extra: Partial<CapturedPhoto> = {}): CapturedPhoto {
@@ -90,6 +100,49 @@ describe("install blueprint", () => {
     const before = surveyReadiness(d, []).missing.length;
     const after = surveyReadiness(d, [photo("cody-1", "inst_feet", { crew: { creatorName: "Cody Arnold", creatorEmail: null } })]).missing.length;
     expect(after).toBe(before - 1);
+  });
+});
+
+describe("install checklist v2 — per job type (CompanyCam UTS templates, 2026-10-22)", () => {
+  const items = (d: ReturnType<typeof v2Doc>) =>
+    stepsFor(d).flatMap((st) => sectionInstances(d, st).flatMap((i) => i.slots));
+
+  it("new jobs get it; jobs started on the first checklist keep theirs", () => {
+    expect(stepsFor(v2Doc())).toBe(INSTALL_V2_STEPS);
+    expect(stepsFor(doc())).toBe(INSTALL_STEPS);
+  });
+
+  it("shows only the job-type question until someone picks one", () => {
+    const d = v2Doc();
+    expect(items(d)).toEqual([]);
+    expect(surveyReadiness(d, []).missing.map((m) => m.key)).toContain("field:job_type");
+  });
+
+  it("Solar only matches the template: 40 items, 31 photo-required, no battery items", () => {
+    const list = items(v2Doc({ job_type: "Solar only", equipment_brand: "Enphase" }));
+    // The Tesla-only MCI item is one of the 40; count it with Tesla picked.
+    const tesla = items(v2Doc({ job_type: "Solar only", equipment_brand: "Tesla" }));
+    expect(tesla.length).toBe(40);
+    expect(tesla.filter((s) => s.required).length).toBe(31);
+    expect(list.some((s) => s.id.startsWith("uts_battery"))).toBe(false);
+    expect(list.some((s) => s.id === "uts_subpanel")).toBe(true);
+  });
+
+  it("Solar + Battery adds the battery section and reserve check: 37 photo-required", () => {
+    const list = items(v2Doc({ job_type: "Solar + Battery", equipment_brand: "Enphase" }));
+    expect(list.filter((s) => s.required).length).toBe(37);
+    expect(list.some((s) => s.id === "uts_battery_reserve")).toBe(true);
+    expect(list.some((s) => s.id === "uts_subpanel")).toBe(false);
+    expect(list.some((s) => s.id === "uts_5p_cts")).toBe(true);
+    expect(list.some((s) => s.id === "uts_tesla_rem")).toBe(false);
+  });
+
+  it("every item cites its LightReach / Solrite / IL / AHJ source, and IF items are never required", () => {
+    for (const s of INSTALL_V2_STEPS.flatMap((st) => st.sections.flatMap((sec) => sec.slots))) {
+      expect(s.requirementId).toMatch(/LR|SR|IL|AHJ/);
+      expect(s.hint).toContain(`[${s.requirementId}]`);
+      if (s.label.startsWith("IF")) expect(s.required).toBe(false);
+    }
   });
 });
 
