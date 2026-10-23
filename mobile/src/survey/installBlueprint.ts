@@ -8,7 +8,7 @@
 // Slot ids start with "inst_" (install day) or "fin_" (final).
 // ============================================================
 
-import type { SlotDef, StepDef } from "./blueprint";
+import type { SectionDef, SlotDef, StepDef } from "./blueprint";
 
 const I = ["Inspection", "General Documentation"] as const;
 const slot = (s: Omit<SlotDef, "requirementId" | "usage"> & { req?: string }): SlotDef => ({
@@ -167,15 +167,26 @@ export const INSTALL_STEPS: StepDef[] = [
 // Ids here are new and, like every id, must never change once shipped.
 // ============================================================
 
-export const JOB_TYPES = ["Solar only", "Solar + Battery", "Battery only", "Solar R&R", "Service call"] as const;
+export const JOB_TYPES = [
+  "Solar only",
+  "Solar + Battery",
+  "Solrite – Solar + Battery",
+  "Solrite – Battery only",
+  "Battery only",
+  "Solar R&R",
+  "Service call",
+] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 /**
  * Job types the crew can pick today. Battery only, R&R and Service join this list
  * when their checklists are built, so nobody opens an empty checklist in the field.
  */
-export const OFFERED_JOB_TYPES: JobType[] = ["Solar only", "Solar + Battery"];
+export const OFFERED_JOB_TYPES: JobType[] = ["Solar only", "Solar + Battery", "Solrite – Solar + Battery", "Solrite – Battery only"];
 
 const SOLAR_JOBS: JobType[] = ["Solar only", "Solar + Battery"];
+const SOLRITE_PV: JobType = "Solrite – Solar + Battery";
+const SOLRITE_BATT: JobType = "Solrite – Battery only";
+const SOLRITE_JOBS: JobType[] = [SOLRITE_PV, SOLRITE_BATT];
 const onlyFor = (...types: JobType[]) => ({ field: "job_type", oneOf: types });
 
 const v2 = (s: Omit<SlotDef, "requirementId" | "usage"> & { req: string }): SlotDef => ({
@@ -184,6 +195,131 @@ const v2 = (s: Omit<SlotDef, "requirementId" | "usage"> & { req: string }): Slot
   requirementId: s.req,
   usage: [...I],
 });
+
+// ------------------------------------------------------------
+// Solrite (Duracell Max Hybrid) — Ray's CompanyCam templates, read 2026-10-23:
+//   "Solrite M1 Photos – Solar + Battery (Duracell MA PV + Duracell Max Hybrid)"
+//     3b3072da…, SE-0004-05, 42 items;
+//   "Solrite M1 Photos – Battery Only (Duracell Max Hybrid)" bf13eaab…,
+//     SE-0004-07 battery lease, 31 items.
+// Item numbers are Solrite's and go in the tag ([SR 4.5-3]). Items the template
+// itself calls conditional (shading, E-STOP "if applicable", existing array) are
+// "IF" here and never required; the protected load panel photos show (and are
+// required) only on load-side backup. The network items (5.10a–d)
+// are done at commissioning, so they sit in the Final step.
+// ------------------------------------------------------------
+const PV_ONLY = { field: "job_type", equals: SOLRITE_PV };
+const BATT_ONLY = { field: "job_type", equals: SOLRITE_BATT };
+const LOAD_SIDE = { field: "backup_type", equals: "Partial home (load side)" };
+
+const SOLRITE_INSTALL_SECTIONS: SectionDef[] = [
+  {
+    id: "sr_general",
+    title: "Solrite · General",
+    showIf: onlyFor(...SOLRITE_JOBS),
+    fields: [],
+    slots: [
+      v2({ id: "sr_front_address", label: "Front of house + street address", hint: "Take this FIRST — it marks the start of the job", req: "SR 1.1", required: true, max: 2, guide: "house_front" }),
+      v2({ id: "sr_shading", label: "IF: shading fixed — before AND after", hint: "Trees trimmed etc.; won't fit in one frame: 180° pano left to right", req: "SR 1.2", required: false, max: 6, guide: "shade", showIf: PV_ONLY }),
+      v2({ id: "sr_equipment_wall", label: "Equipment on wall", hint: "MSP, monitoring, disconnects and conduit in one shot. Not within 36\" of gas, not in HVAC enclosures, BESS ventilated", req: "SR 1.3", required: true, max: 3, guide: "wide" }),
+    ],
+  },
+  {
+    id: "sr_roof",
+    title: "Solrite · Roof PV array & structure",
+    showIf: onlyFor(SOLRITE_PV),
+    fields: [],
+    slots: [
+      v2({ id: "sr_racking", label: "Racking assembly, each (before modules)", hint: "Rail, attachment and flashing on EACH assembly before modules; manufacturer torque specs", req: "SR 2.1", required: true, max: 8, guide: "material" }),
+      v2({ id: "sr_conduit_run", label: "Conduit run, incl. attic", hint: "Every transition and connection along the whole run, attic too", req: "SR 2.2", required: true, max: 8, guide: "attic" }),
+      v2({ id: "sr_penetration", label: "Roof penetration + waterproofing close-up", hint: "The penetration, then a close-up of how it's sealed", req: "SR 2.3", required: true, max: 3, guide: "material" }),
+      v2({ id: "sr_jbox", label: "Every J-box open", hint: "Splices and grounding visible; weep hole ≤1/4\" at the low point; NO wire nuts on ground (NEC 250.8)", req: "SR 2.4", required: true, max: 6, guide: "label" }),
+      v2({ id: "sr_module_label", label: "Module label (back of one module)", hint: "Part number and electrical specs readable", req: "SR 2.5", required: true, max: 1, guide: "label" }),
+      v2({ id: "sr_array_each", label: "Each array, complete", hint: "The whole installed array; flat roofs: 18\" min in-row spacing visible", req: "SR 2.6", required: true, max: 6, guide: "wide" }),
+      v2({ id: "sr_tilt", label: "Tilt measurement, each array", hint: "Measured ON the array with the modules in the shot", req: "SR 2.7", required: true, max: 6, guide: "pitch_gauge" }),
+      v2({ id: "sr_wire_mgmt", label: "Wire management under array, each roof", hint: "Clear line of sight under the array; no wire touching the roof", req: "SR 2.8", required: true, max: 6, guide: "roof_plane" }),
+      v2({ id: "sr_rack_ground", label: "Rack grounding method", hint: "Clear shot of how the rack is grounded", req: "SR 2.9", required: true, max: 3, guide: "label" }),
+      v2({ id: "sr_micro_map", label: "Micro layout map w/ serials + inverter model", hint: "Map with serials (checked against Duracell Power Center) plus the micro and its model. M Series: NC0154 single / NC0142 dual", req: "SR 2.10", required: true, max: 4, guide: "label" }),
+    ],
+  },
+  {
+    id: "sr_existing_pv",
+    title: "Solrite · Existing solar",
+    showIf: onlyFor(SOLRITE_BATT),
+    fields: [{ id: "sr_has_pv", label: "Home already has solar?", kind: "yesno", required: true }],
+    slots: [
+      v2({ id: "sr_existing_array", label: "IF existing solar: each array, complete", hint: "Only if the home already has PV — every array, whole system in frame", req: "SR 2.6", required: false, max: 6, guide: "wide", showIf: { field: "sr_has_pv", equals: true } }),
+    ],
+  },
+  {
+    id: "sr_ac",
+    title: "Solrite · AC ground equipment",
+    showIf: onlyFor(...SOLRITE_JOBS),
+    fields: [],
+    slots: [
+      v2({ id: "sr_gateway_open", label: "Gateway cover open — Ethernet + AC wiring (1 of 3)", hint: "HARDWIRED Ethernet only (remove TP-Link + BOOSTER); upright, conduit from the bottom. Meters: production FF000002 first, then consumption FF000001", req: "SR 3.1a", required: true, max: 2, guide: "panel_open", showIf: PV_ONLY }),
+      v2({ id: "sr_gateway_open_batt", label: "Gateway cover open — Ethernet + AC wiring (1 of 3)", hint: "HARDWIRED Ethernet only (remove TP-Link + BOOSTER); upright, conduit from the bottom. Battery only: enter ONLY consumption meter FF000001", req: "SR 3.1a", required: true, max: 2, guide: "panel_open", showIf: BATT_ONLY }),
+      v2({ id: "sr_gateway_serial", label: "Gateway serial (top-right of display) (2 of 3)", hint: "Serial number at the top-right of the gateway screen", req: "SR 3.1b", required: true, max: 1, guide: "label" }),
+      v2({ id: "sr_gateway_part", label: "Gateway enclosure part-number label (3 of 3)", hint: "Part number label on the gateway box", req: "SR 3.1c", required: true, max: 1, guide: "label" }),
+      v2({ id: "sr_main_disconnect", label: "Main service disconnect + label", hint: "Label with the fuse/breaker rating readable, plus all the wiring", req: "SR 3.2a", required: true, max: 3, guide: "panel_open" }),
+      v2({ id: "sr_estop_pv", label: "IF: E-STOP wiring + label", hint: "If there is one: wiring in full and the inside label with PART NUMBER", req: "SR 3.2b", required: false, max: 2, guide: "label", showIf: PV_ONLY }),
+      v2({ id: "sr_estop_batt", label: "E-STOP wiring + label", hint: "Wiring in full and the inside label with PART NUMBER", req: "SR 3.2b", required: true, max: 2, guide: "label", showIf: BATT_ONLY }),
+      v2({ id: "sr_ac_disconnects", label: "All AC disconnects + labels", hint: "Every disconnect with wiring; one label photo if all ratings match, else one each", req: "SR 3.2c", required: true, max: 6, guide: "panel_open" }),
+    ],
+  },
+  {
+    id: "sr_interconnect",
+    title: "Solrite · Interconnection",
+    showIf: onlyFor(...SOLRITE_JOBS),
+    fields: [],
+    slots: [
+      v2({ id: "sr_msp_open", label: "MSP, main cover open", hint: "Main breaker and its rating visible; close-up if needed", req: "SR 4.1", required: true, max: 3, guide: "panel_open" }),
+      v2({ id: "sr_msp_label", label: "MSP label (busbar rating / part #)", hint: "Busbar rating or part number; no label → photo the door where it should be", req: "SR 4.2", required: true, max: 2, guide: "label" }),
+      v2({ id: "sr_dead_front", label: "MSP dead front off", hint: "After the non-essential load panel and gateway breakers are in; all wiring visible", req: "SR 4.3", required: true, max: 2, guide: "panel_open", showIf: PV_ONLY }),
+      v2({ id: "sr_dead_front_batt", label: "MSP dead front off — no G-N bond on protected loads", hint: "All wiring visible; show there is NO ground-neutral bond on the protected load circuit", req: "SR 4.3", required: true, max: 2, guide: "panel_open", showIf: BATT_ONLY }),
+      v2({ id: "sr_pv_combiner", label: "PV combiner panel(s) — breakers + label", hint: "Every combiner open, all breakers labelled, amp rating label readable", req: "SR 4.4", required: true, max: 4, guide: "panel_open", showIf: PV_ONLY }),
+      v2({ id: "sr_mh_front", label: "Max Hybrid — front", hint: "The Max Hybrid as installed, from the front", req: "SR 4.5-1", required: true, max: 1, guide: "wide" }),
+      v2({ id: "sr_mh_inside", label: "Max Hybrid — inside", hint: "Cover off", req: "SR 4.5-2", required: true, max: 2, guide: "panel_open" }),
+      v2({ id: "sr_mh_dc_wiring", label: "Internal DC wiring", hint: "DC busbars, cable routing, terminations — every conductor connection visible", req: "SR 4.5-3", required: true, max: 3, guide: "panel_open" }),
+      v2({ id: "sr_gutter", label: "Gutter box + busbar interior, open", hint: "Gutter box grounded, every entrance sealed; stack grounds in the same conduit as the DC run", req: "SR 4.5-4", required: true, max: 3, guide: "panel_open" }),
+      v2({ id: "sr_plp_open", label: "Protected load panel open (load side)", hint: "Every breaker in the protected load panel", req: "SR 4.5-5", required: true, max: 2, guide: "subpanel", showIf: LOAD_SIDE }),
+      v2({ id: "sr_plp_label", label: "Protected load panel ratings (load side)", hint: "Busbar rating label and main breaker rating readable", req: "SR 4.5-6", required: true, max: 2, guide: "label", showIf: LOAD_SIDE }),
+      v2({ id: "sr_dura5_dc", label: "Dura 5 DC wiring", hint: "DC wiring leaves the battery stacks ONLY through the designated cable exits", req: "SR 4.5-7", required: true, max: 3, guide: "material" }),
+      v2({ id: "sr_stack_ground", label: "Stack grounding daisy-chain", hint: "Continuous ground stack to stack, last one landing on the inverter ground bar", req: "SR 4.5-8", required: true, max: 3, guide: "material" }),
+    ],
+  },
+  {
+    id: "sr_battery",
+    title: "Solrite · Battery (Duracell Max Hybrid)",
+    showIf: onlyFor(...SOLRITE_JOBS),
+    fields: [],
+    slots: [
+      v2({ id: "sr_layout", label: "Battery layout + clearances", hint: "All equipment and its surroundings, gaps between batteries visible", req: "SR 5.1", required: true, max: 3, guide: "wide" }),
+      v2({ id: "sr_mh_serial", label: "Max Hybrid serial label", hint: "On the side panel of the power unit", req: "SR 5.2a", required: true, max: 1, guide: "label" }),
+      v2({ id: "sr_dongle", label: "Comms dongle — hardwired", hint: "Must be hardwired; wireless is rejected", req: "SR 5.2b", required: true, max: 1, guide: "material" }),
+      v2({ id: "sr_cts", label: "Storage CTs + orientation", hint: "Gateway consumption CTs on EVERY job. Whole home: service side upstream of the Max Hybrid. Load side: 2× white 300 A at the MSP. RGM PV CT always", req: "SR 5.3", required: true, max: 3, guide: "panel_open", showIf: PV_ONLY }),
+      v2({ id: "sr_cts_batt", label: "Storage CTs + orientation", hint: "Gateway consumption CTs on EVERY job. Whole home: service side upstream of the Max Hybrid. Load side: 2× white 300 A at the MSP. No PV CT on battery only", req: "SR 5.3", required: true, max: 3, guide: "panel_open", showIf: BATT_ONLY }),
+      v2({ id: "sr_mounting", label: "Mounting / anchoring", hint: "Towers into WALL STUDS — or unistrut, a 500 lb+ drillable pad, or a plinth anchored to the floor", req: "SR 5.5", required: true, max: 3, guide: "material" }),
+      v2({ id: "sr_grid_dc", label: "Grid, MicroGrid + DC connections (cover off)", hint: "One sharp, well-lit shot with every termination", req: "SR 5.8", required: true, max: 2, guide: "panel_open" }),
+      v2({ id: "sr_bms", label: "BMS connections, ALL stacks", hint: "BMS per the manual on every battery in every stack", req: "SR 5.9", required: true, max: 4, guide: "material" }),
+    ],
+  },
+];
+
+const SOLRITE_FINAL_SECTIONS: SectionDef[] = [
+  {
+    id: "sr_network",
+    title: "Solrite · Network",
+    showIf: onlyFor(...SOLRITE_JOBS),
+    fields: [],
+    slots: [
+      v2({ id: "sr_net_setup", label: "PC-PRO-WL on switch + router", hint: "Connected to the Ethernet switch and the router", req: "SR 5.10a", required: true, max: 2, guide: "material" }),
+      v2({ id: "sr_net_host", label: "HOST device label", hint: "Model readable", req: "SR 5.10b", required: true, max: 1, guide: "label" }),
+      v2({ id: "sr_net_client", label: "CLIENT device label + placement", hint: "Model readable; on a flat surface indoors, not wall-mounted or in an enclosure", req: "SR 5.10c", required: true, max: 2, guide: "label" }),
+      v2({ id: "sr_net_stickers", label: "WiFi + Admin password stickers", hint: "Photo them, then THROW THEM AWAY — none left at the customer's", req: "SR 5.10d", required: true, max: 1, guide: "label" }),
+    ],
+  },
+];
 
 export const INSTALL_V2_STEPS: StepDef[] = [
   {
@@ -197,9 +333,10 @@ export const INSTALL_V2_STEPS: StepDef[] = [
         id: "v2_job",
         title: "Job type",
         fields: [
-          { id: "job_type", label: "Job type", kind: "choice", required: true, options: [...OFFERED_JOB_TYPES], help: "Loads the photo checklist for this kind of job. Anyone on the crew can set it. Battery only, R&R and Service jobs: use the old checklist in CompanyCam for now." },
+          { id: "job_type", label: "Job type", kind: "choice", required: true, options: [...OFFERED_JOB_TYPES], help: "Loads the photo checklist for this kind of job. Anyone on the crew can set it. Solrite jobs (Duracell Max Hybrid) have their own list. UTS battery only, R&R and Service jobs: use CompanyCam for now." },
           { id: "equipment_brand", label: "Equipment", kind: "choice", required: true, options: ["Enphase", "Tesla"], showIf: onlyFor(...SOLAR_JOBS) },
           { id: "financier", label: "Financing", kind: "choice", options: ["LightReach", "Solrite", "Cash / other"], showIf: onlyFor(...SOLAR_JOBS) },
+          { id: "backup_type", label: "Backup", kind: "choice", required: true, options: ["Whole home (supply side)", "Partial home (load side)"], help: "Partial home adds the protected load panel photos.", showIf: onlyFor(...SOLRITE_JOBS) },
         ],
         slots: [],
       },
@@ -293,6 +430,7 @@ export const INSTALL_V2_STEPS: StepDef[] = [
           v2({ id: "uts_backup_loads", label: "IF: backup loads / sub panel", hint: "Backup loads panel open, with its label", req: "LR ES6", required: false, max: 3, guide: "subpanel" }),
         ],
       },
+      ...SOLRITE_INSTALL_SECTIONS,
     ],
   },
   {
@@ -325,6 +463,7 @@ export const INSTALL_V2_STEPS: StepDef[] = [
           v2({ id: "uts_mpu", label: "IF: main panel upgrade / electrical adder", hint: "The upgraded equipment, for the M2 adder", req: "LR SI1", required: false, max: 4, guide: "panel_open" }),
         ],
       },
+      ...SOLRITE_FINAL_SECTIONS,
     ],
   },
 ];

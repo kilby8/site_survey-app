@@ -1,3 +1,4 @@
+import type { AnswerValue } from "../blueprint";
 jest.mock("@react-native-async-storage/async-storage", () => require("@react-native-async-storage/async-storage/jest/async-storage-mock"));
 jest.mock("expo-file-system/legacy", () => ({ documentDirectory: "file:///doc/", cacheDirectory: "file:///cache/" }));
 jest.mock("expo-image-manipulator", () => ({ manipulateAsync: jest.fn(), SaveFormat: { JPEG: "jpeg" } }));
@@ -36,7 +37,7 @@ function doc() {
 }
 
 /** A job started now: per-job-type checklists. */
-function v2Doc(answers: Record<string, string> = {}) {
+function v2Doc(answers: Record<string, AnswerValue> = {}) {
   const d = newInstallDoc({ installType: "roof_mount", project, inspectorName: "James Carpenter", siteAddress: "27 Oak Ct, Peru IL" });
   d.answers = { ...d.answers, ...answers };
   return d;
@@ -139,7 +140,45 @@ describe("install checklist v2 — per job type (CompanyCam UTS templates, 2026-
 
   it("offers only the job types that have a checklist, so nobody opens an empty one", () => {
     const field = INSTALL_V2_STEPS[0].sections[0].fields.find((f) => f.id === "job_type")!;
-    expect(field.options).toEqual(["Solar only", "Solar + Battery"]);
+    expect(field.options).toEqual(["Solar only", "Solar + Battery", "Solrite – Solar + Battery", "Solrite – Battery only"]);
+  });
+
+  it("Solrite Solar + Battery matches its template: 42 items on load-side backup, 40 required (shading + E-STOP are IF)", () => {
+    const list = items(v2Doc({ job_type: "Solrite – Solar + Battery", backup_type: "Partial home (load side)" }));
+    expect(list.length).toBe(42);
+    expect(list.filter((s) => s.required).length).toBe(40);
+    expect(list.every((s) => s.id.startsWith("sr_"))).toBe(true);
+    expect(list.some((s) => s.id === "sr_racking")).toBe(true);
+    expect(list.some((s) => s.id === "sr_dead_front_batt")).toBe(false);
+    // Whole-home backup drops the two protected-load-panel photos.
+    const whole = items(v2Doc({ job_type: "Solrite – Solar + Battery", backup_type: "Whole home (supply side)" }));
+    expect(whole.length).toBe(40);
+  });
+
+  it("Solrite Battery only matches its template: no roof, 30 required, G-N bond check, existing array only if there's PV", () => {
+    const base = { job_type: "Solrite – Battery only", backup_type: "Partial home (load side)" };
+    const noPv = items(v2Doc({ ...base, sr_has_pv: false }));
+    expect(noPv.length).toBe(30);
+    expect(noPv.filter((s) => s.required).length).toBe(30);
+    expect(noPv.some((s) => s.id === "sr_racking" || s.id === "sr_pv_combiner" || s.id === "sr_cts")).toBe(false);
+    expect(noPv.some((s) => s.id === "sr_dead_front_batt" && /NO ground-neutral/.test(s.hint))).toBe(true);
+    const withPv = items(v2Doc({ ...base, sr_has_pv: true }));
+    expect(withPv.length).toBe(31);
+    expect(withPv.find((s) => s.id === "sr_existing_array")?.required).toBe(false);
+  });
+
+  it("Solrite jobs ask for the backup type, not the Enphase/Tesla brand; network photos are in Final", () => {
+    const d = v2Doc({ job_type: "Solrite – Battery only" });
+    const keys = surveyReadiness(d, []).missing.map((m) => m.key);
+    expect(keys).toContain("field:backup_type");
+    expect(keys).not.toContain("field:equipment_brand");
+    const final = INSTALL_V2_STEPS[1];
+    expect(sectionInstances(d, final).flatMap((i) => i.slots).map((s) => s.id)).toEqual(["sr_net_setup", "sr_net_host", "sr_net_client", "sr_net_stickers"]);
+  });
+
+  it("every slot id is unique across the v2 checklist", () => {
+    const ids = INSTALL_V2_STEPS.flatMap((st) => st.sections.flatMap((sec) => sec.slots.map((s) => s.id)));
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it("every item cites its LightReach / Solrite / IL / AHJ source, and IF items are never required", () => {

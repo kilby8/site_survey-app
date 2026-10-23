@@ -14,7 +14,8 @@ import { Badge, Button, IconButton, ProgressRing, T } from "../../ui/components"
 import { color, radius, space } from "../../ui/theme";
 import { ALL_STEPS, INSTALL_TYPES } from "../blueprint";
 import { surveyReadiness } from "../progress";
-import { listSurveySummaries, loadSurvey, type SurveySummary } from "../repo";
+import { deletePrompt } from "../deleteSite";
+import { deleteSurveyAndFiles, listSurveySummaries, loadSurvey, type SurveySummary } from "../repo";
 
 type Row = SurveySummary & { progress?: { done: number; total: number } };
 
@@ -86,6 +87,29 @@ export function HomeScreen() {
     { key: "done", title: "Uploaded", data: done },
   ].filter((sct) => sct.data.length);
 
+  const askDelete = (r: Row) => {
+    const p = deletePrompt(r);
+    if (!p.allowed) {
+      Alert.alert(p.title, p.message);
+      return;
+    }
+    Alert.alert(p.title, `${r.title}\n\n${p.message}`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: p.button,
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteSurveyAndFiles(r.id);
+          } catch (e) {
+            Alert.alert("Couldn't delete", e instanceof Error ? e.message : String(e));
+          }
+          await load();
+        },
+      },
+    ]);
+  };
+
   const doSignOut = () => {
     const unsent = drafts.length + waiting.length;
     Alert.alert(
@@ -152,7 +176,7 @@ export function HomeScreen() {
           </T>
         )}
         renderItem={({ item }) => (
-          <SurveyRow row={item} me={user?.email ?? null} uploading={uploading[item.id]} onPress={() => open(item)} />
+          <SurveyRow row={item} me={user?.email ?? null} uploading={uploading[item.id]} onPress={() => open(item)} onDelete={() => askDelete(item)} />
         )}
         ListEmptyComponent={
           <View style={s.empty}>
@@ -200,11 +224,13 @@ function SurveyRow({
   me,
   uploading,
   onPress,
+  onDelete,
 }: {
   row: Row;
   me: string | null;
   uploading?: { done: number; total: number };
   onPress: () => void;
+  onDelete: () => void;
 }) {
   const someoneElse = !!row.ownerEmail && !!me && row.ownerEmail.toLowerCase() !== me.toLowerCase();
   const install = row.kind === "install" ? "Install & final photos · shared with the crew" : INSTALL_TYPES.find((t) => t.id === row.installType)?.label;
@@ -286,6 +312,7 @@ function SurveyRow({
         ) : null}
         {status}
       </View>
+      <IconButton icon="trash-outline" label={`Delete ${row.title}`} onPress={onDelete} tint={color.textMuted} size={20} />
       <Ionicons name="chevron-forward" size={22} color={color.textMuted} />
     </Pressable>
   );

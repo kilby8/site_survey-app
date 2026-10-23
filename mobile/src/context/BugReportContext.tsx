@@ -19,6 +19,7 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import { captureScreen } from 'react-native-view-shot';
 import { submitBugReport } from '../api/client';
+import { useKeyboardHeight } from '../ui/useKeyboardHeight';
 import { solarProTheme } from '../theme/solarProTheme';
 
 const { colors } = solarProTheme;
@@ -57,6 +58,8 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
   const [reportTitle, setReportTitle] = React.useState('Mobile Bug Report');
   const [reportingBug, setReportingBug] = React.useState(false);
   const [extraMetadata, setExtraMetadata] = React.useState<BugMetadata>({});
+  const keyboardHeight = useKeyboardHeight();
+  const insets = useSafeAreaInsets();
 
   const openBugReport = React.useCallback((options?: OpenBugReportOptions) => {
     setReportTitle(options?.title?.trim() || 'Mobile Bug Report');
@@ -132,12 +135,17 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
         onRequestClose={closeMenu}
       >
         <Pressable style={styles.backdrop} onPress={closeMenu}>
-          <Pressable style={styles.sheet} onPress={(event) => event.stopPropagation()}>
+          <Pressable
+            testID="bug-report-sheet"
+            style={[styles.sheet, { marginBottom: keyboardHeight, paddingBottom: keyboardHeight ? 12 : 24 + insets.bottom }]}
+            onPress={(event) => event.stopPropagation()}
+          >
             <Text style={styles.title}>Bug Report</Text>
             <Text style={styles.subtitle}>Attach a screenshot and optional note.</Text>
 
             <TextInput
               style={styles.input}
+              testID="bug-report-note"
               placeholder="What happened?"
               placeholderTextColor={colors.textSecondary}
               multiline
