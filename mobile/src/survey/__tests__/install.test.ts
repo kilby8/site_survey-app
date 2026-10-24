@@ -140,7 +140,7 @@ describe("install checklist v2 — per job type (CompanyCam UTS templates, 2026-
 
   it("offers only the job types that have a checklist, so nobody opens an empty one", () => {
     const field = INSTALL_V2_STEPS[0].sections[0].fields.find((f) => f.id === "job_type")!;
-    expect(field.options).toEqual(["Solar only", "Solar + Battery", "Solrite – Solar + Battery", "Solrite – Battery only"]);
+    expect(field.options).toEqual(["Solar only", "Solar + Battery", "Solrite – Solar + Battery", "Solrite – Battery only", "Solar R&R", "Service call"]);
   });
 
   it("Solrite Solar + Battery matches its template: 42 items on load-side backup, 40 required (shading + E-STOP are IF)", () => {
@@ -176,6 +176,23 @@ describe("install checklist v2 — per job type (CompanyCam UTS templates, 2026-
     expect(sectionInstances(d, final).flatMap((i) => i.slots).map((s) => s.id)).toEqual(["sr_net_setup", "sr_net_host", "sr_net_client", "sr_net_stickers"]);
   });
 
+  it("Solar R&R matches its template: 36 items, 33 required, closeout in Final", () => {
+    const d = v2Doc({ job_type: "Solar R&R" });
+    const list = items(d);
+    expect(list.length).toBe(36);
+    expect(list.filter((s) => s.required).length).toBe(33);
+    expect(list.every((s) => s.id.startsWith("rr_"))).toBe(true);
+    expect(sectionInstances(d, INSTALL_V2_STEPS[1]).flatMap((i) => i.slots).length).toBe(6);
+    expect(surveyReadiness(d, []).missing.map((m) => m.key)).not.toContain("field:equipment_brand");
+  });
+
+  it("Service call matches its template: 24 items, 15 required", () => {
+    const list = items(v2Doc({ job_type: "Service call" }));
+    expect(list.length).toBe(24);
+    expect(list.filter((s) => s.required).length).toBe(15);
+    expect(list.every((s) => s.id.startsWith("svc_"))).toBe(true);
+  });
+
   it("every slot id is unique across the v2 checklist", () => {
     const ids = INSTALL_V2_STEPS.flatMap((st) => st.sections.flatMap((sec) => sec.slots.map((s) => s.id)));
     expect(new Set(ids).size).toBe(ids.length);
@@ -183,7 +200,7 @@ describe("install checklist v2 — per job type (CompanyCam UTS templates, 2026-
 
   it("every item cites its LightReach / Solrite / IL / AHJ source, and IF items are never required", () => {
     for (const s of INSTALL_V2_STEPS.flatMap((st) => st.sections.flatMap((sec) => sec.slots))) {
-      expect(s.requirementId).toMatch(/LR|SR|IL|AHJ/);
+      expect(s.requirementId).toMatch(/LR|SR|IL|AHJ|UTS RR|UTS SVC/);
       expect(s.hint).toContain(`[${s.requirementId}]`);
       if (s.label.startsWith("IF")) expect(s.required).toBe(false);
     }

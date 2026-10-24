@@ -181,7 +181,7 @@ export type JobType = (typeof JOB_TYPES)[number];
  * Job types the crew can pick today. Battery only, R&R and Service join this list
  * when their checklists are built, so nobody opens an empty checklist in the field.
  */
-export const OFFERED_JOB_TYPES: JobType[] = ["Solar only", "Solar + Battery", "Solrite – Solar + Battery", "Solrite – Battery only"];
+export const OFFERED_JOB_TYPES: JobType[] = ["Solar only", "Solar + Battery", "Solrite – Solar + Battery", "Solrite – Battery only", "Solar R&R", "Service call"];
 
 const SOLAR_JOBS: JobType[] = ["Solar only", "Solar + Battery"];
 const SOLRITE_PV: JobType = "Solrite – Solar + Battery";
@@ -321,6 +321,170 @@ const SOLRITE_FINAL_SECTIONS: SectionDef[] = [
   },
 ];
 
+// ------------------------------------------------------------
+// UTS Solar R&R and UTS Service Call — Ray's CompanyCam templates, read
+// 2026-10-23: "UTS Solar R&R – Remove & Reinstall (any brand)" b2abd519…
+// (6 sections, 36 items, 33 photo-required) and "UTS Service Call – Diagnose,
+// Repair, Verify (any brand)" 26539c4a… (4 sections, 24 items, 15 required).
+// Built from UTS's own past jobs, so the tag is the template's item number
+// ([UTS RR 3.1], [UTS SVC 2.5]). "IF" items are never required. Closeout /
+// verification sections sit in the Final step.
+// ------------------------------------------------------------
+const RR: JobType = "Solar R&R";
+const SVC: JobType = "Service call";
+
+const RR_WORK_SECTIONS: SectionDef[] = [
+  {
+    id: "rr_arrival",
+    title: "R&R · Arrival + pre-existing conditions (removal day)",
+    showIf: onlyFor(RR),
+    fields: [{ id: "rr_module_count", label: "Module count", kind: "number", keyboard: "numeric", min: 0, max: 500, help: "The template asks for the count in the notes; reinstall must match." }],
+    slots: [
+      v2({ id: "rr_front_address", label: "Front of house + street address", hint: "FIRST photo of the job — marks the start and proves location", req: "UTS RR 1.1", required: true, max: 2, guide: "house_front" }),
+      v2({ id: "rr_array_before", label: "Each array BEFORE removal, wide", hint: "Every array as found, from the ground AND the roof — our proof of its condition", req: "UTS RR 1.2", required: true, max: 8, guide: "wide" }),
+      v2({ id: "rr_damage_before", label: "IF: pre-existing damage / defects", hint: "Cracked modules, broken clips, chewed wire, roof damage, leak stains — shoot BEFORE work and tell the PM", req: "UTS RR 1.3", required: false, max: 8, guide: "material" }),
+      v2({ id: "rr_module_label", label: "Module label (make / model / watts)", hint: "Rear label of one module; reinstalled modules must match", req: "UTS RR 1.4", required: true, max: 1, guide: "label" }),
+      v2({ id: "rr_inverter_label", label: "Inverter / micro / optimizer label + model", hint: "Label of the inverter or one micro/optimizer", req: "UTS RR 1.5", required: true, max: 2, guide: "label" }),
+      v2({ id: "rr_monitoring_before", label: "Monitoring BEFORE — online + device count", hint: "App screenshot: producing, and how many devices report before shutdown. Reinstall must match", req: "UTS RR 1.6", required: true, max: 2, guide: "label" }),
+      v2({ id: "rr_meter_placards", label: "Existing meter, AC disconnect, placards", hint: "Meter, disconnect and rapid-shutdown / warning placards as found", req: "UTS RR 1.7", required: true, max: 3, guide: "meter_wide" }),
+    ],
+  },
+  {
+    id: "rr_shutdown",
+    title: "R&R · Shutdown + safety",
+    showIf: onlyFor(RR),
+    fields: [],
+    slots: [
+      v2({ id: "rr_loto", label: "AC disconnect OFF + lock-out / tag-out", hint: "Disconnect OFF with lock and tag on", req: "UTS RR 2.1", required: true, max: 1, guide: "label" }),
+      v2({ id: "rr_pv_breaker_off", label: "PV breaker OFF in main panel", hint: "MSP open, PV (and battery) breaker OFF", req: "UTS RR 2.2", required: true, max: 2, guide: "breaker" }),
+      v2({ id: "rr_zero_volt", label: "Zero-voltage verification", hint: "Meter showing 0 V at the disconnect / J-box before touching conductors", req: "UTS RR 2.3", required: true, max: 2, guide: "label" }),
+    ],
+  },
+  {
+    id: "rr_removal",
+    title: "R&R · Removal",
+    showIf: onlyFor(RR),
+    fields: [],
+    slots: [
+      v2({ id: "rr_serial_map", label: "Serial / position map BEFORE removal", hint: "Serial map, or number each module + micro and photo it — reinstall goes back in the SAME spots", req: "UTS RR 3.1", required: true, max: 6, guide: "label" }),
+      v2({ id: "rr_conductors_labeled", label: "Branch / string conductors labelled", hint: "Each branch or string labelled at the J-box and the array before disconnecting", req: "UTS RR 3.2", required: true, max: 4, guide: "label" }),
+      v2({ id: "rr_jbox_capped", label: "J-box open — labelled + capped", hint: "Conductors labelled and capped, grounding visible", req: "UTS RR 3.3", required: true, max: 3, guide: "panel_open" }),
+      v2({ id: "rr_racking_bare", label: "Racking + attachments, modules off", hint: "Rails and every attachment visible", req: "UTS RR 3.4", required: true, max: 6, guide: "roof_plane" }),
+      v2({ id: "rr_penetrations", label: "Roof after racking removed — all penetrations", hint: "Every old hole / penetration for the roofer, wide plus close-ups", req: "UTS RR 3.5", required: true, max: 8, guide: "roof_plane" }),
+      v2({ id: "rr_storage", label: "Module + equipment storage on site", hint: "Modules on a pallet or blankets, covered, with a count; micros boxed and labelled; hardware bagged", req: "UTS RR 3.6", required: true, max: 4, guide: "wide" }),
+      v2({ id: "rr_roof_clear", label: "Roof clear — handoff to roofer", hint: "Wide shot of the cleared roof; note the handoff date", req: "UTS RR 3.7", required: true, max: 2, guide: "roof_plane" }),
+    ],
+  },
+  {
+    id: "rr_reinstall_roof",
+    title: "R&R · Reinstall — roof + structural",
+    showIf: onlyFor(RR),
+    fields: [],
+    slots: [
+      v2({ id: "rr_new_roof", label: "New roof complete, before reinstall", hint: "The finished roof before any racking goes back", req: "UTS RR 4.1", required: true, max: 3, guide: "roof_plane" }),
+      v2({ id: "rr_rafter_layout", label: "Attachment layout — rafters located", hint: "Finder or tape showing attachment spacing on rafters per the plans", req: "UTS RR 4.2", required: true, max: 3, guide: "roof_plane" }),
+      v2({ id: "rr_flashing", label: "New flashing + attachment with sealant", hint: "Close-up, lag fully seated; one per array at least", req: "UTS RR 4.3", required: true, max: 6, guide: "material" }),
+      v2({ id: "rr_torque", label: "Torque marks on attachment hardware", hint: "Torque-striped hardware", req: "UTS RR 4.4", required: true, max: 3, guide: "material" }),
+      v2({ id: "rr_rails", label: "Rails installed, level, splices", hint: "Rails on attachments with splices and end clamps", req: "UTS RR 4.5", required: true, max: 4, guide: "roof_plane" }),
+      v2({ id: "rr_bonding", label: "Bonding / grounding to rack", hint: "Ground lug or bonding hardware and the ground run", req: "UTS RR 4.6", required: true, max: 3, guide: "label" }),
+      v2({ id: "rr_entry_reflashed", label: "Roof / conduit entry re-flashed", hint: "Entry point re-flashed and sealed, close-up", req: "UTS RR 4.7", required: true, max: 2, guide: "material" }),
+      v2({ id: "rr_jbox_reinstalled", label: "J-box reinstalled — open, splices + grounding", hint: "No wire nuts on grounding conductors", req: "UTS RR 4.8", required: true, max: 3, guide: "panel_open" }),
+    ],
+  },
+  {
+    id: "rr_reinstall_elec",
+    title: "R&R · Reinstall — electrical + modules",
+    showIf: onlyFor(RR),
+    fields: [],
+    slots: [
+      v2({ id: "rr_devices_positions", label: "Micros / optimizers in original positions", hint: "Mounted devices matching the serial map from removal; note any that moved", req: "UTS RR 5.1", required: true, max: 6, guide: "material" }),
+      v2({ id: "rr_connections", label: "Trunk / branch connections + end caps", hint: "Connectors seated, unused ports capped, terminators on", req: "UTS RR 5.2", required: true, max: 4, guide: "material" }),
+      v2({ id: "rr_wire_mgmt", label: "Wire management under array", hint: "Clear line under each array; nothing on the roof, drip loops right", req: "UTS RR 5.3", required: true, max: 6, guide: "roof_plane" }),
+      v2({ id: "rr_arrays_after", label: "Modules installed — each array, wide", hint: "Every finished array from the roof and the ground", req: "UTS RR 5.4", required: true, max: 8, guide: "wide" }),
+      v2({ id: "rr_replaced_parts", label: "IF: damaged / replaced equipment — old + new labels", hint: "OLD and NEW label/serial for the RMA and the monitoring swap", req: "UTS RR 5.5", required: false, max: 8, guide: "label" }),
+    ],
+  },
+];
+
+const RR_FINAL_SECTIONS: SectionDef[] = [
+  {
+    id: "rr_closeout",
+    title: "R&R · Commissioning + closeout",
+    showIf: onlyFor(RR),
+    fields: [],
+    slots: [
+      v2({ id: "rr_back_on", label: "Disconnect + PV breaker ON, placards back", hint: "LOTO removed, every label and placard back in place", req: "UTS RR 6.1", required: true, max: 3, guide: "label" }),
+      v2({ id: "rr_monitoring_after", label: "Monitoring AFTER — all devices reporting", hint: "SAME device count as before removal, every device reporting", req: "UTS RR 6.2", required: true, max: 2, guide: "label" }),
+      v2({ id: "rr_production", label: "Production verification", hint: "Screenshot or meter showing it producing after restart", req: "UTS RR 6.3", required: true, max: 2, guide: "label" }),
+      v2({ id: "rr_cleanup", label: "Site clean-up + magnet sweep", hint: "Ground and roof clear of debris, screws and packaging", req: "UTS RR 6.4", required: true, max: 3, guide: "wide" }),
+      v2({ id: "rr_final_front", label: "Final front of house / array", hint: "Closing shot from the street", req: "UTS RR 6.5", required: true, max: 2, guide: "house_front" }),
+      v2({ id: "rr_homeowner", label: "IF: homeowner walkthrough / notes", hint: "Sign-off or notes on anything they raised", req: "UTS RR 6.6", required: false, max: 3, guide: "label" }),
+    ],
+  },
+];
+
+const SERVICE_WORK_SECTIONS: SectionDef[] = [
+  {
+    id: "svc_arrival",
+    title: "Service · Arrival + as found",
+    showIf: onlyFor(SVC),
+    fields: [],
+    slots: [
+      v2({ id: "svc_front_address", label: "Front of house + street address", hint: "FIRST photo of the visit — proves location and start time", req: "UTS SVC 1.1", required: true, max: 2, guide: "house_front" }),
+      v2({ id: "svc_problem_found", label: "Reported problem, as found", hint: "The issue exactly as found, before touching anything", req: "UTS SVC 1.2", required: true, max: 6, guide: "material" }),
+      v2({ id: "svc_monitoring_before", label: "Monitoring BEFORE — alerts / offline / production", hint: "Portal screenshot with the alert, offline devices or low production", req: "UTS SVC 1.3", required: true, max: 3, guide: "label" }),
+      v2({ id: "svc_array_before", label: "Each array as found, wide", hint: "From the ground, and the roof if going up", req: "UTS SVC 1.4", required: true, max: 6, guide: "wide" }),
+      v2({ id: "svc_damage_other", label: "IF: pre-existing damage not from this call", hint: "Anything else wrong that we did NOT cause — photo it and tell the PM", req: "UTS SVC 1.5", required: false, max: 6, guide: "material" }),
+    ],
+  },
+  {
+    id: "svc_diagnosis",
+    title: "Service · Diagnosis",
+    showIf: onlyFor(SVC),
+    fields: [],
+    slots: [
+      v2({ id: "svc_labels", label: "Equipment labels — inverter / gateway / battery", hint: "Model and serial of what's involved", req: "UTS SVC 2.1", required: true, max: 4, guide: "label" }),
+      v2({ id: "svc_status", label: "Status lights / error screens", hint: "LEDs and any error codes", req: "UTS SVC 2.2", required: true, max: 4, guide: "label" }),
+      v2({ id: "svc_msp", label: "Main panel + PV / battery breakers as found", hint: "MSP open, breaker positions visible (tripped / off)", req: "UTS SVC 2.3", required: true, max: 2, guide: "panel_open" }),
+      v2({ id: "svc_readings", label: "IF tested: electrical readings", hint: "Meter display for every reading; note what was measured where", req: "UTS SVC 2.4", required: false, max: 8, guide: "label" }),
+      v2({ id: "svc_root_cause", label: "Root cause close-up", hint: "The cause once found — burnt connector, failed micro, chewed wire, loose lug, water entry", req: "UTS SVC 2.5", required: true, max: 4, guide: "material" }),
+    ],
+  },
+  {
+    id: "svc_work",
+    title: "Service · Work performed (only what applies)",
+    showIf: onlyFor(SVC),
+    fields: [],
+    slots: [
+      v2({ id: "svc_loto", label: "Shutdown / lock-out tag-out", hint: "Disconnect OFF with LOTO before working on energized gear", req: "UTS SVC 3.1", required: true, max: 1, guide: "label" }),
+      v2({ id: "svc_repair", label: "Repair in progress", hint: "Each step of the repair", req: "UTS SVC 3.2", required: true, max: 10, guide: "material" }),
+      v2({ id: "svc_old_part", label: "IF: replaced part — OLD label / serial", hint: "For the RMA / warranty claim and monitoring swap", req: "UTS SVC 3.3", required: false, max: 4, guide: "label" }),
+      v2({ id: "svc_new_part", label: "IF: replaced part — NEW label / serial", hint: "The new part's label and serial", req: "UTS SVC 3.4", required: false, max: 4, guide: "label" }),
+      v2({ id: "svc_cleaning", label: "IF: panel cleaning — before + after", hint: "Same angle before and after, each array", req: "UTS SVC 3.5", required: false, max: 8, guide: "roof_plane" }),
+      v2({ id: "svc_wire_tuck", label: "IF: wire tuck — before + after", hint: "Hanging wires before; clipped and off the roof after", req: "UTS SVC 3.6", required: false, max: 8, guide: "roof_plane" }),
+      v2({ id: "svc_critter", label: "IF: critter guard / pest exclusion", hint: "Mesh around the array, clips spaced, nest removed", req: "UTS SVC 3.7", required: false, max: 6, guide: "roof_plane" }),
+      v2({ id: "svc_leak", label: "IF: roof leak / flashing / sealant repair", hint: "The repair, close-up plus wide", req: "UTS SVC 3.8", required: false, max: 4, guide: "material" }),
+    ],
+  },
+];
+
+const SERVICE_FINAL_SECTIONS: SectionDef[] = [
+  {
+    id: "svc_closeout",
+    title: "Service · Verification + closeout",
+    showIf: onlyFor(SVC),
+    fields: [],
+    slots: [
+      v2({ id: "svc_closed_up", label: "Equipment closed up, labels + placards intact", hint: "Covers and dead fronts on, labels in place, breakers and disconnect ON", req: "UTS SVC 4.1", required: true, max: 3, guide: "panel_closed" }),
+      v2({ id: "svc_monitoring_after", label: "Monitoring AFTER — all reporting, alert cleared", hint: "Every device reporting, the alert gone", req: "UTS SVC 4.2", required: true, max: 2, guide: "label" }),
+      v2({ id: "svc_production", label: "Production verification", hint: "Screenshot or meter showing it producing after the repair", req: "UTS SVC 4.3", required: true, max: 2, guide: "label" }),
+      v2({ id: "svc_array_after", label: "Each array after, wide", hint: "Same angles as the as-found shots", req: "UTS SVC 4.4", required: true, max: 6, guide: "wide" }),
+      v2({ id: "svc_cleanup", label: "Site clean-up", hint: "Roof and ground clear of debris and old parts", req: "UTS SVC 4.5", required: true, max: 3, guide: "wide" }),
+      v2({ id: "svc_homeowner", label: "IF: homeowner notes / sign-off", hint: "What they were told or asked for, and any follow-up", req: "UTS SVC 4.6", required: false, max: 3, guide: "label" }),
+    ],
+  },
+];
+
 export const INSTALL_V2_STEPS: StepDef[] = [
   {
     id: "install_day",
@@ -333,7 +497,7 @@ export const INSTALL_V2_STEPS: StepDef[] = [
         id: "v2_job",
         title: "Job type",
         fields: [
-          { id: "job_type", label: "Job type", kind: "choice", required: true, options: [...OFFERED_JOB_TYPES], help: "Loads the photo checklist for this kind of job. Anyone on the crew can set it. Solrite jobs (Duracell Max Hybrid) have their own list. UTS battery only, R&R and Service jobs: use CompanyCam for now." },
+          { id: "job_type", label: "Job type", kind: "choice", required: true, options: [...OFFERED_JOB_TYPES], help: "Loads the photo checklist for this kind of job. Anyone on the crew can set it. Solrite jobs (Duracell Max Hybrid), R&R and Service calls each have their own list. UTS battery-only jobs: use CompanyCam for now (no template yet)." },
           { id: "equipment_brand", label: "Equipment", kind: "choice", required: true, options: ["Enphase", "Tesla"], showIf: onlyFor(...SOLAR_JOBS) },
           { id: "financier", label: "Financing", kind: "choice", options: ["LightReach", "Solrite", "Cash / other"], showIf: onlyFor(...SOLAR_JOBS) },
           { id: "backup_type", label: "Backup", kind: "choice", required: true, options: ["Whole home (supply side)", "Partial home (load side)"], help: "Partial home adds the protected load panel photos.", showIf: onlyFor(...SOLRITE_JOBS) },
@@ -431,6 +595,8 @@ export const INSTALL_V2_STEPS: StepDef[] = [
         ],
       },
       ...SOLRITE_INSTALL_SECTIONS,
+      ...RR_WORK_SECTIONS,
+      ...SERVICE_WORK_SECTIONS,
     ],
   },
   {
@@ -464,6 +630,8 @@ export const INSTALL_V2_STEPS: StepDef[] = [
         ],
       },
       ...SOLRITE_FINAL_SECTIONS,
+      ...RR_FINAL_SECTIONS,
+      ...SERVICE_FINAL_SECTIONS,
     ],
   },
 ];
