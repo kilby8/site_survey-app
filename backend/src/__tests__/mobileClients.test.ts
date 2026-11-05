@@ -500,4 +500,47 @@ describe("mobile clients pipeline proxy", () => {
 
     expect(res.status).toBe(401);
   });
+  // -------------------------------------------------------------------------
+  // Capture-time photo check (James 2026-11-05)
+  // -------------------------------------------------------------------------
+
+  it("photo-check: 400 without slot or image", async () => {
+    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
+    process.env.SOLARPRO_API_KEY = "test-service-key";
+    const res = await request(app)
+      .post("/api/mobile/photo-check")
+      .set("Authorization", authHeader)
+      .send({ slot: "elec_main_panel" });
+    expect(res.status).toBe(400);
+  });
+
+  it("photo-check: forwards slot + image to SolarPro for this user and returns its check", async () => {
+    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
+    process.env.SOLARPRO_API_KEY = "test-service-key";
+    let capturedUrl = "";
+    let capturedBody: Record<string, unknown> = {};
+    let capturedHeaders: Record<string, string> = {};
+    global.fetch = jest.fn().mockImplementation((url: string, opts: RequestInit) => {
+      capturedUrl = url;
+      capturedBody = JSON.parse(String(opts.body));
+      capturedHeaders = (opts.headers ?? {}) as Record<string, string>;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ check: { status: "retake", message: "Retake? It looks blurry." } }),
+        text: () => Promise.resolve(""),
+      });
+    }) as unknown as typeof fetch;
+
+    const res = await request(app)
+      .post("/api/mobile/photo-check")
+      .set("Authorization", authHeader)
+      .send({ slot: "elec_main_panel", image: "aGVsbG8=" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.check.status).toBe("retake");
+    expect(capturedUrl).toBe("https://solarpro-dev.vercel.app/api/mobile/photo-check");
+    expect(capturedBody).toEqual({ slot: "elec_main_panel", image: "aGVsbG8=" });
+    expect(capturedHeaders["X-Mobile-User-Email"]).toBe(TEST_EMAIL);
+  });
 });
