@@ -87,6 +87,9 @@ const ADDRESS_VERIFICATION_SLOTS: PhotoSlotDraft[] = [
 
 const ATTIC_ACCESS_SLOTS: PhotoSlotDraft[] = [
   { slotId: 'attic_access', label: 'Attic Access', isRequired: true, photo: null },
+  // James 2026-11-05: rafter size and spacing must be confirmed from a photo with a
+  // tape measure across two rafters (SolarPro drops any rafter length read without one).
+  { slotId: 'rafter_measure', label: 'Rafters + Tape Measure', isRequired: true, photo: null },
 ];
 
 const WALK_AROUND_DIRECTION_SLOTS: PhotoSlotDraft[] = [

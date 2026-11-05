@@ -20,6 +20,7 @@ export const ENGINEERING_PHOTO_SLOTS: ReadonlySet<string> = new Set([
   "service_close_up",
   "service_wide_shot",
   "attic_access",
+  "rafter_measure",
 ]);
 
 /** Long side of the copy sent for checking (the reader's own maximum). */
