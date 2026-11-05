@@ -834,3 +834,43 @@ export async function submitBugReport(input: {
 
   return handleResponse<BugReportResponse>(res);
 }
+
+/**
+ * Capture-time photo check (James 2026-11-05: tell the surveyor about a bad
+ * photo while they are still on site). Sends a downsized JPEG copy of one
+ * just-taken engineering photo to POST /api/mobile/photo-check, which reads it
+ * with the same check SolarPro uses. Advisory only.
+ *
+ * Returns null when there is nothing to show: not an engineering photo, no
+ * signal, a timeout, or any error. The photo is always kept; the office is
+ * still told about it when the survey syncs.
+ */
+export interface CapturePhotoCheck {
+  status: "ok" | "retake" | "not_checked";
+  message: string;
+}
+
+export async function checkPhotoAtCapture(
+  imageBase64: string,
+  slotId: string,
+): Promise<CapturePhotoCheck | null> {
+  try {
+    const authHeaders = await getAuthHeaders();
+    const res = await fetchWithAuthRetry(
+      "/api/mobile/photo-check",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({ slot: slotId, image: imageBase64 }),
+      },
+      { timeoutMs: 20_000 },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { check?: CapturePhotoCheck | null };
+    const check = data?.check;
+    if (!check || (check.status !== "ok" && check.status !== "retake" && check.status !== "not_checked")) return null;
+    return { status: check.status, message: String(check.message ?? "") };
+  } catch {
+    return null;
+  }
+}

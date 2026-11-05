@@ -216,7 +216,7 @@ type SolarProFetchResult =
 async function fetchFromSolarPro(
   pathname: string,
   userEmail: string,
-  requestInit?: { method?: "GET" | "POST"; body?: unknown },
+  requestInit?: { method?: "GET" | "POST"; body?: unknown; timeoutMs?: number },
 ): Promise<SolarProFetchResult> {
   const solarProUrl = getSolarProUrl();
   const method = requestInit?.method ?? "GET";
@@ -251,7 +251,7 @@ async function fetchFromSolarPro(
         method,
         headers,
         body: serializedBody,
-        signal: AbortSignal.timeout(8_000),
+        signal: AbortSignal.timeout(requestInit?.timeoutMs ?? 8_000),
       });
 
       if (upstream.ok) {
@@ -635,6 +635,46 @@ router.post("/reverse-geocode", async (req: Request, res: Response) => {
   }
 
   res.json({ address });
+});
+
+/**
+ * POST /api/mobile/photo-check
+ *
+ * Capture-time photo check (James 2026-11-05: "notify them in real time of
+ * mistakes so we don't have to go back for photos"). Body: { slot, image }, where
+ * image is a base64 JPEG the app downsized to <= 1568 px. Forwarded to SolarPro,
+ * which returns { check } (ok / retake / not_checked) or { check: null } for a
+ * photo that is not an engineering photo. Advisory only: the surveyor can keep
+ * the photo, and the office sees every flag when the survey syncs.
+ */
+router.post("/photo-check", async (req: Request, res: Response) => {
+  const userEmail = req.authUser?.email;
+  if (!userEmail) {
+    res.status(400).json({ error: "missing_user_email", message: "Authenticated user has no email in token." });
+    return;
+  }
+  const body = (req.body || {}) as { slot?: unknown; image?: unknown };
+  const slot = typeof body.slot === "string" ? body.slot.slice(0, 120) : "";
+  const image = typeof body.image === "string" ? body.image : "";
+  if (!slot || !image) {
+    res.status(400).json({ error: "bad_request", message: "slot and image are required." });
+    return;
+  }
+  if (image.length > 4_500_000) {
+    res.status(413).json({ error: "too_large", message: "Send a downsized copy (<= 3 MB)." });
+    return;
+  }
+  if (!validateConfig(res)) return;
+  const result = await fetchFromSolarPro("/api/mobile/photo-check", userEmail.trim().toLowerCase(), {
+    method: "POST",
+    body: { slot, image },
+    timeoutMs: 25_000,
+  });
+  if (result.ok) {
+    res.json(result.data);
+    return;
+  }
+  res.status(result.status).json({ error: result.error, message: result.message });
 });
 
 export default router;
