@@ -89,6 +89,7 @@ const ATTIC_ACCESS_SLOTS: PhotoSlotDraft[] = [
   { slotId: 'attic_access', label: 'Attic Access', isRequired: true, photo: null },
   // James 2026-11-05: rafter size and spacing must be confirmed from a photo with a
   // tape measure across two rafters (SolarPro drops any rafter length read without one).
+  // Required on roof-mount surveys only (the categoryId effect sets isRequired).
   { slotId: 'rafter_measure', label: 'Rafters + Tape Measure', isRequired: true, photo: null },
 ];
 
@@ -483,6 +484,20 @@ export default function NewSurveyScreen() {
     })),
     [checklist],
   );
+
+  // James 2026-11-05: the Rafters + Tape Measure photo is required on roof-mount surveys only.
+  useEffect(() => {
+    const required = categoryId === 'roof_mount';
+    setChecklist((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        if (!item.photoSlots?.some((s) => s.slotId === 'rafter_measure' && s.isRequired !== required)) return item;
+        changed = true;
+        return { ...item, photoSlots: item.photoSlots.map((s) => (s.slotId === 'rafter_measure' ? { ...s, isRequired: required } : s)) };
+      });
+      return changed ? next : prev;
+    });
+  }, [categoryId]);
 
   const checklistPhotoCoverage = useMemo(() => {
     const itemSummaries = checklistEvaluation.map((item) => ({
