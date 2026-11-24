@@ -10,7 +10,7 @@
 ## System map (what talks to what)
 - `mobile/` (Expo Router) calls backend via `mobile/src/api/client.ts` (`/api/users`, `/api/surveys`, `/api/handoff`, `/api/bug-reports`, `/api/categories`, `/api/mobile`).
 - `backend/` is the API boundary (`backend/src/index.ts`), with auth in `routes/users.ts` and survey domain in `routes/surveys.ts`.
-- `routes/mobileClients.ts` at `/api/mobile` proxies client/project lookups to SolarPro with user-scoped `X-Mobile-User-Email` header; multi-strategy auth: `MOBILE_SERVICE_API_KEY` → `SOLARPRO_API_KEY` → `PARTNER_API_KEY` → minted JWT from `SOLARPRO_HANDOFF_SECRET`.
+- `routes/mobileClients.ts` at `/api/mobile` proxies client/project lookups to SolarPro. Each request carries one short-lived HS256 token, `{email, exp: now + 300}`, signed with `SOLARPRO_HANDOFF_SECRET` (then each `SOLARPRO_HANDOFF_SECRET_FALLBACKS` secret if SolarPro refuses it). No shared service key and no `X-Mobile-User-Email` header are sent (since 2026-11-24); a guard in `__tests__/mobileClients.test.ts` fails if either comes back. `routes/bugReports.ts` forwards the same way.
 - `routes/categories.ts` at `/api/categories` serves survey category lookup (requireAuth).
 - `frontend/` is a lightweight Vite dashboard (`frontend/src/App.tsx`) and is secondary to mobile workflows.
 - Postgres is primary app storage (`backend/src/database.ts`), with PostGIS location support used in survey routes.
@@ -48,7 +48,7 @@
 - SQL Server mirror is opt-in via `SQLSERVER_SYNC_ENABLED=true`; sync checkpoint stored in `external_sync_state` (`services/sqlServerSyncService.ts`).
 - Storage backend switch: `STORAGE_BACKEND=local|s3`; S3 mode needs AWS env vars and returns presigned GET URLs (`utils/storageClient.ts`).
 - Handoff/SSO depends on `SOLARPRO_HANDOFF_SECRET` (`routes/handoff.ts`, `routes/users.ts` `/solarpro-sso`).
-- SolarPro proxy: `SOLARPRO_API_URL` (base URL, fatal if missing) + `MOBILE_SERVICE_API_KEY` (preferred service-to-service bearer); legacy aliases `SOLARPRO_API_KEY` / `PARTNER_API_KEY` are accepted; `SOLARPRO_HANDOFF_SECRET_FALLBACKS` (comma-separated) for rolling secret rotation (`routes/mobileClients.ts`).
+- SolarPro proxy: `SOLARPRO_API_URL` (base URL, fatal if missing) + `SOLARPRO_HANDOFF_SECRET` (signs the per-request token, at least 32 characters, must match SolarPro's); `SOLARPRO_HANDOFF_SECRET_FALLBACKS` (comma-separated) for rolling secret rotation (`routes/mobileClients.ts`). `MOBILE_SERVICE_API_KEY` is read by nothing. `PARTNER_API_KEY` (alias `SOLARPRO_API_KEY`) is only the inbound key SolarPro uses to read survey payloads (`middleware/auth.ts`).
 - CORS: allowed origins read from `ALLOWED_ORIGINS` (comma-separated); defaults include `localhost:5173`, `localhost:4173`, `localhost:8081`.
 
 ## Credential reconciliation workflow

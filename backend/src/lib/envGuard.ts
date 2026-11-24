@@ -128,16 +128,20 @@ export function runEnvGuard(): void {
     );
   }
 
-  // Also warn if all upstream service auth keys are absent
-  // (these are optional in code but should be set for Path B auth)
-  const hasMobileKey =
-    process.env.MOBILE_SERVICE_API_KEY?.trim() ||
-    process.env.SOLARPRO_API_KEY?.trim() ||
-    process.env.PARTNER_API_KEY?.trim();
-  if (!hasMobileKey) {
+  // The SolarPro proxy (routes/mobileClients.ts, routes/bugReports.ts) signs one email
+  // token per request with SOLARPRO_HANDOFF_SECRET and sends no shared service key.
+  if (process.env.MOBILE_SERVICE_API_KEY?.trim()) {
     warnings.push(
-      "[ENV_GUARD] WARN: Neither MOBILE_SERVICE_API_KEY, SOLARPRO_API_KEY, nor PARTNER_API_KEY is set. " +
-      "Path B service key auth is disabled. Mobile proxy will use SOLARPRO_HANDOFF_SECRET JWT only."
+      "[ENV_GUARD] WARN: MOBILE_SERVICE_API_KEY is set but nothing reads it any more " +
+      "(the SolarPro proxy signs a per-request token with SOLARPRO_HANDOFF_SECRET). It can be removed."
+    );
+  }
+  // PARTNER_API_KEY (alias SOLARPRO_API_KEY) is only the inbound key SolarPro uses to
+  // read survey payloads from this server (middleware/auth.ts).
+  if (!process.env.PARTNER_API_KEY?.trim() && !process.env.SOLARPRO_API_KEY?.trim()) {
+    warnings.push(
+      "[ENV_GUARD] WARN: Neither PARTNER_API_KEY nor SOLARPRO_API_KEY is set, so SolarPro's " +
+      "survey payload fetch cannot sign in to this server."
     );
   }
 

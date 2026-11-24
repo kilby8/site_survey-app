@@ -1,6 +1,23 @@
+import fs from "fs";
+import path from "path";
+import jwt from "jsonwebtoken";
 import request from "supertest";
 import app from "../index";
 import { signAuthToken } from "../utils/authToken";
+
+// The Render proxy proves who is calling SolarPro with one signed email token per
+// request (SOLARPRO_HANDOFF_SECRET). It never sends a shared service key or a
+// free-text X-Mobile-User-Email header (since 2026-11-24).
+const SIGNING_SECRET = "test-handoff-secret-value-that-is-long-enough-0123456789";
+
+/** Verifies the Bearer token with the given secret and returns its claims. */
+function signedClaims(
+  headers: Record<string, string>,
+  secret: string = SIGNING_SECRET,
+): Record<string, unknown> {
+  const raw = (headers.Authorization ?? "").replace(/^Bearer\s+/, "");
+  return jwt.verify(raw, secret, { algorithms: ["HS256"] }) as Record<string, unknown>;
+}
 
 describe("mobile clients pipeline proxy", () => {
   const originalFetch = global.fetch;
@@ -12,20 +29,33 @@ describe("mobile clients pipeline proxy", () => {
   const originalHandoffFallbacks = process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS;
 
   const TEST_EMAIL = "mobile-clients@example.com";
+
+  function restoreEnv(name: string, value: string | undefined): void {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
   const authHeader = `Bearer ${signAuthToken({
     userId: "test-user-1",
     email: TEST_EMAIL,
     role: "admin",
   })}`;
 
+  beforeEach(() => {
+    process.env.SOLARPRO_HANDOFF_SECRET = SIGNING_SECRET;
+    delete process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS;
+    delete process.env.MOBILE_SERVICE_API_KEY;
+    delete process.env.SOLARPRO_API_KEY;
+    delete process.env.PARTNER_API_KEY;
+  });
+
   afterEach(() => {
     global.fetch = originalFetch;
-    process.env.SOLARPRO_API_URL = originalApiUrl;
-    process.env.SOLARPRO_API_KEY = originalApiKey;
-    process.env.MOBILE_SERVICE_API_KEY = originalMobileServiceApiKey;
-    process.env.PARTNER_API_KEY = originalPartnerApiKey;
-    process.env.SOLARPRO_HANDOFF_SECRET = originalHandoffSecret;
-    process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS = originalHandoffFallbacks;
+    restoreEnv("SOLARPRO_API_URL", originalApiUrl);
+    restoreEnv("SOLARPRO_API_KEY", originalApiKey);
+    restoreEnv("MOBILE_SERVICE_API_KEY", originalMobileServiceApiKey);
+    restoreEnv("PARTNER_API_KEY", originalPartnerApiKey);
+    restoreEnv("SOLARPRO_HANDOFF_SECRET", originalHandoffSecret);
+    restoreEnv("SOLARPRO_HANDOFF_SECRET_FALLBACKS", originalHandoffFallbacks);
     jest.clearAllMocks();
   });
 
@@ -45,16 +75,32 @@ describe("mobile clients pipeline proxy", () => {
     expect(res.body.message).toContain("not configured");
   });
 
+  it("returns 503 when no signing secret of at least 32 characters is set", async () => {
+    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
+    process.env.SOLARPRO_HANDOFF_SECRET = "too-short-secret";
+    // A shared service key is no longer a way in, so it cannot stand in for the secret.
+    process.env.MOBILE_SERVICE_API_KEY = "mobile-service-key-that-is-long-enough-000001";
+
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const res = await request(app)
+      .get("/api/mobile/clients")
+      .set("Authorization", authHeader);
+
+    expect(res.status).toBe(503);
+    expect(res.body.message).toContain("SOLARPRO_HANDOFF_SECRET");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   // -------------------------------------------------------------------------
-  // User scoping — X-Mobile-User-Email must be forwarded
+  // User scoping — the user's email travels inside the signed token
   // -------------------------------------------------------------------------
 
-  it("forwards X-Mobile-User-Email header to SolarPro with normalized email", async () => {
+  it("signs the user's email into a five-minute token and sends no email header", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.SOLARPRO_API_KEY = "test-service-key";
 
     let capturedHeaders: Record<string, string> = {};
-
     global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
       capturedHeaders = (opts.headers ?? {}) as Record<string, string>;
       return Promise.resolve({
@@ -63,60 +109,41 @@ describe("mobile clients pipeline proxy", () => {
       });
     }) as unknown as typeof fetch;
 
+    const before = Math.floor(Date.now() / 1000);
     await request(app)
       .get("/api/mobile/clients")
       .set("Authorization", authHeader);
 
-    // CRITICAL: X-Mobile-User-Email must be forwarded so SolarPro scopes
-    // the DB query to the correct user — without it, SolarPro falls back
-    // to the service account and returns the wrong user's data.
-    expect(capturedHeaders["X-Mobile-User-Email"]).toBe(TEST_EMAIL.toLowerCase());
+    // CRITICAL: SolarPro scopes the data to the email inside the signed token
+    // (lib/mobile/auth.ts Path C). A header can be set by anyone who holds a key.
+    const claims = signedClaims(capturedHeaders);
+    expect(claims.email).toBe(TEST_EMAIL.toLowerCase());
+    // jsonwebtoken's noTimestamp drops iat, so the token is exactly {email, exp}.
+    expect(Object.keys(claims).sort()).toEqual(["email", "exp"]);
+    const exp = claims.exp as number;
+    expect(exp - before).toBeGreaterThanOrEqual(295);
+    expect(exp - before).toBeLessThanOrEqual(305);
+    expect(capturedHeaders["X-Mobile-User-Email"]).toBeUndefined();
+    expect(capturedHeaders["x-api-key"]).toBeUndefined();
   });
 
-  it("uses MOBILE_SERVICE_API_KEY when present", async () => {
+  it("never sends a shared service key, even when one is set", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    delete process.env.SOLARPRO_API_KEY;
-    process.env.MOBILE_SERVICE_API_KEY = "test-mobile-service-key";
+    const keys = [
+      "mobile-service-key-that-is-long-enough-000001",
+      "solarpro-api-key-that-is-long-enough-0000002",
+      "partner-api-key-that-is-long-enough-00000003",
+    ];
+    process.env.MOBILE_SERVICE_API_KEY = keys[0];
+    process.env.SOLARPRO_API_KEY = keys[1];
+    process.env.PARTNER_API_KEY = keys[2];
 
-    let capturedAuth = "";
+    const sent: Array<Record<string, string>> = [];
     global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
-      capturedAuth = ((opts.headers ?? {}) as Record<string, string>).Authorization ?? "";
+      sent.push((opts.headers ?? {}) as Record<string, string>);
       return Promise.resolve({
         ok: true,
         json: async () => ({ clients: [] }),
-      });
-    }) as unknown as typeof fetch;
-
-    await request(app)
-      .get("/api/mobile/clients")
-      .set("Authorization", authHeader);
-
-    expect(capturedAuth).toBe("Bearer test-mobile-service-key");
-  });
-
-  it("retries the next auth candidate when SolarPro rejects the first one", async () => {
-    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.MOBILE_SERVICE_API_KEY = "bad-mobile-service-key";
-    process.env.SOLARPRO_API_KEY = "good-solarpro-api-key";
-
-    const attempts: string[] = [];
-    global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
-      const headers = (opts.headers ?? {}) as Record<string, string>;
-      const attemptLabel = headers.Authorization
-        ? `auth:${headers.Authorization}`
-        : `x-api-key:${headers["x-api-key"] ?? ""}`;
-      attempts.push(attemptLabel);
-      if (attempts.length < 3) {
-        return Promise.resolve({
-          ok: false,
-          status: 401,
-          text: async () => JSON.stringify({ error: "unauthorized" }),
-        });
-      }
-
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ clients: [{ id: "client-1" }] }),
       });
     }) as unknown as typeof fetch;
 
@@ -125,80 +152,45 @@ describe("mobile clients pipeline proxy", () => {
       .set("Authorization", authHeader);
 
     expect(res.status).toBe(200);
-    expect(attempts[0]).toBe("auth:Bearer bad-mobile-service-key");
-    expect(attempts[1]).toBe("x-api-key:bad-mobile-service-key");
-    expect(attempts[2]).toBe("auth:Bearer good-solarpro-api-key");
-    expect(res.body.clients).toEqual([{ id: "client-1" }]);
+    expect(sent).toHaveLength(1);
+    expect(signedClaims(sent[0]).email).toBe(TEST_EMAIL.toLowerCase());
+    const everything = JSON.stringify(sent);
+    for (const key of keys) {
+      expect(everything).not.toContain(key);
+    }
   });
 
-  it("falls back to x-api-key header when Bearer auth is rejected", async () => {
+  it("makes one attempt with one secret and maps a refusal to 502", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.MOBILE_SERVICE_API_KEY = "service-key-123";
-    delete process.env.SOLARPRO_API_KEY;
-    delete process.env.PARTNER_API_KEY;
+    process.env.SOLARPRO_API_KEY = "solarpro-api-key-that-is-long-enough-0000002";
 
-    const attempts: string[] = [];
-    global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
-      const headers = (opts.headers ?? {}) as Record<string, string>;
-      attempts.push(headers.Authorization ? "bearer" : "x-api-key");
-
-      if (attempts.length === 1) {
-        return Promise.resolve({
-          ok: false,
-          status: 401,
-          text: async () => JSON.stringify({ error: "unauthorized" }),
-        });
-      }
-
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ clients: [{ id: "client-1" }] }),
-      });
-    }) as unknown as typeof fetch;
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: async () => JSON.stringify({ error: "unauthorized" }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
 
     const res = await request(app)
       .get("/api/mobile/clients")
       .set("Authorization", authHeader);
 
-    expect(res.status).toBe(200);
-    expect(attempts).toEqual(["bearer", "x-api-key"]);
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe("upstream_auth_failed");
+    // No second try with a static key after the signed token is refused.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("uses minted handoff JWT after static service keys fail", async () => {
+  it("tries the rotation fallback secret when SolarPro refuses the current one", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    delete process.env.MOBILE_SERVICE_API_KEY;
-    delete process.env.SOLARPRO_API_KEY;
-    delete process.env.PARTNER_API_KEY;
-    process.env.SOLARPRO_HANDOFF_SECRET = "test-handoff-secret-value-that-is-long-enough-123456";
+    const primary = "primary-handoff-secret-value-that-is-long-enough-123456";
+    const fallback = "fallback-handoff-secret-value-that-is-long-enough-654321";
+    process.env.SOLARPRO_HANDOFF_SECRET = primary;
+    process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS = fallback;
 
-    let capturedAuth = "";
+    const attempts: Array<Record<string, string>> = [];
     global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
-      capturedAuth = ((opts.headers ?? {}) as Record<string, string>).Authorization ?? "";
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ clients: [] }),
-      });
-    }) as unknown as typeof fetch;
-
-    await request(app)
-      .get("/api/mobile/clients")
-      .set("Authorization", authHeader);
-
-    expect(capturedAuth).toMatch(/^Bearer eyJ/);
-  });
-
-  it("uses fallback handoff secret JWT if the primary handoff secret is rejected", async () => {
-    process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    delete process.env.MOBILE_SERVICE_API_KEY;
-    delete process.env.SOLARPRO_API_KEY;
-    delete process.env.PARTNER_API_KEY;
-    process.env.SOLARPRO_HANDOFF_SECRET = "primary-handoff-secret-value-that-is-long-enough-123456";
-    process.env.SOLARPRO_HANDOFF_SECRET_FALLBACKS = "fallback-handoff-secret-value-that-is-long-enough-654321";
-
-    const attempts: string[] = [];
-    global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
-      const headers = (opts.headers ?? {}) as Record<string, string>;
-      attempts.push(headers.Authorization ?? "");
+      attempts.push((opts.headers ?? {}) as Record<string, string>);
 
       if (attempts.length === 1) {
         return Promise.resolve({
@@ -219,15 +211,13 @@ describe("mobile clients pipeline proxy", () => {
       .set("Authorization", authHeader);
 
     expect(res.status).toBe(200);
-    expect(attempts.length).toBeGreaterThanOrEqual(2);
-    expect(attempts[0]).toMatch(/^Bearer eyJ/);
-    expect(attempts[1]).toMatch(/^Bearer eyJ/);
-    expect(attempts[0]).not.toBe(attempts[1]);
+    expect(attempts).toHaveLength(2);
+    expect(signedClaims(attempts[0], primary).email).toBe(TEST_EMAIL.toLowerCase());
+    expect(signedClaims(attempts[1], fallback).email).toBe(TEST_EMAIL.toLowerCase());
   });
 
-  it("normalizes email to lowercase before forwarding", async () => {
+  it("normalizes email to lowercase inside the token", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.SOLARPRO_API_KEY = "test-service-key";
 
     const mixedCaseToken = `Bearer ${signAuthToken({
       userId: "test-user-2",
@@ -235,9 +225,9 @@ describe("mobile clients pipeline proxy", () => {
       role: "user",
     })}`;
 
-    let capturedEmail = "";
+    let capturedHeaders: Record<string, string> = {};
     global.fetch = jest.fn().mockImplementation((_url: string, opts: RequestInit) => {
-      capturedEmail = ((opts.headers ?? {}) as Record<string, string>)["X-Mobile-User-Email"] ?? "";
+      capturedHeaders = (opts.headers ?? {}) as Record<string, string>;
       return Promise.resolve({
         ok: true,
         json: async () => ({ clients: [] }),
@@ -248,7 +238,7 @@ describe("mobile clients pipeline proxy", () => {
       .get("/api/mobile/clients")
       .set("Authorization", mixedCaseToken);
 
-    expect(capturedEmail).toBe("mixed.case@example.com");
+    expect(signedClaims(capturedHeaders).email).toBe("mixed.case@example.com");
   });
 
   // -------------------------------------------------------------------------
@@ -257,7 +247,6 @@ describe("mobile clients pipeline proxy", () => {
 
   it("maps upstream auth failures (401/403) to 502 so app auth refresh is not triggered", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.SOLARPRO_API_KEY = "test-service-key";
 
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
@@ -275,7 +264,6 @@ describe("mobile clients pipeline proxy", () => {
 
   it("returns 502 when upstream returns a non-auth error", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.SOLARPRO_API_KEY = "test-service-key";
 
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
@@ -293,7 +281,6 @@ describe("mobile clients pipeline proxy", () => {
 
   it("returns 502 when SolarPro is unreachable (network error)", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.SOLARPRO_API_KEY = "test-service-key";
 
     global.fetch = jest.fn().mockRejectedValue(new Error("ECONNREFUSED")) as unknown as typeof fetch;
 
@@ -311,7 +298,6 @@ describe("mobile clients pipeline proxy", () => {
 
   it("returns upstream clients payload when the SolarPro pipeline responds successfully", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.SOLARPRO_API_KEY = "test-service-key";
 
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
@@ -334,12 +320,12 @@ describe("mobile clients pipeline proxy", () => {
       { id: "client-2", name: "GridWorks" },
     ]);
     const fetchHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
-    expect(fetchHeaders["X-Mobile-User-Email"]).toBe("mobile-clients@example.com");
+    expect(signedClaims(fetchHeaders).email).toBe("mobile-clients@example.com");
+    expect(fetchHeaders["X-Mobile-User-Email"]).toBeUndefined();
   });
 
   it("returns upstream projects payload for a selected client", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.SOLARPRO_API_KEY = "test-service-key";
 
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
@@ -360,12 +346,12 @@ describe("mobile clients pipeline proxy", () => {
       { id: "project-1", name: "Warehouse Roof", client_id: "client-1" },
     ]);
     const fetchHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
-    expect(fetchHeaders["X-Mobile-User-Email"]).toBe("mobile-clients@example.com");
+    expect(signedClaims(fetchHeaders).email).toBe("mobile-clients@example.com");
+    expect(fetchHeaders["X-Mobile-User-Email"]).toBeUndefined();
   });
 
   it("passes correct clientId in upstream URL for projects request", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.SOLARPRO_API_KEY = "test-service-key";
 
     let capturedUrl = "";
     global.fetch = jest.fn().mockImplementation((url: string) => {
@@ -385,7 +371,6 @@ describe("mobile clients pipeline proxy", () => {
 
   it("returns 400 when address-validation payload is missing rawAddress", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.SOLARPRO_API_KEY = "test-service-key";
 
     const res = await request(app)
       .post("/api/mobile/address-validation")
@@ -403,7 +388,6 @@ describe("mobile clients pipeline proxy", () => {
 
   it("returns 400 when address-validation payload has invalid GPS", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.SOLARPRO_API_KEY = "test-service-key";
 
     const res = await request(app)
       .post("/api/mobile/address-validation")
@@ -422,18 +406,17 @@ describe("mobile clients pipeline proxy", () => {
 
   it("proxies address-validation payload to upstream with POST and scoped headers", async () => {
     process.env.SOLARPRO_API_URL = "https://solarpro-dev.vercel.app";
-    process.env.SOLARPRO_API_KEY = "test-service-key";
 
     let capturedUrl = "";
     let capturedMethod = "";
-    let capturedEmail = "";
+    let capturedHeaders: Record<string, string> = {};
     let capturedBody: Record<string, unknown> | null = null;
 
     global.fetch = jest.fn().mockImplementation((url: string, opts: RequestInit) => {
       capturedUrl = url;
       capturedMethod = String(opts.method || "GET");
       const headers = (opts.headers ?? {}) as Record<string, string>;
-      capturedEmail = headers["X-Mobile-User-Email"];
+      capturedHeaders = headers;
       capturedBody = JSON.parse(String(opts.body || "{}"));
 
       return Promise.resolve({
@@ -467,7 +450,8 @@ describe("mobile clients pipeline proxy", () => {
     expect(res.status).toBe(200);
     expect(capturedUrl).toContain("/api/mobile/address-validation");
     expect(capturedMethod).toBe("POST");
-    expect(capturedEmail).toBe(TEST_EMAIL.toLowerCase());
+    expect(signedClaims(capturedHeaders).email).toBe(TEST_EMAIL.toLowerCase());
+    expect(capturedHeaders["X-Mobile-User-Email"]).toBeUndefined();
     expect(capturedBody).toMatchObject({
       rawAddress: "123 Main St, Dallas, TX",
       gps: {
@@ -499,5 +483,63 @@ describe("mobile clients pipeline proxy", () => {
       .set("Authorization", "Bearer not-a-valid-jwt");
 
     expect(res.status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Guard: no code path sends a shared service key or a free-text email header
+// ---------------------------------------------------------------------------
+
+const SRC_ROOT = path.resolve(__dirname, "..");
+
+function sourceFiles(dir: string): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === "__tests__" ? [] : sourceFiles(full);
+    return /\.(ts|js)$/.test(entry.name) ? [full] : [];
+  });
+}
+
+/** Breaks of the signed-token rule, one line per file and reason. */
+function proxyAuthViolations(files: Array<{ rel: string; text: string }>): string[] {
+  const out: string[] = [];
+  for (const { rel, text } of files) {
+    if (/["']X-Mobile-User-Email["']/i.test(text)) {
+      out.push(`${rel}: uses an X-Mobile-User-Email header (the email belongs inside the signed token)`);
+    }
+    if (/["']x-api-key["']\s*:/i.test(text)) {
+      out.push(`${rel}: sends an x-api-key header`);
+    }
+    if (/process\.env\.MOBILE_SERVICE_API_KEY/.test(text) && rel !== path.join("lib", "envGuard.ts")) {
+      out.push(`${rel}: reads MOBILE_SERVICE_API_KEY (no longer a way into SolarPro)`);
+    }
+  }
+  return out;
+}
+
+describe("SolarPro proxy sign-in guard", () => {
+  const files = sourceFiles(SRC_ROOT).map((full) => ({
+    rel: path.relative(SRC_ROOT, full),
+    text: fs.readFileSync(full, "utf8"),
+  }));
+
+  it("reads the proxy files it guards", () => {
+    const rels = files.map((f) => f.rel);
+    expect(rels).toContain(path.join("routes", "mobileClients.ts"));
+    expect(rels).toContain(path.join("routes", "bugReports.ts"));
+  });
+
+  it("finds no file that sends a shared service key or a free-text email header", () => {
+    expect(proxyAuthViolations(files)).toEqual([]);
+  });
+
+  it("catches a planted header and key read (mutation check)", () => {
+    const planted = {
+      rel: path.join("routes", "planted.ts"),
+      text:
+        'fetch(url, { headers: { "X-Mobile-User-Email": email, "x-api-key": key } });\n' +
+        "const k = process.env.MOBILE_SERVICE_API_KEY;",
+    };
+    expect(proxyAuthViolations([...files, planted])).toHaveLength(3);
   });
 });

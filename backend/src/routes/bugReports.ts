@@ -61,15 +61,11 @@ function mintServiceJwt(userEmail: string): string | null {
   );
 }
 
+// Only the signed email token (SOLARPRO_HANDOFF_SECRET), the same one the client
+// proxy sends. The old shared service keys are no longer sent (since 2026-11-24).
 function getSolarProAuthCandidates(userEmail: string): string[] {
-  const candidates = [
-    (process.env.MOBILE_SERVICE_API_KEY ?? "").trim(),
-    (process.env.SOLARPRO_API_KEY ?? "").trim(),
-    (process.env.PARTNER_API_KEY ?? "").trim(),
-    mintServiceJwt(userEmail) ?? "",
-  ].filter((value): value is string => Boolean(value));
-
-  return Array.from(new Set(candidates));
+  const token = mintServiceJwt(userEmail);
+  return token ? [token] : [];
 }
 
 async function forwardBugReportToSolarPro(payload: {
@@ -107,41 +103,30 @@ async function forwardBugReportToSolarPro(payload: {
 
   for (const routePath of paths) {
     for (const token of authCandidates) {
-      const headerSets: Array<Record<string, string>> = [
-        {
-          Authorization: `Bearer ${token}`,
-          "X-Mobile-User-Email": payload.reporterEmail,
-          "X-Source-System": "APP",
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        {
-          "x-api-key": token,
-          "X-Mobile-User-Email": payload.reporterEmail,
-          "X-Source-System": "APP",
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-      ];
+      // The reporter's email travels inside the signed token, not in a header.
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+        "X-Source-System": "APP",
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      };
 
-      for (const headers of headerSets) {
-        try {
-          const response = await fetch(`${solarProUrl}${routePath}`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(upstreamBody),
-            signal: AbortSignal.timeout(8_000),
-          });
+      try {
+        const response = await fetch(`${solarProUrl}${routePath}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(upstreamBody),
+          signal: AbortSignal.timeout(8_000),
+        });
 
-          if (response.ok) return true;
+        if (response.ok) return true;
 
-          if (response.status === 404) {
-            // Endpoint may differ between SolarPro deployments; try the next path.
-            break;
-          }
-        } catch {
-          // Try the next auth strategy/path combination.
+        if (response.status === 404) {
+          // Endpoint may differ between SolarPro deployments; try the next path.
+          break;
         }
+      } catch {
+        // Try the next path.
       }
     }
   }
