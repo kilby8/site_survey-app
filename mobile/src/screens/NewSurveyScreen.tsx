@@ -102,7 +102,7 @@ const WALK_AROUND_DIRECTION_SLOTS: PhotoSlotDraft[] = [
 
 const UTILITY_METER_SLOTS: PhotoSlotDraft[] = [
   { slotId: 'meter_number_tag', label: 'Number Tag Close-up', isRequired: true, photo: null },
-  { slotId: 'meter_wall_wide', label: 'Wall Wide Shot', isRequired: true, photo: null },
+  { slotId: 'meter_wall_wide', label: 'Wall Wide Shot', isRequired: true, hint: 'Hold a 2 ft level flat on the wall beside the meter (not on top of it), level, and shoot square-on so it sizes the equipment.', photo: null },
 ];
 
 const UTILITY_SERVICE_ENTRY_SLOTS: PhotoSlotDraft[] = [
