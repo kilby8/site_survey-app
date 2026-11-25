@@ -236,7 +236,7 @@ export const STEPS: StepDef[] = [
         ],
         slots: [
           { id: "utility_meter_close", label: "Meter close-up", hint: "Meter number and dials readable", required: true, guide: "meter_close", requirementId: "UTILITY-METER", usage: ["Interconnection", "Permit Site Plan"] },
-          { id: "utility_meter_wide", label: "Meter on the wall", hint: "Meter with the wall and nearby openings", required: true, guide: "meter_wide", requirementId: "UTILITY-METER-WIDE", usage: ["Interconnection", "Permit Site Plan"] },
+          { id: "utility_meter_wide", label: "Meter on the wall", hint: "Meter with the wall and nearby openings. Hold a 2 ft level flat on the wall beside the meter (not on top), level, and shoot square-on", required: true, guide: "meter_wide", requirementId: "UTILITY-METER-WIDE", usage: ["Interconnection", "Permit Site Plan"] },
           { id: "utility_service_entry", label: "Service entry", hint: "Where the service enters the building", required: true, guide: "service_entry", requirementId: "UTILITY-SERVICE-ENTRY", usage: ["Interconnection", "Permit Site Plan"] },
           { id: "utility_riser", label: "Riser / mast", hint: "Mast, weatherhead and drop attachment", required: true, guide: "mast", requirementId: "UTILITY-RISER-MAST", usage: ["Interconnection", "Permit Site Plan"], showIf: { field: "service_type", equals: "Overhead" } },
           { id: "utility_lateral", label: "Underground lateral", hint: "Path of the underground service", required: false, guide: "lateral", requirementId: "UTILITY-LATERAL", usage: ["Interconnection"], showIf: { field: "service_type", equals: "Underground" } },
